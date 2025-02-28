@@ -1,10 +1,10 @@
-# Synapse Analysis
+# SynapseClusterEM
 
-A Python package for analyzing 3D synapse structures using deep learning and clustering techniques.
+A Python package for analyzing and clustering 3D synapse structures from electron microscopy (EM) data using deep learning techniques.
 
 ## Features
 
-- Load and process 3D synapse volumes
+- Load and process 3D synapse volumes from EM data
 - Extract features using a pre-trained VGG3D model
 - Perform clustering analysis on extracted features
 - Generate 2D and 3D visualizations of synapse clusters
@@ -14,8 +14,8 @@ A Python package for analyzing 3D synapse structures using deep learning and clu
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/synapse_analysis.git
-cd synapse_analysis
+git clone https://github.com/alim98/SynapseClusterEM.git
+cd SynapseClusterEM
 ```
 
 2. Install the package in development mode:
@@ -57,7 +57,7 @@ python scripts/run_analysis.py \
 ## Project Structure
 
 ```
-synapse_analysis/
+SynapseClusterEM/
 ├── synapse_analysis/
 │   ├── models/
 │   │   └── vgg3d.py         # VGG3D model implementation
