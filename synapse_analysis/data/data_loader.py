@@ -30,6 +30,17 @@ def apply_global_normalization(tensor_data: Union[torch.Tensor, np.ndarray],
     mean = torch.tensor(global_stats['mean'])
     std = torch.tensor(global_stats['std'])
     
+    # Adjust mean and std if the input tensor is in [0,1] range but global stats are for [0,255] range
+    min_val = tensor_data.min()
+    max_val = tensor_data.max()
+    
+    # If tensor_data is in [0,1] range but global stats are for [0,255] range
+    if max_val <= 1.0 and min_val >= 0.0 and mean[0] > 1.0:
+        # Scale mean and std to [0,1] range
+        mean = mean / 255.0
+        std = std / 255.0
+        print(f"Adjusted normalization parameters to [0,1] range: mean={mean.item()}, std={std.item()}")
+    
     # Reshape mean and std based on input dimensions
     if tensor_data.dim() == 5:  # [B, C, D, H, W]
         mean = mean.view(1, -1, 1, 1, 1)
@@ -108,7 +119,31 @@ class Synapse3DProcessor:
         if skip_normalization:
             processed_frames = [self.base_transform(frame) for frame in frames]
         else:
-            processed_frames = [self.transform(frame) for frame in frames]
+            # For global normalization, use base transform first (without normalization)
+            # then apply global normalization once on the entire batch
+            if self.apply_global_norm and self.global_stats:
+                processed_frames = [self.base_transform(frame) for frame in frames]
+                pixel_values = torch.stack(processed_frames)
+                
+                # Apply global normalization once to the entire batch
+                mean = torch.tensor(self.global_stats['mean']).view(1, 1, 1).to(pixel_values.device)
+                std = torch.tensor(self.global_stats['std']).view(1, 1, 1).to(pixel_values.device)
+                
+                # Adjust mean and std if the input tensor is in [0,1] range but global stats are for [0,255] range
+                if pixel_values.max() <= 1.0 and mean.item() > 1.0:
+                    # Scale mean and std to [0,1] range
+                    mean = mean / 255.0
+                    std = std / 255.0
+                
+                pixel_values = (pixel_values - mean) / std
+                
+                if return_tensors == "pt":
+                    return {"pixel_values": pixel_values}
+                else:
+                    return pixel_values
+            else:
+                # Use regular transform with per-frame normalization
+                processed_frames = [self.transform(frame) for frame in frames]
             
         pixel_values = torch.stack(processed_frames)
         if return_tensors == "pt":
@@ -200,35 +235,41 @@ class Synapse3DProcessor:
             Dictionary with global 'mean' and 'std' values
         """
         # Initialize variables for statistics calculation
-        sum_values = 0
-        sum_squared = 0
-        count = 0
+        all_values = []
         
-        # Process each volume
+        # Collect all raw volume data
         for bbox_name, (raw_vol, _, _) in vol_data_dict.items():
-            # Update statistics
-            sum_values += np.sum(raw_vol)
-            sum_squared += np.sum(raw_vol.astype(np.float64) ** 2)
-            count += raw_vol.size
+            # Print the data range of the volume for debugging
+            print(f"Raw volume {bbox_name} range: min={raw_vol.min()}, max={raw_vol.max()}, dtype={raw_vol.dtype}")
+            
+            # Convert to float32 and flatten
+            flat_vol = raw_vol.astype(np.float32).flatten()
+            all_values.append(flat_vol)
         
         # Check if we have any valid data
-        if count == 0:
+        if not all_values:
             print("Warning: No valid volumes found. Using default normalization values.")
             return {
                 'mean': [0.0],  # Default mean
                 'std': [1.0]    # Default std
             }
         
-        # Calculate mean and std
-        mean = sum_values / count
-        var = (sum_squared / count) - (mean ** 2)
-        std = np.sqrt(var)
+        # Concatenate all values
+        all_data = np.concatenate(all_values)
+        
+        # Calculate global mean and std
+        mean = np.mean(all_data)
+        std = np.std(all_data)
+        
+        if std == 0:
+            std = 1.0  # Avoid division by zero
         
         global_stats = {
             'mean': [float(mean)],  # Wrap in list for compatibility with torchvision transforms
             'std': [float(std)]
         }
         
+        print(f"Calculated global stats - mean: {mean}, std: {std}")
         return global_stats
 
     @classmethod
@@ -305,15 +346,30 @@ def load_volumes(bbox_name: str, raw_base_dir: str, seg_base_dir: str,
         
     raw_tif_files = sorted(glob.glob(os.path.join(raw_dir, 'slice_*.tif')))
     seg_tif_files = sorted(glob.glob(os.path.join(seg_dir, 'slice_*.tif')))
-    add_mask_tif_files = sorted(glob.glob(os.path.join(add_mask_dir, 'slice_*.tif')))
     
-    if not (len(raw_tif_files) == len(seg_tif_files) == len(add_mask_tif_files)):
+    # Make additional mask files optional
+    if add_mask_base_dir and os.path.exists(add_mask_dir):
+        add_mask_tif_files = sorted(glob.glob(os.path.join(add_mask_dir, 'slice_*.tif')))
+    else:
+        add_mask_tif_files = []
+    
+    # Check if raw and segmentation files exist
+    if not raw_tif_files or not seg_tif_files:
+        print(f"Missing raw or segmentation files for {bbox_name}")
         return None, None, None
         
     try:
         raw_vol = np.stack([iio.imread(f) for f in raw_tif_files], axis=0)
         seg_vol = np.stack([iio.imread(f).astype(np.uint32) for f in seg_tif_files], axis=0)
-        add_mask_vol = np.stack([iio.imread(f).astype(np.uint32) for f in add_mask_tif_files], axis=0)
+        
+        # Only load additional mask if files exist
+        if add_mask_tif_files:
+            add_mask_vol = np.stack([iio.imread(f).astype(np.uint32) for f in add_mask_tif_files], axis=0)
+        else:
+            # Create a dummy mask of zeros with the same shape as raw_vol
+            add_mask_vol = np.zeros_like(raw_vol, dtype=np.uint32)
+            print(f"No additional mask files found for {bbox_name}. Using dummy mask.")
+            
         return raw_vol, seg_vol, add_mask_vol
     except Exception as e:
         print(f"Error loading volumes for {bbox_name}: {str(e)}")

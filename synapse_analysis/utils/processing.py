@@ -62,41 +62,44 @@ def get_bbox_labels(bbox_name: str) -> Dict[str, int]:
     """
     bbox_num = bbox_name.replace("bbox", "").strip()
     
+    labels = {}
     if bbox_num in {'2', '5'}:
-        return {
+        labels = {
             'mito_label': 1,
             'vesicle_label': 3,
             'cleft_label': 2,
             'cleft_label2': 4
         }
     elif bbox_num == '7':
-        return {
+        labels = {
             'mito_label': 1,
             'vesicle_label': 2,
             'cleft_label': 4,
             'cleft_label2': 3
         }
     elif bbox_num == '4':
-        return {
+        labels = {
             'mito_label': 3,
             'vesicle_label': 2,
             'cleft_label': 1,
             'cleft_label2': 4
         }
     elif bbox_num == '3':
-        return {
+        labels = {
             'mito_label': 6,
             'vesicle_label': 7,
             'cleft_label': 9,
             'cleft_label2': 8
         }
     else:  # For bbox1, 6, etc.
-        return {
+        labels = {
             'mito_label': 5,
             'vesicle_label': 6,
             'cleft_label': 7,
             'cleft_label2': 7
         }
+    
+    return labels
 
 def create_segmented_cube(raw_vol: np.ndarray,
                          seg_vol: np.ndarray,
@@ -107,7 +110,9 @@ def create_segmented_cube(raw_vol: np.ndarray,
                          segmentation_type: int,
                          subvolume_size: int = 80,
                          alpha: float = 0.3,
-                         bbox_name: str = "") -> np.ndarray:
+                         bbox_name: str = "",
+                         global_mean: float = None,
+                         global_std: float = None) -> np.ndarray:
     """
     Create a segmented cube from the input volumes.
     
@@ -122,6 +127,8 @@ def create_segmented_cube(raw_vol: np.ndarray,
         subvolume_size: Size of the output cube
         alpha: Alpha blending factor
         bbox_name: Name of the bounding box
+        global_mean: Global mean for normalization
+        global_std: Global std for normalization
         
     Returns:
         Segmented cube as a numpy array
@@ -199,22 +206,21 @@ def create_segmented_cube(raw_vol: np.ndarray,
     sub_raw = sub_raw[:subvolume_size, :subvolume_size, :subvolume_size]
     sub_combined_mask = sub_combined_mask[:subvolume_size, :subvolume_size, :subvolume_size]
     
-    # Convert to float32 and normalize
-    normalized = sub_raw.astype(np.float32)
-    gray_color = 0.6
+    # Convert to float32
+    sub_raw = sub_raw.astype(np.float32)
     
-    # Create RGB version and apply masking
-    raw_rgb = np.repeat(normalized[..., np.newaxis], 3, axis=-1)
-    mask_factor = sub_combined_mask[..., np.newaxis]
+    # Create RGB version
+    sub_rgb = np.repeat(sub_raw[..., np.newaxis], 3, axis=-1)
     
-    if alpha < 1:
-        blended_part = alpha * gray_color + (1 - alpha) * raw_rgb
-    else:
-        blended_part = gray_color * (1 - mask_factor) + raw_rgb * mask_factor
+    # Apply mask with simple gray overlay
+    # Where mask is False, use a fixed value of 128 (medium gray in 0-255 range)
+    gray_value = 128.0
+    mask_3d = sub_combined_mask[..., np.newaxis]  # Add dimension for broadcasting
     
-    overlaid_image = raw_rgb * mask_factor + (1 - mask_factor) * blended_part
+    # Simple blending between raw data and gray
+    result = np.where(mask_3d, sub_rgb, gray_value)
     
-    # Transpose dimensions
-    overlaid_cube = np.transpose(overlaid_image, (1, 2, 3, 0))
+    # Transpose dimensions to match expected output format [H, W, C, D]
+    overlaid_cube = np.transpose(result, (0, 1, 3, 2))
     
     return overlaid_cube 

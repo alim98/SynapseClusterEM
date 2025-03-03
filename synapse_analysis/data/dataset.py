@@ -23,6 +23,29 @@ class SynapseDataset(Dataset):
         self.subvol_size = subvol_size
         self.num_frames = num_frames
         self.alpha = alpha
+        
+        # Store global stats from processor if available
+        self.global_mean = None
+        self.global_std = None
+        if hasattr(processor, 'global_stats') and processor.global_stats:
+            if isinstance(processor.global_stats, dict):
+                if 'mean' in processor.global_stats and 'std' in processor.global_stats:
+                    # Handle both list and non-list formats
+                    mean_val = processor.global_stats['mean']
+                    std_val = processor.global_stats['std']
+                    
+                    # Extract the first element if it's a list, otherwise use as is
+                    if isinstance(mean_val, list):
+                        self.global_mean = mean_val[0]
+                    else:
+                        self.global_mean = mean_val
+                        
+                    if isinstance(std_val, list):
+                        self.global_std = std_val[0]
+                    else:
+                        self.global_std = std_val
+                        
+                    print(f"Using global stats for gray value: mean={self.global_mean}, std={self.global_std}")
 
     def __len__(self):
         return len(self.synapse_df)
@@ -30,6 +53,7 @@ class SynapseDataset(Dataset):
     def __getitem__(self, idx):
         syn_info = self.synapse_df.iloc[idx]
         bbox_name = syn_info['bbox_name']
+        
         raw_vol, seg_vol, add_mask_vol = self.vol_data_dict.get(bbox_name, (None, None, None))
         
         if raw_vol is None:
@@ -57,6 +81,8 @@ class SynapseDataset(Dataset):
             subvolume_size=self.subvol_size,
             alpha=self.alpha,
             bbox_name=bbox_name,
+            global_mean=self.global_mean,
+            global_std=self.global_std
         )
         
         frames = [overlaid_cube[..., z] for z in range(overlaid_cube.shape[3])]
