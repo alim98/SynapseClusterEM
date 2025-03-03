@@ -191,10 +191,10 @@ class Synapse3DProcessor:
     @staticmethod
     def calculate_global_stats_from_volumes(vol_data_dict):
         """
-        Calculate global mean and standard deviation directly from raw volumes.
+        Calculate global mean and standard deviation from volumes.
         
         Args:
-            vol_data_dict: Dictionary mapping bbox names to (raw_vol, seg_vol, add_mask_vol) tuples
+            vol_data_dict: Dictionary of volumes in the format {bbox_name: (raw_vol, seg_vol, combined_vol)}
             
         Returns:
             Dictionary with global 'mean' and 'std' values
@@ -210,6 +210,14 @@ class Synapse3DProcessor:
             sum_values += np.sum(raw_vol)
             sum_squared += np.sum(raw_vol.astype(np.float64) ** 2)
             count += raw_vol.size
+        
+        # Check if we have any valid data
+        if count == 0:
+            print("Warning: No valid volumes found. Using default normalization values.")
+            return {
+                'mean': [0.0],  # Default mean
+                'std': [1.0]    # Default std
+            }
         
         # Calculate mean and std
         mean = sum_values / count
@@ -354,4 +362,27 @@ def load_all_volumes(bbox_names: list, raw_base_dir: str, seg_base_dir: str,
         volumes = load_volumes(bbox_name, raw_base_dir, seg_base_dir, add_mask_base_dir)
         if all(v is not None for v in volumes):
             vol_data_dict[bbox_name] = volumes
-    return vol_data_dict 
+    return vol_data_dict
+
+def calculate_global_stats(raw_base_dir, seg_base_dir, add_mask_base_dir, excel_dir, 
+                     segmentation_types=None, bbox_names=None, num_samples=100):
+    """
+    Calculate global mean and standard deviation for normalization across all volumes.
+    
+    Args:
+        raw_base_dir: Base directory for raw data
+        seg_base_dir: Base directory for segmentation data
+        add_mask_base_dir: Base directory for additional mask data
+        excel_dir: Directory containing Excel files
+        segmentation_types: List of segmentation types to use
+        bbox_names: List of bounding box names
+        num_samples: Number of samples to use for statistics
+        
+    Returns:
+        Dictionary with global 'mean' and 'std' values
+    """
+    # Load volumes
+    vol_data_dict = load_all_volumes(bbox_names, raw_base_dir, seg_base_dir, add_mask_base_dir)
+    
+    # Use the class method to calculate stats from volumes
+    return Synapse3DProcessor.calculate_global_stats_from_volumes(vol_data_dict) 

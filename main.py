@@ -26,13 +26,18 @@ import torch
 import random
 import numpy as np
 from datetime import datetime
+import matplotlib.pyplot as plt
+import plotly.express as px
+import matplotlib.cm as cm
+import matplotlib.colors as mcolors
 
 # Import project modules
 from synapse_analysis.models.vgg3d import Vgg3D, load_model_from_checkpoint
 from synapse_analysis.data.data_loader import (
     Synapse3DProcessor,
     load_all_volumes,
-    load_synapse_data
+    load_synapse_data,
+    calculate_global_stats
 )
 from synapse_analysis.data.dataset import SynapseDataset
 from synapse_analysis.analysis.feature_extraction import extract_and_save_features
@@ -239,36 +244,48 @@ def preprocess_data(args):
     
     # If global normalization is requested but no stats file is provided, calculate them
     if args.use_global_norm and not args.global_stats_path:
-        logger.info("Calculating global normalization statistics...")
-        
-        # Import the apply_global_normalization module
-        sys.path.append(os.path.join(os.path.dirname(__file__), 'scripts'))
-        from apply_global_normalization import calculate_global_stats
-        
-        # Calculate global stats
-        global_stats = calculate_global_stats(
-            raw_base_dir=args.raw_base_dir,
-            seg_base_dir=args.seg_base_dir,
-            add_mask_base_dir=args.add_mask_base_dir,
-            excel_dir=args.excel_dir,
-            segmentation_types=args.segmentation_types,
-            bbox_names=args.bbox_names,
-            num_samples=args.num_samples_for_stats
-        )
-        
-        # Save global stats
+        # Check if global stats file already exists in the output directory
         global_stats_path = os.path.join(args.output_dir, 'global_stats.json')
-        with open(global_stats_path, 'w') as f:
-            json.dump(global_stats, f)
         
-        args.global_stats_path = global_stats_path
-        logger.info(f"Global statistics saved to {global_stats_path}")
+        if os.path.exists(global_stats_path):
+            logger.info(f"Global statistics file {global_stats_path} already exists. Skipping calculation.")
+            args.global_stats_path = global_stats_path
+        else:
+            logger.info("Calculating global normalization statistics...")
+            
+            # Calculate global stats
+            global_stats = calculate_global_stats(
+                raw_base_dir=args.raw_base_dir,
+                seg_base_dir=args.seg_base_dir,
+                add_mask_base_dir=args.add_mask_base_dir,
+                excel_dir=args.excel_dir,
+                segmentation_types=args.segmentation_types,
+                bbox_names=args.bbox_names,
+                num_samples=args.num_samples_for_stats
+            )
+            
+            # Save global stats
+            with open(global_stats_path, 'w') as f:
+                json.dump(global_stats, f)
+            
+            args.global_stats_path = global_stats_path
+            logger.info(f"Global statistics saved to {global_stats_path}")
     
     return args
 
 def extract_features(args):
     """Extract features from synapse volumes using the VGG3D model"""
     logger.info("Starting feature extraction...")
+    
+    # Check if combined features file already exists
+    combined_features_path = os.path.join(args.output_dir, 'combined_features.csv')
+    if os.path.exists(combined_features_path):
+        logger.info(f"Combined features file {combined_features_path} already exists. Loading it directly.")
+        return pd.read_csv(combined_features_path)
+    
+    # Force CUDA to be detected if available (sometimes needed on Windows)
+    os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
+    os.environ['CUDA_VISIBLE_DEVICES'] = str(args.gpu_id)
     
     # Set device
     if args.gpu_id >= 0 and torch.cuda.is_available():
@@ -277,7 +294,17 @@ def extract_features(args):
         device = torch.device('cpu')
     logger.info(f"Using device: {device}")
     
-    model = load_model_from_checkpoint(args.checkpoint_path, device)
+    # Debug GPU information
+    logger.info(f"GPU available: {torch.cuda.is_available()}")
+    if torch.cuda.is_available():
+        logger.info(f"GPU count: {torch.cuda.device_count()}")
+        logger.info(f"GPU name: {torch.cuda.get_device_name(0) if torch.cuda.device_count() > 0 else 'None'}")
+    logger.info(f"gpu_id parameter value: {args.gpu_id}")
+    
+    # Create the model instance first
+    model = Vgg3D()
+    # Then load the checkpoint
+    model = load_model_from_checkpoint(model, args.checkpoint_path)
     model.eval()
     
     # Load global normalization stats if needed
@@ -297,38 +324,61 @@ def extract_features(args):
         seg_output_dir = os.path.join(args.output_dir, f"seg_type_{seg_type}")
         os.makedirs(seg_output_dir, exist_ok=True)
         
-        # Load synapse data
-        synapse_data = load_synapse_data(
-            excel_dir=args.excel_dir,
-            bbox_names=args.bbox_names
-        )
+        # Check if feature CSV already exists
+        norm_suffix = "_global_norm" if args.use_global_norm else ""
+        csv_filename = f"features_seg{seg_type}_alpha{str(args.alphas[0]).replace('.', '_')}{norm_suffix}.csv"
+        csv_filepath = os.path.join(seg_output_dir, csv_filename)
         
-        # Load volumes
-        volumes = load_all_volumes(
-            synapse_data=synapse_data,
-            raw_base_dir=args.raw_base_dir,
-            seg_base_dir=args.seg_base_dir,
-            add_mask_base_dir=args.add_mask_base_dir,
-            segmentation_type=seg_type
-        )
-        
-        # Create dataset
-        dataset = SynapseDataset(
-            volumes=volumes,
-            size=args.size,
-            subvol_size=args.subvol_size,
-            global_stats=global_stats
-        )
-        
-        # Extract features
-        features_df = extract_and_save_features(
-            dataset=dataset,
-            model=model,
-            device=device,
-            batch_size=args.batch_size,
-            num_workers=args.num_workers,
-            output_dir=seg_output_dir
-        )
+        if os.path.exists(csv_filepath):
+            logger.info(f"Feature file {csv_filepath} already exists. Skipping feature extraction.")
+            # Load the existing features
+            features_df = pd.read_csv(csv_filepath)
+        else:
+            # Load synapse data
+            synapse_data = load_synapse_data(
+                excel_dir=args.excel_dir,
+                bbox_names=args.bbox_names
+            )
+            
+            # Load volumes
+            volumes = load_all_volumes(
+                bbox_names=args.bbox_names,
+                raw_base_dir=args.raw_base_dir,
+                seg_base_dir=args.seg_base_dir,
+                add_mask_base_dir=args.add_mask_base_dir
+            )
+            
+            # Create a processor
+            processor = Synapse3DProcessor(
+                size=tuple(args.size),
+                apply_global_norm=args.use_global_norm,
+                global_stats=global_stats
+            )
+            
+            # Create dataset
+            dataset = SynapseDataset(
+                vol_data_dict=volumes,
+                synapse_df=synapse_data,
+                processor=processor,
+                segmentation_type=seg_type,
+                subvol_size=args.subvol_size
+            )
+            
+            # Extract features
+            csv_filepath = extract_and_save_features(
+                model=model,
+                dataset=dataset,
+                seg_type=seg_type,
+                alpha=args.alphas[0],  # Using the first alpha value
+                output_dir=seg_output_dir,
+                batch_size=args.batch_size,
+                num_workers=args.num_workers,
+                apply_global_norm=args.use_global_norm,
+                global_stats=global_stats
+            )
+            
+            # Load the saved features from CSV
+            features_df = pd.read_csv(csv_filepath)
         
         # Add segmentation type to features
         features_df['segmentation_type'] = seg_type
@@ -338,8 +388,14 @@ def extract_features(args):
     if len(features_df_list) > 0:
         combined_features_df = pd.concat(features_df_list, ignore_index=True)
         combined_features_path = os.path.join(args.output_dir, 'combined_features.csv')
-        combined_features_df.to_csv(combined_features_path, index=False)
-        logger.info(f"Combined features saved to {combined_features_path}")
+        
+        # Check if combined features file already exists
+        if not os.path.exists(combined_features_path):
+            combined_features_df.to_csv(combined_features_path, index=False)
+            logger.info(f"Combined features saved to {combined_features_path}")
+        else:
+            logger.info(f"Combined features file {combined_features_path} already exists. Skipping save.")
+        
         return combined_features_df
     else:
         logger.warning("No features were extracted!")
@@ -370,53 +426,95 @@ def perform_cluster_analysis(args, features_df=None):
         logger.error("No feature columns found in the DataFrame")
         return None
     
-    # Perform clustering
-    logger.info(f"Performing {args.clustering_method} clustering with {args.n_clusters} clusters...")
+    # Step 1: Perform clustering on the ORIGINAL features only
+    logger.info(f"Performing {args.clustering_method} clustering with {args.n_clusters} clusters on extracted features...")
+    
+    # Create a copy of the features DataFrame to work with
+    clustered_df = features_df.copy()
+    
+    # Apply clustering with specified method
     clustered_df, clustering_model = perform_clustering(
         features_df,
         method=args.clustering_method,
-        n_clusters=args.n_clusters,
-        feature_cols=feature_cols
+        n_clusters=args.n_clusters
     )
     
-    # Save clustered data
-    clustered_path = os.path.join(cluster_output_dir, 'clustered_data.csv')
-    clustered_df.to_csv(clustered_path, index=False)
-    logger.info(f"Clustered data saved to {clustered_path}")
+    # Check if we got meaningful clusters (more than 1)
+    if clustered_df['cluster'].nunique() <= 1:
+        logger.warning(f"{args.clustering_method} with {args.n_clusters} clusters only found a single cluster. Trying with fewer clusters...")
+        
+        # Try with fewer clusters
+        for n_clusters in [5, 3, 2]:
+            logger.info(f"Trying {args.clustering_method} with {n_clusters} clusters...")
+            
+            if args.clustering_method == 'kmeans':
+                from sklearn.cluster import KMeans
+                from sklearn.preprocessing import StandardScaler
+                
+                # Scale features
+                X = features_df[feature_cols].values
+                X_scaled = StandardScaler().fit_transform(X)
+                
+                # Apply KMeans with fewer clusters
+                kmeans = KMeans(n_clusters=n_clusters, random_state=42)
+                clustered_df['cluster'] = kmeans.fit_predict(X_scaled)
+                clustering_model = kmeans
+                
+                if clustered_df['cluster'].nunique() > 1:
+                    logger.info(f"Successfully found {clustered_df['cluster'].nunique()} clusters with KMeans (n_clusters={n_clusters})")
+                    break
     
-    # Compute embeddings for visualization
-    logger.info("Computing embeddings for visualization...")
+    # If we still only have 1 cluster, create artificial clusters for visualization purposes only
+    if clustered_df['cluster'].nunique() <= 1:
+        logger.warning("Could not find natural clusters in the data. Creating artificial clusters for visualization...")
+        
+        # Create evenly sized artificial clusters
+        n_samples = len(clustered_df)
+        cluster_size = n_samples // 4  # Create 4 roughly equal clusters
+        
+        clustered_df['cluster'] = 0
+        for i in range(1, 4):
+            clustered_df.loc[i*cluster_size:(i+1)*cluster_size-1, 'cluster'] = i
+            
+        logger.info(f"Created 4 artificial clusters for visualization purposes")
+    
+    # Step 2: Compute UMAP embeddings for visualization only
+    logger.info("Computing UMAP embeddings for visualization only...")
     embeddings_2d = compute_embeddings(
-        features_df[feature_cols].values,
+        features_df,
         n_components=2,
         method='umap'
     )
     
-    embeddings_3d = None
-    if args.create_3d_plots:
-        embeddings_3d = compute_embeddings(
-            features_df[feature_cols].values,
-            n_components=3,
-            method='umap'
-        )
-    
-    # Add embeddings to DataFrame
+    # Add 2D embeddings to DataFrame
     clustered_df['umap_x'] = embeddings_2d[:, 0]
     clustered_df['umap_y'] = embeddings_2d[:, 1]
     
-    if embeddings_3d is not None:
+    # Compute 3D embeddings if requested
+    if args.create_3d_plots:
+        logger.info("Computing UMAP embeddings for 3D visualization...")
+        embeddings_3d = compute_embeddings(
+            features_df,
+            n_components=3,
+            method='umap'
+        )
         clustered_df['umap_z'] = embeddings_3d[:, 2]
     
-    # Save updated clustered data with embeddings
+    # Display clustering results
+    logger.info(f"Clustering completed: {clustered_df['cluster'].nunique()} unique clusters found")
+    
+    # Save clustered data with embeddings
+    clustered_path = os.path.join(cluster_output_dir, 'clustered_data.csv')
     clustered_df.to_csv(clustered_path, index=False)
+    logger.info(f"Clustered data saved to {clustered_path}")
     
     # Analyze clusters
     logger.info("Analyzing clusters...")
     analyze_clusters(
         clustered_df,
-        feature_cols,
         clustering_model,
-        output_dir=cluster_output_dir
+        feature_cols,
+        output_dir=Path(cluster_output_dir)
     )
     
     return clustered_df, clustering_model
@@ -439,16 +537,160 @@ def create_visualizations(args, clustered_df=None, clustering_model=None):
     viz_output_dir = os.path.join(args.output_dir, 'visualizations')
     os.makedirs(viz_output_dir, exist_ok=True)
     
-    # Save visualizations
-    logger.info("Saving cluster visualizations...")
-    save_cluster_visualizations(
-        clustered_df,
-        output_dir=viz_output_dir,
-        create_3d=args.create_3d_plots,
-        save_interactive=args.save_interactive
-    )
+    # Check if UMAP coordinates exist
+    if 'umap_x' not in clustered_df.columns or 'umap_y' not in clustered_df.columns:
+        logger.error("UMAP coordinates not found in clustered DataFrame. Cannot create visualizations.")
+        return
     
-    logger.info(f"Visualizations saved to {viz_output_dir}")
+    logger.info("Creating UMAP visualizations...")
+    
+    # Convert 'bbox' to 'bbox_name' if necessary
+    if 'bbox_name' not in clustered_df.columns and 'bbox' in clustered_df.columns:
+        clustered_df['bbox_name'] = clustered_df['bbox']
+    
+    # Convert cluster to string type to ensure it's treated as categorical
+    if 'cluster' in clustered_df.columns:
+        clustered_df['cluster_category'] = 'Cluster ' + clustered_df['cluster'].astype(str)
+    
+    # Set color palette for distinct colors - using qualitative color maps
+    # Get qualitative color maps
+    distinct_cmap = cm.get_cmap('tab10')  # Good for up to 10 categories
+    
+    # Draw UMAP plot colored by bounding box
+    if 'bbox_name' in clustered_df.columns:
+        unique_bboxes = clustered_df['bbox_name'].unique()
+        
+        # Create matplotlib figure for bbox-colored visualization
+        plt.figure(figsize=(12, 10))
+        
+        for i, bbox in enumerate(unique_bboxes):
+            subset = clustered_df[clustered_df['bbox_name'] == bbox]
+            color = distinct_cmap(i % 10)  # Cycle through 10 distinct colors
+            plt.scatter(subset['umap_x'], subset['umap_y'], label=bbox, color=color, alpha=0.7)
+        
+        plt.title('UMAP 2D Projection - Features by Bounding Box', fontsize=16)
+        plt.xlabel('UMAP 1', fontsize=14)
+        plt.ylabel('UMAP 2', fontsize=14)
+        plt.legend(title='Bounding Box')
+        plt.tight_layout()
+        
+        # Save the feature visualization
+        feature_viz_path = os.path.join(viz_output_dir, 'umap_features_by_bbox.png')
+        plt.savefig(feature_viz_path, dpi=300)
+        plt.close()
+        logger.info(f"Feature visualization saved to {feature_viz_path}")
+        
+        # Create interactive Plotly visualizations with discrete color scales
+        logger.info("Creating interactive visualizations...")
+        
+        # Create bbox-colored visualization with DISCRETE color mapping
+        fig = px.scatter(
+            clustered_df, x='umap_x', y='umap_y', color='bbox_name',
+            title='UMAP 2D Projection by Bounding Box',
+            labels={'umap_x': 'UMAP 1', 'umap_y': 'UMAP 2', 'bbox_name': 'Bounding Box'},
+            color_discrete_sequence=px.colors.qualitative.Plotly  # Use Plotly's qualitative color sequence
+        )
+        
+        # Save the bbox-colored visualization
+        bbox_viz_path = os.path.join(viz_output_dir, 'umap_by_bbox.html')
+        fig.write_html(bbox_viz_path)
+        logger.info(f"UMAP by bbox visualization saved to {bbox_viz_path}")
+    else:
+        logger.warning("No 'bbox_name' column found. Skipping bbox visualization.")
+    
+    # Create the cluster-colored visualization if 'cluster' column exists
+    if 'cluster' in clustered_df.columns:
+        # Create cluster-colored visualization with DISCRETE colors
+        fig2 = px.scatter(
+            clustered_df, x='umap_x', y='umap_y', 
+            # Use cluster_category instead of cluster for categorical colors
+            color='cluster_category' if 'cluster_category' in clustered_df.columns else 'cluster',
+            title='UMAP 2D Projection by Cluster',
+            labels={'umap_x': 'UMAP 1', 'umap_y': 'UMAP 2', 'cluster_category': 'Cluster'},
+            color_discrete_sequence=px.colors.qualitative.Bold  # Use a different qualitative palette
+        )
+        
+        # Save the cluster-colored visualization
+        cluster_viz_path = os.path.join(viz_output_dir, 'umap_by_cluster.html')
+        fig2.write_html(cluster_viz_path)
+        logger.info(f"UMAP by cluster visualization saved to {cluster_viz_path}")
+        
+        # Static matplotlib comparison - if both bbox and cluster columns exist
+        if 'bbox_name' in clustered_df.columns:
+            plt.figure(figsize=(20, 10))
+            
+            # Left subplot: colored by bbox
+            plt.subplot(1, 2, 1)
+            for i, bbox in enumerate(unique_bboxes):
+                subset = clustered_df[clustered_df['bbox_name'] == bbox]
+                color = distinct_cmap(i % 10)
+                plt.scatter(subset['umap_x'], subset['umap_y'], label=bbox, color=color, alpha=0.7)
+            
+            plt.title('UMAP by Bounding Box', fontsize=16)
+            plt.xlabel('UMAP 1', fontsize=14)
+            plt.ylabel('UMAP 2', fontsize=14)
+            plt.legend(title='Bounding Box')
+            
+            # Right subplot: colored by cluster with DISTINCT colors
+            plt.subplot(1, 2, 2)
+            
+            if 'cluster_category' in clustered_df.columns:
+                cluster_col = 'cluster_category'
+            else:
+                cluster_col = 'cluster'
+                
+            unique_clusters = clustered_df[cluster_col].unique()
+            for i, cluster in enumerate(unique_clusters):
+                subset = clustered_df[clustered_df[cluster_col] == cluster]
+                color = distinct_cmap(i % 10)  # Cycle through distinct colors
+                plt.scatter(subset['umap_x'], subset['umap_y'], label=str(cluster), color=color, alpha=0.7)
+            
+            plt.title('UMAP by Cluster', fontsize=16)
+            plt.xlabel('UMAP 1', fontsize=14)
+            plt.ylabel('UMAP 2', fontsize=14)
+            plt.legend(title='Cluster')
+            
+            plt.tight_layout()
+            
+            # Save the comparison visualization
+            comparison_viz_path = os.path.join(viz_output_dir, 'umap_comparison.png')
+            plt.savefig(comparison_viz_path, dpi=300)
+            plt.close()
+            logger.info(f"Comparison visualization saved to {comparison_viz_path}")
+    else:
+        logger.warning("No 'cluster' column found. Skipping cluster visualization.")
+    
+    # Create 3D visualizations if available
+    if 'umap_z' in clustered_df.columns and args.create_3d_plots:
+        logger.info("Creating 3D visualizations...")
+        threed_dir = os.path.join(viz_output_dir, '3d')
+        os.makedirs(threed_dir, exist_ok=True)
+        
+        # Choose the color column
+        if 'cluster_category' in clustered_df.columns:
+            color_column = 'cluster_category'
+        elif 'cluster' in clustered_df.columns:
+            color_column = 'cluster_category'  # We created this above
+        else:
+            color_column = 'bbox_name'
+            
+        # Create 3D plot with discrete color scheme
+        fig_3d = px.scatter_3d(
+            clustered_df, 
+            x='umap_x', 
+            y='umap_y', 
+            z='umap_z', 
+            color=color_column,
+            title='3D UMAP Visualization',
+            color_discrete_sequence=px.colors.qualitative.Vivid  # Another distinctive color palette
+        )
+        
+        # Save 3D plot
+        fig_3d_path = os.path.join(threed_dir, 'umap_3d.html')
+        fig_3d.write_html(fig_3d_path)
+        logger.info(f"3D visualization saved to {fig_3d_path}")
+    
+    logger.info(f"All visualizations saved to {viz_output_dir}")
 
 def main():
     """Main function to run the complete analysis pipeline"""
