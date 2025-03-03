@@ -6,6 +6,7 @@ import imageio.v3 as iio
 from typing import Tuple, Dict, Optional, List, Union
 from torchvision import transforms
 import torch
+from .sample_normalization import apply_sample_normalization
 
 def apply_global_normalization(tensor_data: Union[torch.Tensor, np.ndarray], 
                               global_stats: Dict[str, List[float]]) -> torch.Tensor:
@@ -59,7 +60,7 @@ def apply_global_normalization(tensor_data: Union[torch.Tensor, np.ndarray],
 
 class Synapse3DProcessor:
     def __init__(self, size=(80, 80), mean=(0.485,), std=(0.229,), 
-                 apply_global_norm=False, global_stats=None):
+                 apply_global_norm=False, global_stats=None, apply_sample_norm=False):
         """
         Initialize the Synapse3DProcessor for image processing and normalization.
         
@@ -69,12 +70,14 @@ class Synapse3DProcessor:
             std: Standard deviation for normalization (per channel)
             apply_global_norm: Whether to apply global normalization
             global_stats: Dictionary containing global 'mean' and 'std' if apply_global_norm is True
+            apply_sample_norm: Whether to apply sample-wise normalization
         """
         self.size = size
         self.mean = mean
         self.std = std
         self.apply_global_norm = apply_global_norm
         self.global_stats = global_stats
+        self.apply_sample_norm = apply_sample_norm
 
         # Base transform without normalization
         self.base_transform = transforms.Compose([
@@ -151,21 +154,27 @@ class Synapse3DProcessor:
         else:
             return pixel_values
 
-    def normalize_tensor(self, tensor, use_global_norm=None):
+    def normalize_tensor(self, tensor, use_global_norm=None, use_sample_norm=None):
         """
         Apply normalization to a tensor.
         
         Args:
             tensor: Input tensor to normalize
             use_global_norm: Whether to use global normalization (overrides instance setting)
+            use_sample_norm: Whether to use sample-wise normalization (overrides instance setting)
             
         Returns:
             Normalized tensor
         """
-        # Determine whether to use global normalization
+        # Determine normalization type
         apply_global = self.apply_global_norm if use_global_norm is None else use_global_norm
+        apply_sample = self.apply_sample_norm if use_sample_norm is None else use_sample_norm
         
-        if apply_global and self.global_stats:
+        # Sample-wise normalization takes precedence over global
+        if apply_sample:
+            # Use sample-wise normalization
+            return apply_sample_normalization(tensor)
+        elif apply_global and self.global_stats:
             # Use global normalization
             return apply_global_normalization(tensor, self.global_stats)
         else:
