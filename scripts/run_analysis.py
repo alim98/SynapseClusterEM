@@ -1,5 +1,6 @@
 import os
 import argparse
+import json
 from pathlib import Path
 import torch
 import pandas as pd
@@ -43,6 +44,11 @@ def parse_args():
     parser.add_argument('--batch_size', type=int, default=2)
     parser.add_argument('--num_workers', type=int, default=0)
     
+    # Global normalization parameters
+    parser.add_argument('--use_global_norm', action='store_true', help='Use global normalization')
+    parser.add_argument('--global_stats_path', type=str, help='Path to saved global stats JSON (will calculate if not provided)')
+    parser.add_argument('--num_samples_for_stats', type=int, default=100, help='Number of samples for global stats (0 for all)')
+    
     return parser.parse_args()
 
 def main():
@@ -56,9 +62,6 @@ def main():
     model = Vgg3D(input_size=(80, 80, 80), fmaps=24, output_classes=7, input_fmaps=1)
     model = load_model_from_checkpoint(model, args.checkpoint_path)
     
-    # Initialize processor
-    processor = Synapse3DProcessor(size=tuple(args.size))
-    
     # Load data
     vol_data_dict = load_all_volumes(
         args.bbox_names,
@@ -68,6 +71,58 @@ def main():
     )
     
     synapse_df = load_synapse_data(args.bbox_names, args.excel_dir)
+    
+    # Initialize processor based on normalization preference
+    if args.use_global_norm:
+        if args.global_stats_path and os.path.exists(args.global_stats_path):
+            # Load pre-calculated global stats
+            print(f"Loading global stats from {args.global_stats_path}")
+            with open(args.global_stats_path, 'r') as f:
+                global_stats = json.load(f)
+                
+            processor = Synapse3DProcessor(
+                size=tuple(args.size),
+                apply_global_norm=True,
+                global_stats=global_stats
+            )
+            print(f"Using global normalization with mean={global_stats['mean']}, std={global_stats['std']}")
+        else:
+            # Calculate global stats
+            print("Calculating global normalization statistics...")
+            temp_processor = Synapse3DProcessor(size=tuple(args.size))
+            temp_dataset = SynapseDataset(
+                vol_data_dict=vol_data_dict,
+                synapse_df=synapse_df,
+                processor=temp_processor
+            )
+            
+            from torch.utils.data import DataLoader
+            stats_loader = DataLoader(
+                temp_dataset,
+                batch_size=args.batch_size,
+                shuffle=True,
+                num_workers=args.num_workers
+            )
+            
+            num_samples = args.num_samples_for_stats if args.num_samples_for_stats > 0 else None
+            global_stats = Synapse3DProcessor.calculate_global_stats(stats_loader, num_samples=num_samples)
+            
+            # Save global stats for future use
+            global_stats_path = output_dir / 'global_stats.json'
+            with open(global_stats_path, 'w') as f:
+                json.dump(global_stats, f)
+            print(f"Global stats saved to {global_stats_path}")
+            
+            processor = Synapse3DProcessor(
+                size=tuple(args.size),
+                apply_global_norm=True,
+                global_stats=global_stats
+            )
+            print(f"Using global normalization with mean={global_stats['mean']}, std={global_stats['std']}")
+    else:
+        # Use default normalization
+        processor = Synapse3DProcessor(size=tuple(args.size))
+        print("Using default normalization")
     
     # Color mapping for visualizations
     color_mapping = {
@@ -93,7 +148,8 @@ def main():
             )
             
             # Extract and save features
-            seg_output_dir = output_dir / f"seg{seg_type}_alpha{str(alpha).replace('.', '_')}"
+            norm_type = "global_norm" if args.use_global_norm else "default_norm"
+            seg_output_dir = output_dir / f"seg{seg_type}_alpha{str(alpha).replace('.', '_')}_{norm_type}"
             seg_output_dir.mkdir(exist_ok=True)
             
             csv_filepath = extract_and_save_features(

@@ -3,9 +3,32 @@ import numpy as np
 import pandas as pd
 from torch.utils.data import DataLoader
 import torch.nn as nn
-from typing import Dict, Tuple, Any
+from typing import Dict, Tuple, Any, List, Union
 from pathlib import Path
 import os
+
+def apply_global_normalization(tensor_batch: torch.Tensor, global_stats: Dict[str, List[float]]) -> torch.Tensor:
+    """
+    Apply global normalization to a batch of tensors.
+    
+    Args:
+        tensor_batch: Batch of tensors to normalize [B, C, D, H, W]
+        global_stats: Dictionary containing 'mean' and 'std' values
+        
+    Returns:
+        Normalized tensor batch
+    """
+    if not isinstance(tensor_batch, torch.Tensor):
+        tensor_batch = torch.tensor(tensor_batch)
+        
+    # Get global mean and std
+    mean = torch.tensor(global_stats['mean']).view(1, -1, 1, 1, 1).to(tensor_batch.device)
+    std = torch.tensor(global_stats['std']).view(1, -1, 1, 1, 1).to(tensor_batch.device)
+    
+    # Apply normalization
+    normalized_batch = (tensor_batch - mean) / std
+    
+    return normalized_batch
 
 def collate_fn(batch):
     return (
@@ -17,7 +40,9 @@ def collate_fn(batch):
 def extract_features(model: nn.Module,
                     dataset: Any,
                     batch_size: int = 32,
-                    num_workers: int = 8) -> pd.DataFrame:
+                    num_workers: int = 8,
+                    apply_global_norm: bool = False,
+                    global_stats: Dict[str, List[float]] = None) -> pd.DataFrame:
     """
     Extract features from the dataset using the provided model.
     
@@ -26,6 +51,8 @@ def extract_features(model: nn.Module,
         dataset: Dataset to extract features from
         batch_size: Batch size for data loading
         num_workers: Number of worker processes for data loading
+        apply_global_norm: Whether to apply global normalization before feature extraction
+        global_stats: Dictionary containing 'mean' and 'std' values for global normalization
         
     Returns:
         DataFrame containing extracted features and metadata
@@ -47,6 +74,10 @@ def extract_features(model: nn.Module,
         for batch in dataloader:
             pixels, info, names = batch
             inputs = pixels.permute(0, 2, 1, 3, 4).to(device)
+            
+            # Apply global normalization if requested
+            if apply_global_norm and global_stats is not None:
+                inputs = apply_global_normalization(inputs, global_stats)
 
             batch_features = model.features(inputs)
             pooled_features = nn.AdaptiveAvgPool3d((1, 1, 1))(batch_features)
@@ -80,6 +111,8 @@ def extract_and_save_features(model: nn.Module,
                             output_dir: str,
                             batch_size: int = 4,
                             num_workers: int = 2,
+                            apply_global_norm: bool = False,
+                            global_stats: Dict[str, List[float]] = None,
                             drive_dir: str = None) -> str:
     """
     Extract features and save them to CSV files.
@@ -92,6 +125,8 @@ def extract_and_save_features(model: nn.Module,
         output_dir: Directory to save the CSV file
         batch_size: Batch size for data loading
         num_workers: Number of worker processes for data loading
+        apply_global_norm: Whether to apply global normalization before feature extraction
+        global_stats: Dictionary containing 'mean' and 'std' values for global normalization
         drive_dir: Optional Google Drive directory to copy the CSV file to
         
     Returns:
@@ -101,15 +136,23 @@ def extract_and_save_features(model: nn.Module,
     os.makedirs(output_dir, exist_ok=True)
 
     # Extract features
-    features_df = extract_features(model, dataset, batch_size=batch_size, num_workers=num_workers)
+    features_df = extract_features(
+        model, 
+        dataset, 
+        batch_size=batch_size, 
+        num_workers=num_workers,
+        apply_global_norm=apply_global_norm,
+        global_stats=global_stats
+    )
 
     # Prepare filename and save path
-    csv_filename = f"features_seg{seg_type}_alpha{str(alpha).replace('.', '_')}.csv"
+    norm_suffix = "_global_norm" if apply_global_norm else ""
+    csv_filename = f"features_seg{seg_type}_alpha{str(alpha).replace('.', '_')}{norm_suffix}.csv"
     csv_filepath = os.path.join(output_dir, csv_filename)
 
     # Save features to CSV
     features_df.to_csv(csv_filepath, index=False)
-    print(f"Features for SegType {seg_type} and Alpha {alpha} saved to {csv_filepath}")
+    print(f"Features for SegType {seg_type} and Alpha {alpha}{' with global normalization' if apply_global_norm else ''} saved to {csv_filepath}")
 
     # Copy to Google Drive if specified
     if drive_dir:

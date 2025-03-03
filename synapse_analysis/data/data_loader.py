@@ -7,6 +7,45 @@ from typing import Tuple, Dict, Optional, List, Union
 from torchvision import transforms
 import torch
 
+def apply_global_normalization(tensor_data: Union[torch.Tensor, np.ndarray], 
+                              global_stats: Dict[str, List[float]]) -> torch.Tensor:
+    """
+    Apply global normalization to tensor data.
+    
+    This function can be used independently in the data processing pipeline
+    to apply global normalization to any tensor data.
+    
+    Args:
+        tensor_data: Input tensor data to normalize [B, C, ...] or [C, ...]
+        global_stats: Dictionary containing 'mean' and 'std' values
+        
+    Returns:
+        Normalized tensor data
+    """
+    # Convert to tensor if numpy array
+    if isinstance(tensor_data, np.ndarray):
+        tensor_data = torch.from_numpy(tensor_data)
+    
+    # Get global mean and std
+    mean = torch.tensor(global_stats['mean'])
+    std = torch.tensor(global_stats['std'])
+    
+    # Reshape mean and std based on input dimensions
+    if tensor_data.dim() == 5:  # [B, C, D, H, W]
+        mean = mean.view(1, -1, 1, 1, 1)
+        std = std.view(1, -1, 1, 1, 1)
+    elif tensor_data.dim() == 4:  # [B, C, H, W]
+        mean = mean.view(1, -1, 1, 1)
+        std = std.view(1, -1, 1, 1)
+    elif tensor_data.dim() == 3:  # [C, H, W]
+        mean = mean.view(-1, 1, 1)
+        std = std.view(-1, 1, 1)
+    
+    # Apply normalization
+    normalized_data = (tensor_data - mean) / std
+    
+    return normalized_data
+
 class Synapse3DProcessor:
     def __init__(self, size=(80, 80), mean=(0.485,), std=(0.229,), 
                  apply_global_norm=False, global_stats=None):
@@ -76,6 +115,39 @@ class Synapse3DProcessor:
             return {"pixel_values": pixel_values}
         else:
             return pixel_values
+
+    def normalize_tensor(self, tensor, use_global_norm=None):
+        """
+        Apply normalization to a tensor.
+        
+        Args:
+            tensor: Input tensor to normalize
+            use_global_norm: Whether to use global normalization (overrides instance setting)
+            
+        Returns:
+            Normalized tensor
+        """
+        # Determine whether to use global normalization
+        apply_global = self.apply_global_norm if use_global_norm is None else use_global_norm
+        
+        if apply_global and self.global_stats:
+            # Use global normalization
+            return apply_global_normalization(tensor, self.global_stats)
+        else:
+            # Use standard normalization
+            if tensor.dim() == 5:  # [B, C, D, H, W]
+                mean = torch.tensor(self.mean).view(1, -1, 1, 1, 1).to(tensor.device)
+                std = torch.tensor(self.std).view(1, -1, 1, 1, 1).to(tensor.device)
+            elif tensor.dim() == 4:  # [B, C, H, W]
+                mean = torch.tensor(self.mean).view(1, -1, 1, 1).to(tensor.device)
+                std = torch.tensor(self.std).view(1, -1, 1, 1).to(tensor.device)
+            elif tensor.dim() == 3:  # [C, H, W]
+                mean = torch.tensor(self.mean).view(-1, 1, 1).to(tensor.device)
+                std = torch.tensor(self.std).view(-1, 1, 1).to(tensor.device)
+            else:
+                raise ValueError(f"Unsupported tensor dimensions: {tensor.dim()}")
+                
+            return (tensor - mean) / std
 
     @staticmethod
     def calculate_global_stats(data_loader, num_samples=None):
