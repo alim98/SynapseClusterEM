@@ -10,26 +10,26 @@ data_paths:
   seg_base_dir: "data/7_bboxes_plus_seg/seg"
   add_mask_base_dir: "data/vesicle_cloud__syn_interface__mitochondria_annotation"
   excel_dir: "data/7_bboxes_plus_seg"  # Contains bbox1.xlsx through bbox7.xlsx
-  output_dir: "outputs/analysis_results"
-  checkpoint_path: "hemibrain_production.checkpoint"  # Using the checkpoint file in the project root directory
+  output_dir: "outputs/main_results"
+  checkpoint_path: "hemibrain_production.checkpoint"
 
 # Dataset parameters
 dataset:
   bbox_names:
     - "bbox1"
     - "bbox2"
-    - "bbox3"
-    - "bbox4"
-    - "bbox5"
-    - "bbox6"
-    - "bbox7"
+    # - "bbox3"
+    # - "bbox4"
+    # - "bbox5"
+    # - "bbox6"
+    # - "bbox7"
   size: [80, 80]  # [height, width]
   subvol_size: 80
   num_frames: 80
 
 # Analysis parameters
 analysis:
-  segmentation_types: [9, 10]
+  segmentation_types: [9]
   alphas: [1.0]
   n_clusters: 10
   clustering_method: "kmeans"  # Options: kmeans, dbscan
@@ -38,9 +38,9 @@ analysis:
 
 # Global normalization parameters
 normalization:
-  use_global_norm: true
+  use_global_norm: true  # Enable global normalization
   global_stats_path: null  # Will calculate if not provided
-  num_samples_for_stats: 100  # Number of samples for global stats (0 for all)
+  num_samples_for_stats: 10  # Number of samples for global stats (0 for all)
 
 # Visualization parameters
 visualization:

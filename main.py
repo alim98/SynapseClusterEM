@@ -30,6 +30,7 @@ import matplotlib.pyplot as plt
 import plotly.express as px
 import matplotlib.cm as cm
 import matplotlib.colors as mcolors
+import glob
 
 # Import project modules
 from synapse_analysis.models.vgg3d import Vgg3D, load_model_from_checkpoint
@@ -206,8 +207,8 @@ def parse_args():
                 # For boolean flags that default to False
                 if isinstance(value, bool) and value:
                     setattr(config_args, key, value)
-                # For other arguments that were explicitly provided
-                elif not (isinstance(value, (bool, list)) and value == parser.get_default(key)):
+                # For other arguments that were explicitly provided AND not empty strings
+                elif not (isinstance(value, (bool, list)) and value == parser.get_default(key)) and not (isinstance(value, str) and value == ''):
                     setattr(config_args, key, value)
         
         args = config_args
@@ -274,18 +275,8 @@ def preprocess_data(args):
     return args
 
 def extract_features(args):
-    """Extract features from synapse volumes using the VGG3D model"""
+    """Extract features from synapse volumes"""
     logger.info("Starting feature extraction...")
-    
-    # Check if combined features file already exists
-    combined_features_path = os.path.join(args.output_dir, 'combined_features.csv')
-    if os.path.exists(combined_features_path):
-        logger.info(f"Combined features file {combined_features_path} already exists. Loading it directly.")
-        return pd.read_csv(combined_features_path)
-    
-    # Force CUDA to be detected if available (sometimes needed on Windows)
-    os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
-    os.environ['CUDA_VISIBLE_DEVICES'] = str(args.gpu_id)
     
     # Set device
     if args.gpu_id >= 0 and torch.cuda.is_available():
@@ -294,25 +285,81 @@ def extract_features(args):
         device = torch.device('cpu')
     logger.info(f"Using device: {device}")
     
-    # Debug GPU information
-    logger.info(f"GPU available: {torch.cuda.is_available()}")
+    # Log GPU information
     if torch.cuda.is_available():
+        logger.info(f"GPU available: {torch.cuda.is_available()}")
         logger.info(f"GPU count: {torch.cuda.device_count()}")
-        logger.info(f"GPU name: {torch.cuda.get_device_name(0) if torch.cuda.device_count() > 0 else 'None'}")
-    logger.info(f"gpu_id parameter value: {args.gpu_id}")
+        logger.info(f"GPU name: {torch.cuda.get_device_name(0)}")
+        logger.info(f"gpu_id parameter value: {args.gpu_id}")
+    
+    # Load global normalization statistics if available
+    if args.use_global_norm:
+        if args.global_stats_path:
+            global_stats_path = args.global_stats_path
+        else:
+            global_stats_path = os.path.join(args.output_dir, "global_stats.json")
+        
+        if os.path.exists(global_stats_path):
+            with open(global_stats_path, 'r') as f:
+                global_stats = json.load(f)
+            logger.info(f"Loaded global statistics from {global_stats_path}")
+        else:
+            logger.warning(f"Global statistics file not found at {global_stats_path}")
+            global_stats = {"mean": 0.0, "std": 1.0}
+    else:
+        global_stats = None
+    
+    # Process each segmentation type
+    all_features = []
+    
+    # Debug print for Excel directory
+    print(f"Excel directory: {args.excel_dir}")
+    print(f"Excel directory exists: {os.path.exists(args.excel_dir)}")
+    for bbox in args.bbox_names:
+        excel_path = os.path.join(args.excel_dir, f"{bbox}.xlsx")
+        print(f"Looking for Excel file: {excel_path}")
+        print(f"Excel file exists: {os.path.exists(excel_path)}")
+    
+    # Load synapse data
+    try:
+        synapse_data = load_synapse_data(
+            args.bbox_names,
+            args.excel_dir
+        )
+    except Exception as e:
+        logger.error(f"Error loading synapse data: {e}")
+        raise
+    
+    # Load volumes
+    volumes = load_all_volumes(
+        bbox_names=args.bbox_names,
+        raw_base_dir=args.raw_base_dir,
+        seg_base_dir=args.seg_base_dir,
+        add_mask_base_dir=args.add_mask_base_dir
+    )
+    
+    # Create a processor
+    processor = Synapse3DProcessor(
+        size=tuple(args.size),
+        apply_global_norm=args.use_global_norm,
+        global_stats=global_stats
+    )
+    
+    # Create dataset
+    dataset = SynapseDataset(
+        vol_data_dict=volumes,
+        synapse_df=synapse_data,
+        processor=processor,
+        segmentation_type=args.segmentation_types[0],
+        subvol_size=args.subvol_size,
+        alpha=args.alphas[0]  # Pass alpha from config
+    )
     
     # Create the model instance first
     model = Vgg3D()
     # Then load the checkpoint
     model = load_model_from_checkpoint(model, args.checkpoint_path)
     model.eval()
-    
-    # Load global normalization stats if needed
-    global_stats = None
-    if args.use_global_norm and args.global_stats_path:
-        with open(args.global_stats_path, 'r') as f:
-            global_stats = json.load(f)
-        logger.info(f"Loaded global statistics from {args.global_stats_path}")
     
     # Extract features for each segmentation type
     features_df_list = []
@@ -361,8 +408,79 @@ def extract_features(args):
                 synapse_df=synapse_data,
                 processor=processor,
                 segmentation_type=seg_type,
-                subvol_size=args.subvol_size
+                subvol_size=args.subvol_size,
+                alpha=args.alphas[0]  # Pass alpha from config
             )
+            # Visualize sample center slices to verify model input
+            def visualize_sample_slices(dataset, num_samples=5, output_dir=None):
+                """Visualize center slices of a few samples to verify model input"""
+                if num_samples > len(dataset):
+                    num_samples = len(dataset)
+                    
+                # Create output directory if needed
+                if output_dir:
+                    os.makedirs(output_dir, exist_ok=True)
+                
+                # Get a few samples
+                indices = np.linspace(0, len(dataset)-1, num_samples).astype(int)
+                
+                for i, idx in enumerate(indices):
+                    volume, syn_info, bbox_name = dataset[idx]
+                    # Shape: [C, D, H, W]
+                    synapse_id = syn_info['Var1'] if 'Var1' in syn_info else idx
+                    
+                    # Get center slice
+                    center_slice_idx = volume.shape[1] // 2
+                    center_slice = volume[:, center_slice_idx, :, :]  # Shape: [C, H, W]
+                    
+                    # Calculate appropriate min and max values for display
+                    vmin = center_slice.min()
+                    vmax = center_slice.max()
+                    
+                    # Create a figure with subplots for each channel
+                    num_channels = center_slice.shape[0]
+                    fig_width = 20
+                    fig_height = 5
+                    
+                    fig, axes = plt.subplots(1, num_channels, figsize=(fig_width, fig_height))
+                    
+                    # Ensure axes is always a list-like object
+                    if num_channels == 1:
+                        axes = [axes]
+                        
+                    # Plot each channel with enhanced contrast
+                    for c in range(num_channels):
+                        # Get the slice data for this channel
+                        slice_data = center_slice[c]
+                        
+                        # Plot the image with appropriate value range
+                        axes[c].imshow(slice_data, cmap='gray', vmin=vmin, vmax=vmax)
+                        axes[c].set_title(f"Channel {c} - min={vmin:.2f}, max={vmax:.2f}")
+                        axes[c].axis('off')
+                    
+                    # Set a title for the entire figure
+                    plt.suptitle(f"Sample {i+1} - bbox: {bbox_name}, id: {synapse_id}")
+                    plt.tight_layout()
+                    
+                    # Save or show the figure
+                    if output_dir:
+                        filename = f"sample_{i+1}_bbox_{bbox_name}_id_{synapse_id}.png"
+                        filepath = os.path.join(output_dir, filename)
+                        plt.savefig(filepath, dpi=100, bbox_inches='tight')
+                        plt.close()
+                    else:
+                        plt.show()
+                    
+                if output_dir:
+                    logger.info(f"Sample visualizations saved to {output_dir}")
+            
+            # Call the visualization function
+            sample_viz_dir = visualize_sample_slices(
+                dataset=dataset,
+                num_samples=5,
+                output_dir=os.path.join(seg_output_dir, "sample_visualizations")
+            )
+            logger.info(f"Sample visualizations created at {sample_viz_dir}")
             
             # Extract features
             csv_filepath = extract_and_save_features(
