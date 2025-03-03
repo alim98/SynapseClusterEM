@@ -321,6 +321,27 @@ class Synapse3DProcessor:
             global_stats=global_stats
         )
 
+    @classmethod
+    def create_with_standard_norm(cls, size=(80, 80), mean=(0.485,), std=(0.229,)):
+        """
+        Factory method to create processor with standard normalization (no global normalization).
+        
+        Args:
+            size: Size for the images
+            mean: Mean values for normalization
+            std: Standard deviation values for normalization
+            
+        Returns:
+            Processor instance with standard normalization applied
+        """
+        return cls(
+            size=size,
+            mean=mean,
+            std=std,
+            apply_global_norm=False,
+            global_stats=None
+        )
+
 def load_volumes(bbox_name: str, raw_base_dir: str, seg_base_dir: str, 
                 add_mask_base_dir: str) -> Tuple[Optional[np.ndarray], Optional[np.ndarray], Optional[np.ndarray]]:
     """
@@ -441,4 +462,35 @@ def calculate_global_stats(raw_base_dir, seg_base_dir, add_mask_base_dir, excel_
     vol_data_dict = load_all_volumes(bbox_names, raw_base_dir, seg_base_dir, add_mask_base_dir)
     
     # Use the class method to calculate stats from volumes
-    return Synapse3DProcessor.calculate_global_stats_from_volumes(vol_data_dict) 
+    return Synapse3DProcessor.calculate_global_stats_from_volumes(vol_data_dict)
+
+def normalize_raw_data_before_segmentation(raw_data, size=(80, 80), mean=(0.485,), std=(0.229,)):
+    """
+    Normalize raw data before any segmentation step, without using global normalization.
+    
+    Args:
+        raw_data: Raw image data as a list of frames or 3D volume
+        size: Target size for the processed images
+        mean: Mean values for normalization
+        std: Standard deviation values for normalization
+        
+    Returns:
+        Normalized raw data ready for segmentation
+    """
+    # Create processor with standard normalization (no global normalization)
+    processor = Synapse3DProcessor.create_with_standard_norm(
+        size=size,
+        mean=mean,
+        std=std
+    )
+    
+    # Convert to list of frames if the input is a 3D volume
+    if isinstance(raw_data, np.ndarray) and raw_data.ndim == 3:
+        frames = [raw_data[i] for i in range(raw_data.shape[0])]
+    else:
+        frames = raw_data
+    
+    # Apply normalization to raw data
+    normalized_data = processor(frames)
+    
+    return normalized_data 

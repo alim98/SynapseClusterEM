@@ -17,7 +17,7 @@ data_paths:
 dataset:
   bbox_names:
     - "bbox1"
-    - "bbox2"
+    # - "bbox2"
     # - "bbox3"
     # - "bbox4"
     # - "bbox5"
@@ -38,8 +38,8 @@ analysis:
 
 # Global normalization parameters
 normalization:
-  use_global_norm: true  # Enable global normalization
-  global_stats_path: null  # Will calculate if not provided
+  use_global_norm: false  # Disable global normalization
+  global_stats_path: null  # Not needed as we're not using global normalization
   num_samples_for_stats: 10  # Number of samples for global stats (0 for all)
 
 # Visualization parameters
