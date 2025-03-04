@@ -125,13 +125,9 @@ def extract_features(args):
             
             # Load first few samples to generate visualizations
             excel_dir = args.excel_dir
-            print(f"Excel directory: {excel_dir}")
-            print(f"Excel directory exists: {os.path.exists(excel_dir)}")
             
             for bbox in args.bbox_names[:2]:  # First 2 bounding boxes
                 excel_path = os.path.join(excel_dir, f"{bbox}.xlsx")
-                print(f"Looking for Excel file: {excel_path}")
-                print(f"Excel file exists: {os.path.exists(excel_path)}")
                 
             # Load synapse data
             synapse_data = load_synapse_data(args.bbox_names, args.excel_dir)
@@ -193,17 +189,8 @@ def extract_features(args):
                 central_slice = segmented_cube[:, :, segmented_cube.shape[2] // 2, :]
                 slice_img = central_slice[:, :, central_slice.shape[2] // 2]
                 
-                # Log slice image statistics
-                print(f"[VIZ DEBUG] Slice image stats for sample {i+1}, {bbox_name}, Synapse {syn_info['Var1']}:")
-                print(f"[VIZ DEBUG] - Shape: {slice_img.shape}")
-                print(f"[VIZ DEBUG] - Min value: {np.min(slice_img)}")
-                print(f"[VIZ DEBUG] - Max value: {np.max(slice_img)}")
-                print(f"[VIZ DEBUG] - Mean value: {np.mean(slice_img)}")
-                print(f"[VIZ DEBUG] - Std dev: {np.std(slice_img)}")
-                
                 # Create a mask for the gray regions (where value is exactly 128.0)
                 gray_mask = np.isclose(slice_img, 128.0)
-                print(f"[VIZ DEBUG] - Gray mask coverage: {np.sum(gray_mask) / gray_mask.size * 100:.2f}%")
                 
                 # Normalize the slice to ensure consistent visualization
                 # This ensures the gray value appears the same across all images
@@ -226,10 +213,6 @@ def extract_features(args):
                 
                 # Set the gray parts to a consistent value (128)
                 normalized_slice[gray_mask] = 128.0
-                
-                print(f"[VIZ DEBUG] Normalized slice stats:")
-                print(f"[VIZ DEBUG] - Min value: {np.min(normalized_slice)}")
-                print(f"[VIZ DEBUG] - Max value: {np.max(normalized_slice)}")
                 
                 plt.figure(figsize=(8, 8))
                 # Use the normalized slice with consistent gray value
@@ -314,8 +297,6 @@ def extract_features(args):
                 
             except Exception as e:
                 logger.error(f"Error processing segmentation type {seg_type} with alpha {alpha}: {e}")
-                import traceback
-                logger.error(traceback.format_exc())
     
     # Combine features if we have multiple feature files
     if len(feature_files) > 0:
@@ -677,7 +658,7 @@ def main():
                     if key in paths:
                         setattr(args, key, paths[key])
     except (TypeError, AttributeError):
-        logger.debug("Skipping backward compatibility check for config file.")
+        pass
     
     # Run the pipeline according to the selected mode
     try:
@@ -739,9 +720,6 @@ def main():
     
     except Exception as e:
         logger.error(f"Error during analysis: {str(e)}")
-        if args.verbose:
-            import traceback
-            logger.error(traceback.format_exc())
     
     logger.info("SynapseClusterEM analysis completed.")
 
