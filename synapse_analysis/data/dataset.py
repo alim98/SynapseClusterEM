@@ -24,28 +24,9 @@ class SynapseDataset(Dataset):
         self.num_frames = num_frames
         self.alpha = alpha
         
-        # Store global stats from processor if available
+        # Global normalization is no longer used
         self.global_mean = None
         self.global_std = None
-        if hasattr(processor, 'global_stats') and processor.global_stats:
-            if isinstance(processor.global_stats, dict):
-                if 'mean' in processor.global_stats and 'std' in processor.global_stats:
-                    # Handle both list and non-list formats
-                    mean_val = processor.global_stats['mean']
-                    std_val = processor.global_stats['std']
-                    
-                    # Extract the first element if it's a list, otherwise use as is
-                    if isinstance(mean_val, list):
-                        self.global_mean = mean_val[0]
-                    else:
-                        self.global_mean = mean_val
-                        
-                    if isinstance(std_val, list):
-                        self.global_std = std_val[0]
-                    else:
-                        self.global_std = std_val
-                        
-                    print(f"Using global stats for gray value: mean={self.global_mean}, std={self.global_std}")
 
     def __len__(self):
         return len(self.synapse_df)

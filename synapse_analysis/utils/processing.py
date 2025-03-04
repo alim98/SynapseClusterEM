@@ -127,8 +127,8 @@ def create_segmented_cube(raw_vol: np.ndarray,
         subvolume_size: Size of the output cube
         alpha: Alpha blending factor
         bbox_name: Name of the bounding box
-        global_mean: Global mean for normalization
-        global_std: Global std for normalization
+        global_mean: Global mean for normalization (deprecated, not used)
+        global_std: Global std for normalization (deprecated, not used)
         
     Returns:
         Segmented cube as a numpy array

@@ -13,6 +13,9 @@ def apply_global_normalization(tensor_data: Union[torch.Tensor, np.ndarray],
     """
     Apply global normalization to tensor data.
     
+    This function is deprecated and will be removed in a future version.
+    It now falls back to standard normalization with default values.
+    
     This function can be used independently in the data processing pipeline
     to apply global normalization to any tensor data.
     
@@ -23,24 +26,21 @@ def apply_global_normalization(tensor_data: Union[torch.Tensor, np.ndarray],
     Returns:
         Normalized tensor data
     """
+    import warnings
+    warnings.warn(
+        "apply_global_normalization is deprecated and will be removed in a future version. "
+        "Using standard normalization instead.",
+        DeprecationWarning, 
+        stacklevel=2
+    )
+    
     # Convert to tensor if numpy array
     if isinstance(tensor_data, np.ndarray):
         tensor_data = torch.from_numpy(tensor_data)
     
-    # Get global mean and std
-    mean = torch.tensor(global_stats['mean'])
-    std = torch.tensor(global_stats['std'])
-    
-    # Adjust mean and std if the input tensor is in [0,1] range but global stats are for [0,255] range
-    min_val = tensor_data.min()
-    max_val = tensor_data.max()
-    
-    # If tensor_data is in [0,1] range but global stats are for [0,255] range
-    if max_val <= 1.0 and min_val >= 0.0 and mean[0] > 1.0:
-        # Scale mean and std to [0,1] range
-        mean = mean / 255.0
-        std = std / 255.0
-        print(f"Adjusted normalization parameters to [0,1] range: mean={mean.item()}, std={std.item()}")
+    # Use default normalization values
+    mean = torch.tensor([0.485])
+    std = torch.tensor([0.229])
     
     # Reshape mean and std based on input dimensions
     if tensor_data.dim() == 5:  # [B, C, D, H, W]
@@ -68,15 +68,16 @@ class Synapse3DProcessor:
             size: Target size for the images (height, width)
             mean: Mean for normalization (per channel)
             std: Standard deviation for normalization (per channel)
-            apply_global_norm: Whether to apply global normalization
-            global_stats: Dictionary containing global 'mean' and 'std' if apply_global_norm is True
+            apply_global_norm: Whether to apply global normalization (deprecated, always False)
+            global_stats: Dictionary containing global 'mean' and 'std' if apply_global_norm is True (deprecated)
             apply_sample_norm: Whether to apply sample-wise normalization
         """
         self.size = size
         self.mean = mean
         self.std = std
-        self.apply_global_norm = apply_global_norm
-        self.global_stats = global_stats
+        # Global normalization is disabled
+        self.apply_global_norm = False
+        self.global_stats = None
         self.apply_sample_norm = apply_sample_norm
 
         # Base transform without normalization
@@ -87,25 +88,14 @@ class Synapse3DProcessor:
             transforms.ToTensor(),
         ])
 
-        # Full transform with normalization
-        if apply_global_norm and global_stats:
-            # Use global stats if provided
-            self.transform = transforms.Compose([
-                transforms.ToPILImage(),
-                transforms.Resize(size),
-                transforms.Grayscale(num_output_channels=1),
-                transforms.ToTensor(),
-                transforms.Normalize(mean=global_stats['mean'], std=global_stats['std']),
-            ])
-        else:
-            # Use default stats
-            self.transform = transforms.Compose([
-                transforms.ToPILImage(),
-                transforms.Resize(size),
-                transforms.Grayscale(num_output_channels=1),
-                transforms.ToTensor(),
-                transforms.Normalize(mean=mean, std=std),
-            ])
+        # Full transform with normalization (always using standard normalization)
+        self.transform = transforms.Compose([
+            transforms.ToPILImage(),
+            transforms.Resize(size),
+            transforms.Grayscale(num_output_channels=1),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=mean, std=std),
+        ])
 
     def __call__(self, frames, return_tensors=None, skip_normalization=False):
         """
@@ -122,31 +112,8 @@ class Synapse3DProcessor:
         if skip_normalization:
             processed_frames = [self.base_transform(frame) for frame in frames]
         else:
-            # For global normalization, use base transform first (without normalization)
-            # then apply global normalization once on the entire batch
-            if self.apply_global_norm and self.global_stats:
-                processed_frames = [self.base_transform(frame) for frame in frames]
-                pixel_values = torch.stack(processed_frames)
-                
-                # Apply global normalization once to the entire batch
-                mean = torch.tensor(self.global_stats['mean']).view(1, 1, 1).to(pixel_values.device)
-                std = torch.tensor(self.global_stats['std']).view(1, 1, 1).to(pixel_values.device)
-                
-                # Adjust mean and std if the input tensor is in [0,1] range but global stats are for [0,255] range
-                if pixel_values.max() <= 1.0 and mean.item() > 1.0:
-                    # Scale mean and std to [0,1] range
-                    mean = mean / 255.0
-                    std = std / 255.0
-                
-                pixel_values = (pixel_values - mean) / std
-                
-                if return_tensors == "pt":
-                    return {"pixel_values": pixel_values}
-                else:
-                    return pixel_values
-            else:
-                # Use regular transform with per-frame normalization
-                processed_frames = [self.transform(frame) for frame in frames]
+            # Use regular transform with per-frame normalization
+            processed_frames = [self.transform(frame) for frame in frames]
             
         pixel_values = torch.stack(processed_frames)
         if return_tensors == "pt":
@@ -160,23 +127,19 @@ class Synapse3DProcessor:
         
         Args:
             tensor: Input tensor to normalize
-            use_global_norm: Whether to use global normalization (overrides instance setting)
+            use_global_norm: Whether to use global normalization (deprecated, always False)
             use_sample_norm: Whether to use sample-wise normalization (overrides instance setting)
             
         Returns:
             Normalized tensor
         """
         # Determine normalization type
-        apply_global = self.apply_global_norm if use_global_norm is None else use_global_norm
         apply_sample = self.apply_sample_norm if use_sample_norm is None else use_sample_norm
         
-        # Sample-wise normalization takes precedence over global
+        # Sample-wise normalization
         if apply_sample:
             # Use sample-wise normalization
             return apply_sample_normalization(tensor)
-        elif apply_global and self.global_stats:
-            # Use global normalization
-            return apply_global_normalization(tensor, self.global_stats)
         else:
             # Use standard normalization
             if tensor.dim() == 5:  # [B, C, D, H, W]
@@ -284,50 +247,46 @@ class Synapse3DProcessor:
     @classmethod
     def create_with_global_norm(cls, data_loader, size=(80, 80), num_samples=None):
         """
-        Factory method to create processor with global normalization.
+        Factory method to create processor with standard normalization.
+        This method is kept for backward compatibility but no longer uses global normalization.
         
         Args:
-            data_loader: DataLoader to calculate global stats from
+            data_loader: DataLoader (not used for normalization)
             size: Size for the images
-            num_samples: Number of samples to use for calculating stats
+            num_samples: Number of samples (not used)
             
         Returns:
-            Processor instance with global normalization applied
+            Processor instance with standard normalization applied
         """
-        # Calculate global stats
-        global_stats = cls.calculate_global_stats(data_loader, num_samples)
-        
-        # Create processor with global normalization
+        print("Warning: Global normalization is deprecated. Using standard normalization instead.")
         return cls(
             size=size,
-            mean=global_stats['mean'],
-            std=global_stats['std'],
-            apply_global_norm=True,
-            global_stats=global_stats
+            mean=(0.485,),
+            std=(0.229,),
+            apply_global_norm=False,
+            global_stats=None
         )
         
     @classmethod
     def create_with_global_norm_from_volumes(cls, vol_data_dict, size=(80, 80)):
         """
-        Factory method to create processor with global normalization calculated directly from volumes.
+        Factory method to create processor with standard normalization.
+        This method is kept for backward compatibility but no longer uses global normalization.
         
         Args:
-            vol_data_dict: Dictionary mapping bbox names to (raw_vol, seg_vol, add_mask_vol) tuples
+            vol_data_dict: Dictionary mapping bbox names to (raw_vol, seg_vol, add_mask_vol) tuples (not used for normalization)
             size: Size for the images
             
         Returns:
-            Processor instance with global normalization applied
+            Processor instance with standard normalization applied
         """
-        # Calculate global stats from volumes
-        global_stats = cls.calculate_global_stats_from_volumes(vol_data_dict)
-        
-        # Create processor with global normalization
+        print("Warning: Global normalization is deprecated. Using standard normalization instead.")
         return cls(
             size=size,
-            mean=global_stats['mean'],
-            std=global_stats['std'],
-            apply_global_norm=True,
-            global_stats=global_stats
+            mean=(0.485,),
+            std=(0.229,),
+            apply_global_norm=False,
+            global_stats=None
         )
 
     @classmethod
