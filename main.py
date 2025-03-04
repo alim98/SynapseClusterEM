@@ -31,6 +31,7 @@ import plotly.express as px
 import matplotlib.cm as cm
 import matplotlib.colors as mcolors
 import glob
+import shutil
 
 # Import project modules
 from synapse_analysis.models.vgg3d import Vgg3D, load_model_from_checkpoint
@@ -38,7 +39,7 @@ from synapse_analysis.data.data_loader import (
     Synapse3DProcessor,
     load_all_volumes,
     load_synapse_data,
-    calculate_global_stats
+    # calculate_global_stats
 )
 from synapse_analysis.data.dataset import SynapseDataset
 from synapse_analysis.analysis.feature_extraction import extract_and_save_features
@@ -110,11 +111,11 @@ def config_to_args(config):
     args.batch_size = analysis.get('batch_size', 2)
     args.num_workers = analysis.get('num_workers', 0)
     
-    # Global normalization parameters
-    normalization = config.get('normalization', {})
-    args.use_global_norm = normalization.get('use_global_norm', False)
-    args.global_stats_path = normalization.get('global_stats_path')
-    args.num_samples_for_stats = normalization.get('num_samples_for_stats', 100)
+    # # Global normalization parameters
+    # normalization = config.get('normalization', {})
+    # args.use_global_norm = normalization.get('use_global_norm', False)
+    # args.global_stats_path = normalization.get('global_stats_path')
+    # args.num_samples_for_stats = normalization.get('num_samples_for_stats', 100)
     
     # Visualization parameters
     visualization = config.get('visualization', {})
@@ -130,97 +131,101 @@ def config_to_args(config):
     return args
 
 def parse_args():
-    """Parse command line arguments"""
-    parser = argparse.ArgumentParser(description="SynapseClusterEM Analysis Pipeline")
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(
+        description='Synapse cluster analysis from 3D EM data',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
     
-    # Config file
-    parser.add_argument('--config', type=str, help='Path to configuration YAML file')
+    # Mode selection
+    parser.add_argument('--mode', type=str, default='all',
+                        choices=['preprocess', 'extract', 'cluster', 'visualize', 'all'],
+                        help='Mode of operation')
     
-    # Workflow control
-    parser.add_argument('--mode', type=str, choices=['preprocess', 'extract', 'cluster', 'visualize', 'all'],
-                        default='all', help='Pipeline mode to run')
+    # Configuration file
+    parser.add_argument('--config', type=str, default='config.yaml',
+                        help='Path to a YAML configuration file (defaults to config.yaml)')
     
     # Data paths
-    parser.add_argument('--raw_base_dir', type=str, help='Directory containing raw image data')
-    parser.add_argument('--seg_base_dir', type=str, help='Directory containing segmentation data')
-    parser.add_argument('--add_mask_base_dir', type=str, default='', help='Directory containing additional mask data')
-    parser.add_argument('--excel_dir', type=str, help='Directory containing Excel files with synapse information')
-    parser.add_argument('--output_dir', type=str, default='outputs/main_results', help='Directory to save output files')
-    parser.add_argument('--checkpoint_path', type=str, help='Path to the VGG3D model checkpoint')
+    parser.add_argument('--raw_base_dir', type=str, default='data/raw',
+                        help='Base directory for raw data')
+    parser.add_argument('--seg_base_dir', type=str, default='data/seg',
+                        help='Base directory for segmentation data')
+    parser.add_argument('--add_mask_base_dir', type=str, default=None,
+                        help='Base directory for additional mask data')
+    parser.add_argument('--excel_dir', type=str, default='data',
+                        help='Directory containing Excel files with synapse data')
+    parser.add_argument('--output_dir', type=str, default='outputs',
+                        help='Output directory for results')
+    parser.add_argument('--checkpoint_path', type=str, required=False,
+                        default='hemibrain_production.checkpoint',
+                        help='Path to the model checkpoint')
     
-    # Dataset parameters
-    parser.add_argument('--bbox_names', type=str, nargs='+', default=['bbox1'], 
+    # Parameters
+    parser.add_argument('--bbox_names', nargs='+', default=['bbox1', 'bbox2'],
                         help='Names of bounding boxes to process')
-    parser.add_argument('--size', type=int, nargs=2, default=[80, 80], 
-                        help='Size of the 2D slices (height, width)')
-    parser.add_argument('--subvol_size', type=int, default=80, 
-                        help='Size of the 3D subvolume')
-    parser.add_argument('--num_frames', type=int, default=80, 
-                        help='Number of frames in the 3D volume')
-    
-    # Analysis parameters
-    parser.add_argument('--segmentation_types', type=int, nargs='+', default=[9, 10], 
-                        help='Segmentation types to analyze')
-    parser.add_argument('--alphas', type=float, nargs='+', default=[1.0], 
-                        help='Alpha values for blending')
-    parser.add_argument('--n_clusters', type=int, default=10, 
-                        help='Number of clusters for K-means')
-    parser.add_argument('--clustering_method', type=str, choices=['kmeans', 'dbscan'], default='kmeans',
+    parser.add_argument('--size', nargs=2, type=int, default=[80, 80],
+                        help='Size of each frame (height, width)')
+    parser.add_argument('--subvol_size', type=int, default=80,
+                        help='Size of the cubic subvolume to extract')
+    parser.add_argument('--num_frames', type=int, default=80,
+                        help='Number of frames to use')
+    parser.add_argument('--segmentation_types', nargs='+', type=int, default=[1],
+                        help='Segmentation types to process')
+    parser.add_argument('--alphas', nargs='+', type=float, default=[1.0],
+                        help='Alpha values for blending segmentation')
+    parser.add_argument('--n_clusters', type=int, default=10,
+                        help='Number of clusters for clustering')
+    parser.add_argument('--clustering_method', type=str, default='kmeans',
+                        choices=['kmeans', 'hierarchical', 'dbscan'],
                         help='Clustering method to use')
-    parser.add_argument('--batch_size', type=int, default=2, 
+    parser.add_argument('--batch_size', type=int, default=2,
                         help='Batch size for feature extraction')
-    parser.add_argument('--num_workers', type=int, default=0, 
-                        help='Number of workers for data loading')
-    
-    # Global normalization parameters
-    parser.add_argument('--use_global_norm', action='store_true', 
-                        help='Use global normalization')
-    parser.add_argument('--global_stats_path', type=str, 
-                        help='Path to saved global stats JSON (will calculate if not provided)')
-    parser.add_argument('--num_samples_for_stats', type=int, default=100, 
-                        help='Number of samples for global stats (0 for all)')
-    
-    # Visualization parameters
-    parser.add_argument('--create_3d_plots', action='store_true', 
-                        help='Create 3D visualizations')
-    parser.add_argument('--save_interactive', action='store_true', 
-                        help='Save interactive HTML visualizations')
-    
-    # System parameters
+    parser.add_argument('--num_workers', type=int, default=0,
+                        help='Number of worker processes for data loading')
+    # parser.add_argument('--use_global_norm', action='store_true',
+    #                     help='Use global normalization')
+    # parser.add_argument('--global_stats_path', type=str, default=None,
+    #                     help='Path to JSON file containing global normalization statistics')
+    # parser.add_argument('--num_samples_for_stats', type=int, default=100,
+    #                     help='Number of samples to use for calculating global statistics')
+    parser.add_argument('--create_3d_plots', action='store_true',
+                        help='Create 3D plots of the UMAP embeddings')
+    parser.add_argument('--save_interactive', action='store_true',
+                        help='Save interactive plots')
     parser.add_argument('--gpu_id', type=int, default=0,
                         help='GPU ID to use (-1 for CPU)')
     parser.add_argument('--seed', type=int, default=42,
                         help='Random seed for reproducibility')
+    parser.add_argument('--force_recompute', action='store_true',
+                        help='Force recomputation of features even if they already exist')
     parser.add_argument('--verbose', action='store_true',
-                        help='Enable verbose logging')
+                        help='Enable verbose output')
+    parser.add_argument('--device', type=str, default='cuda:0',
+                        help='Device to use for computation (e.g., "cpu", "cuda:0")')
     
     args = parser.parse_args()
     
-    # If config file is provided, load it and override with command line arguments
+    # Load configuration from file if provided
     if args.config:
-        config = load_config(args.config)
-        config_args = config_to_args(config)
-        
-        # Override config values with command line arguments if provided
-        for key, value in vars(args).items():
-            if key != 'config' and value is not None:
-                # For boolean flags that default to False
-                if isinstance(value, bool) and value:
-                    setattr(config_args, key, value)
-                # For other arguments that were explicitly provided AND not empty strings
-                elif not (isinstance(value, (bool, list)) and value == parser.get_default(key)) and not (isinstance(value, str) and value == ''):
-                    setattr(config_args, key, value)
-        
-        args = config_args
+        if os.path.exists(args.config):
+            with open(args.config, 'r') as f:
+                config = yaml.safe_load(f)
+                # Update args with config values (only for keys that exist in args)
+                arg_dict = vars(args)
+                for key, value in config.items():
+                    if key in arg_dict:
+                        arg_dict[key] = value
+                logger.info(f"Loaded configuration from {args.config}")
+        else:
+            logger.warning(f"Configuration file {args.config} not found. Using default values.")
     
-    # Validate required arguments
-    required_args = ['raw_base_dir', 'seg_base_dir', 'excel_dir', 'checkpoint_path']
-    missing_args = [arg for arg in required_args if getattr(args, arg, None) is None]
-    
-    if missing_args and args.mode not in ['cluster', 'visualize']:
-        logger.error(f"Missing required arguments: {', '.join(missing_args)}")
-        parser.print_help()
-        sys.exit(1)
+    # Set device based on gpu_id for backward compatibility
+    if not hasattr(args, 'device') or args.device is None:
+        if args.gpu_id >= 0 and torch.cuda.is_available():
+            args.device = f'cuda:{args.gpu_id}'
+        else:
+            args.device = 'cpu'
     
     return args
 
@@ -236,288 +241,302 @@ def set_seed(seed):
         torch.backends.cudnn.benchmark = False
     logger.info(f"Random seed set to {seed}")
 
-def preprocess_data(args):
-    """Preprocess data and calculate global normalization statistics if needed"""
-    logger.info("Starting data preprocessing...")
+# def preprocess_data(args):
+#     """Preprocess data and calculate global normalization statistics if needed"""
+#     logger.info("Starting data preprocessing...")
     
-    # Create output directory
-    os.makedirs(args.output_dir, exist_ok=True)
+#     # Create output directory
+#     os.makedirs(args.output_dir, exist_ok=True)
     
-    # If global normalization is requested but no stats file is provided, calculate them
-    if args.use_global_norm and not args.global_stats_path:
-        # Check if global stats file already exists in the output directory
-        global_stats_path = os.path.join(args.output_dir, 'global_stats.json')
+#     # If global normalization is requested but no stats file is provided, calculate them
+#     if args.use_global_norm and not args.global_stats_path:
+#         # Check if global stats file already exists in the output directory
+#         global_stats_path = os.path.join(args.output_dir, 'global_stats.json')
         
-        if os.path.exists(global_stats_path):
-            logger.info(f"Global statistics file {global_stats_path} already exists. Skipping calculation.")
-            args.global_stats_path = global_stats_path
-        else:
-            logger.info("Calculating global normalization statistics...")
+#         if os.path.exists(global_stats_path):
+#             logger.info(f"Global statistics file {global_stats_path} already exists. Skipping calculation.")
+#             args.global_stats_path = global_stats_path
+#         else:
+#             logger.info("Calculating global normalization statistics...")
             
-            # Calculate global stats
-            global_stats = calculate_global_stats(
-                raw_base_dir=args.raw_base_dir,
-                seg_base_dir=args.seg_base_dir,
-                add_mask_base_dir=args.add_mask_base_dir,
-                excel_dir=args.excel_dir,
-                segmentation_types=args.segmentation_types,
-                bbox_names=args.bbox_names,
-                num_samples=args.num_samples_for_stats
-            )
+#             # Calculate global stats
+#             global_stats = calculate_global_stats(
+#                 raw_base_dir=args.raw_base_dir,
+#                 seg_base_dir=args.seg_base_dir,
+#                 add_mask_base_dir=args.add_mask_base_dir,
+#                 excel_dir=args.excel_dir,
+#                 segmentation_types=args.segmentation_types,
+#                 bbox_names=args.bbox_names,
+#                 num_samples=args.num_samples_for_stats
+#             )
             
-            # Save global stats
-            with open(global_stats_path, 'w') as f:
-                json.dump(global_stats, f)
+#             # Save global stats
+#             with open(global_stats_path, 'w') as f:
+#                 json.dump(global_stats, f)
             
-            args.global_stats_path = global_stats_path
-            logger.info(f"Global statistics saved to {global_stats_path}")
+#             args.global_stats_path = global_stats_path
+#             logger.info(f"Global statistics saved to {global_stats_path}")
     
-    return args
+#     return args
 
 def extract_features(args):
     """Extract features from synapse volumes"""
     logger.info("Starting feature extraction...")
+    logger.info(f"Using device: {args.device}")
     
-    # Set device
-    if args.gpu_id >= 0 and torch.cuda.is_available():
-        device = torch.device(f'cuda:{args.gpu_id}')
-    else:
-        device = torch.device('cpu')
-    logger.info(f"Using device: {device}")
-    
-    # Log GPU information
-    if torch.cuda.is_available():
-        logger.info(f"GPU available: {torch.cuda.is_available()}")
-        logger.info(f"GPU count: {torch.cuda.device_count()}")
-        logger.info(f"GPU name: {torch.cuda.get_device_name(0)}")
-        logger.info(f"gpu_id parameter value: {args.gpu_id}")
-    
-    # Load global normalization statistics if available
-    if args.use_global_norm:
-        if args.global_stats_path:
-            global_stats_path = args.global_stats_path
+    # Check GPU availability and set device
+    if args.device.startswith('cuda'):
+        if torch.cuda.is_available():
+            logger.info(f"GPU available: {torch.cuda.is_available()}")
+            logger.info(f"GPU count: {torch.cuda.device_count()}")
+            device_name = torch.cuda.get_device_name(int(args.device.split(':')[1]) if ':' in args.device else 0)
+            logger.info(f"GPU name: {device_name}")
+            logger.info(f"gpu_id parameter value: {args.gpu_id}")
         else:
-            global_stats_path = os.path.join(args.output_dir, "global_stats.json")
-        
-        if os.path.exists(global_stats_path):
-            with open(global_stats_path, 'r') as f:
-                global_stats = json.load(f)
-            logger.info(f"Loaded global statistics from {global_stats_path}")
-        else:
-            logger.warning(f"Global statistics file not found at {global_stats_path}")
-            global_stats = {"mean": 0.0, "std": 1.0}
+            logger.warning("GPU not available, falling back to CPU")
+            args.device = 'cpu'
+    
+    # Load model
+    model = Vgg3D(input_size=tuple(args.size) + (args.num_frames,), fmaps=24, 
+                 output_classes=7, input_fmaps=1)
+    model = load_model_from_checkpoint(model, args.checkpoint_path)
+    model.to(args.device)
+    
+    # Get output directory
+    if args.output_dir:
+        output_dir = Path(args.output_dir)
+        os.makedirs(output_dir, exist_ok=True)
     else:
-        global_stats = None
+        output_dir = Path('outputs')
+        os.makedirs(output_dir, exist_ok=True)
+    
+    # Check if add_mask_base_dir exists
+    if args.add_mask_base_dir and not os.path.exists(args.add_mask_base_dir):
+        logger.warning(f"Additional mask directory {args.add_mask_base_dir} not found. Using None.")
+        args.add_mask_base_dir = None
+    
+    # Load global stats if needed
+    # global_stats = None
+    # if args.use_global_norm and args.global_stats_path and os.path.exists(args.global_stats_path):
+    #     try:
+    #         with open(args.global_stats_path, 'r') as f:
+    #             global_stats = json.load(f)
+    #         logger.info(f"Loaded global stats from {args.global_stats_path}")
+    #     except Exception as e:
+    #         logger.error(f"Error loading global stats: {e}")
+    #         global_stats = None
     
     # Process each segmentation type
-    all_features = []
-    
-    # Debug print for Excel directory
-    print(f"Excel directory: {args.excel_dir}")
-    print(f"Excel directory exists: {os.path.exists(args.excel_dir)}")
-    for bbox in args.bbox_names:
-        excel_path = os.path.join(args.excel_dir, f"{bbox}.xlsx")
-        print(f"Looking for Excel file: {excel_path}")
-        print(f"Excel file exists: {os.path.exists(excel_path)}")
-    
-    # Load synapse data
-    try:
-        synapse_data = load_synapse_data(
-            args.bbox_names,
-            args.excel_dir
-        )
-    except Exception as e:
-        logger.error(f"Error loading synapse data: {e}")
-        raise
-    
-    # Load volumes
-    volumes = load_all_volumes(
-        bbox_names=args.bbox_names,
-        raw_base_dir=args.raw_base_dir,
-        seg_base_dir=args.seg_base_dir,
-        add_mask_base_dir=args.add_mask_base_dir
-    )
-    
-    # Create a processor
-    processor = Synapse3DProcessor(
-        size=tuple(args.size),
-        apply_global_norm=args.use_global_norm,
-        global_stats=global_stats
-    )
-    
-    # Create dataset
-    dataset = SynapseDataset(
-        vol_data_dict=volumes,
-        synapse_df=synapse_data,
-        processor=processor,
-        segmentation_type=args.segmentation_types[0],
-        subvol_size=args.subvol_size,
-        alpha=args.alphas[0]  # Pass alpha from config
-    )
-    
-    # Create the model instance first
-    model = Vgg3D()
-    # Then load the checkpoint
-    model = load_model_from_checkpoint(model, args.checkpoint_path)
-    model.eval()
-    
-    # Extract features for each segmentation type
-    features_df_list = []
-    
+    feature_files = []
     for seg_type in args.segmentation_types:
         logger.info(f"Processing segmentation type {seg_type}...")
-        
-        # Create output directory for this segmentation type
-        seg_output_dir = os.path.join(args.output_dir, f"seg_type_{seg_type}")
+        seg_output_dir = output_dir / f"seg_type_{seg_type}"
         os.makedirs(seg_output_dir, exist_ok=True)
         
-        # Check if feature CSV already exists
-        norm_suffix = "_global_norm" if args.use_global_norm else ""
-        csv_filename = f"features_seg{seg_type}_alpha{str(args.alphas[0]).replace('.', '_')}{norm_suffix}.csv"
-        csv_filepath = os.path.join(seg_output_dir, csv_filename)
-        
-        if os.path.exists(csv_filepath):
-            logger.info(f"Feature file {csv_filepath} already exists. Skipping feature extraction.")
-            # Load the existing features
-            features_df = pd.read_csv(csv_filepath)
+        # Download necessary files from Google Drive if in Colab
+        if 'google.colab' in sys.modules:
+            import google.colab
+            from google.colab import drive
+            drive.mount('/content/drive', force_remount=True)
+            drive_dir = Path('/content/drive/MyDrive/SynapseClusterEM_outputs')
+            os.makedirs(drive_dir, exist_ok=True)
         else:
-            # Load synapse data
-            synapse_data = load_synapse_data(
-                excel_dir=args.excel_dir,
-                bbox_names=args.bbox_names
-            )
+            drive_dir = None
+        
+        # Create samples for visualization
+        try:
+            sample_vis_dir = seg_output_dir / "sample_visualizations"
+            os.makedirs(sample_vis_dir, exist_ok=True)
             
+            # Load first few samples to generate visualizations
+            excel_dir = args.excel_dir
+            print(f"Excel directory: {excel_dir}")
+            print(f"Excel directory exists: {os.path.exists(excel_dir)}")
+            
+            for bbox in args.bbox_names[:2]:  # First 2 bounding boxes
+                excel_path = os.path.join(excel_dir, f"{bbox}.xlsx")
+                print(f"Looking for Excel file: {excel_path}")
+                print(f"Excel file exists: {os.path.exists(excel_path)}")
+                
+            # Load synapse data
+            synapse_data = load_synapse_data(args.bbox_names, args.excel_dir)
+            if len(synapse_data) == 0:
+                logger.error("No synapse data found. Check excel_dir path.")
+                return []
+                
             # Load volumes
             volumes = load_all_volumes(
-                bbox_names=args.bbox_names,
-                raw_base_dir=args.raw_base_dir,
-                seg_base_dir=args.seg_base_dir,
-                add_mask_base_dir=args.add_mask_base_dir
+                args.bbox_names, 
+                args.raw_base_dir, 
+                args.seg_base_dir, 
+                args.add_mask_base_dir
             )
+            if len(volumes) == 0:
+                logger.error("No volumes loaded. Check data paths.")
+                return []
             
-            # Create a processor
-            processor = Synapse3DProcessor(
-                size=tuple(args.size),
-                apply_global_norm=args.use_global_norm,
-                global_stats=global_stats
-            )
+            # Create visualizations for a few samples
+            num_samples = min(20, len(synapse_data))
+            sample_indices = np.random.choice(len(synapse_data), num_samples, replace=False)
             
-            # Create dataset
-            dataset = SynapseDataset(
-                vol_data_dict=volumes,
-                synapse_df=synapse_data,
-                processor=processor,
-                segmentation_type=seg_type,
-                subvol_size=args.subvol_size,
-                alpha=args.alphas[0]  # Pass alpha from config
-            )
-            # Visualize sample center slices to verify model input
-            def visualize_sample_slices(dataset, num_samples=5, output_dir=None):
-                """Visualize center slices of a few samples to verify model input"""
-                if num_samples > len(dataset):
-                    num_samples = len(dataset)
-                    
-                # Create output directory if needed
-                if output_dir:
-                    os.makedirs(output_dir, exist_ok=True)
+            for i, idx in enumerate(sample_indices):
+                syn_info = synapse_data.iloc[idx]
+                bbox_name = syn_info['bbox_name']
                 
-                # Get a few samples
-                indices = np.linspace(0, len(dataset)-1, num_samples).astype(int)
+                if bbox_name not in volumes:
+                    continue
+                    
+                raw_vol, seg_vol, add_mask_vol = volumes[bbox_name]
                 
-                for i, idx in enumerate(indices):
-                    volume, syn_info, bbox_name = dataset[idx]
-                    # Shape: [C, D, H, W]
-                    synapse_id = syn_info['Var1'] if 'Var1' in syn_info else idx
-                    
-                    # Get center slice
-                    center_slice_idx = volume.shape[1] // 2
-                    center_slice = volume[:, center_slice_idx, :, :]  # Shape: [C, H, W]
-                    
-                    # Calculate appropriate min and max values for display
-                    vmin = center_slice.min()
-                    vmax = center_slice.max()
-                    
-                    # Create a figure with subplots for each channel
-                    num_channels = center_slice.shape[0]
-                    fig_width = 20
-                    fig_height = 5
-                    
-                    fig, axes = plt.subplots(1, num_channels, figsize=(fig_width, fig_height))
-                    
-                    # Ensure axes is always a list-like object
-                    if num_channels == 1:
-                        axes = [axes]
-                        
-                    # Plot each channel with enhanced contrast
-                    for c in range(num_channels):
-                        # Get the slice data for this channel
-                        slice_data = center_slice[c]
-                        
-                        # Plot the image with appropriate value range
-                        axes[c].imshow(slice_data, cmap='gray', vmin=vmin, vmax=vmax)
-                        axes[c].set_title(f"Channel {c} - min={vmin:.2f}, max={vmax:.2f}")
-                        axes[c].axis('off')
-                    
-                    # Set a title for the entire figure
-                    plt.suptitle(f"Sample {i+1} - bbox: {bbox_name}, id: {synapse_id}")
-                    plt.tight_layout()
-                    
-                    # Save or show the figure
-                    if output_dir:
-                        filename = f"sample_{i+1}_bbox_{bbox_name}_id_{synapse_id}.png"
-                        filepath = os.path.join(output_dir, filename)
-                        plt.savefig(filepath, dpi=100, bbox_inches='tight')
-                        plt.close()
-                    else:
-                        plt.show()
-                    
-                if output_dir:
-                    logger.info(f"Sample visualizations saved to {output_dir}")
+                central_coord = (int(syn_info['central_coord_1']), 
+                               int(syn_info['central_coord_2']), 
+                               int(syn_info['central_coord_3']))
+                side1_coord = (int(syn_info['side_1_coord_1']), 
+                              int(syn_info['side_1_coord_2']), 
+                              int(syn_info['side_1_coord_3']))
+                side2_coord = (int(syn_info['side_2_coord_1']), 
+                              int(syn_info['side_2_coord_2']), 
+                              int(syn_info['side_2_coord_3']))
+                
+                # Create segmented cube
+                from synapse_analysis.utils.processing import create_segmented_cube
+                
+                segmented_cube = create_segmented_cube(
+                    raw_vol=raw_vol,
+                    seg_vol=seg_vol,
+                    add_mask_vol=add_mask_vol,
+                    central_coord=central_coord,
+                    side1_coord=side1_coord,
+                    side2_coord=side2_coord,
+                    segmentation_type=seg_type,
+                    subvolume_size=args.subvol_size,
+                    alpha=args.alphas[0],
+                    bbox_name=bbox_name
+                )
+                
+                # Save central slice
+                central_slice = segmented_cube[:, :, segmented_cube.shape[2] // 2, :]
+                slice_img = central_slice[:, :, central_slice.shape[2] // 2]
+                
+                plt.figure(figsize=(8, 8))
+                plt.imshow(slice_img, cmap='gray')
+                plt.title(f"Sample {i+1}: {bbox_name}, Synapse {syn_info['Var1']}")
+                plt.axis('off')
+                
+                sample_vis_path = sample_vis_dir / f"sample_{i+1}_{bbox_name}_synapse_{syn_info['Var1']}.png"
+                plt.savefig(sample_vis_path, dpi=150, bbox_inches='tight')
+                plt.close()
+                
+            logger.info(f"Sample visualizations saved to {sample_vis_dir}")
+            # Copy visualizations to Google Drive if in Colab
+            if drive_dir:
+                drive_vis_dir = drive_dir / "sample_visualizations"
+                os.makedirs(drive_vis_dir, exist_ok=True)
+                for f in sample_vis_dir.glob("*.png"):
+                    shutil.copy(f, drive_vis_dir / f.name)
             
-            # Call the visualization function
-            sample_viz_dir = visualize_sample_slices(
-                dataset=dataset,
-                num_samples=5,
-                output_dir=os.path.join(seg_output_dir, "sample_visualizations")
-            )
-            logger.info(f"Sample visualizations created at {sample_viz_dir}")
-            
-            # Extract features
-            csv_filepath = extract_and_save_features(
-                model=model,
-                dataset=dataset,
-                seg_type=seg_type,
-                alpha=args.alphas[0],  # Using the first alpha value
-                output_dir=seg_output_dir,
-                batch_size=args.batch_size,
-                num_workers=args.num_workers,
-                apply_global_norm=args.use_global_norm,
-                global_stats=global_stats
-            )
-            
-            # Load the saved features from CSV
-            features_df = pd.read_csv(csv_filepath)
+            logger.info(f"Sample visualizations created at {drive_dir / 'sample_visualizations' if drive_dir else None}")
+        except Exception as e:
+            logger.warning(f"Error creating sample visualizations: {e}")
         
-        # Add segmentation type to features
-        features_df['segmentation_type'] = seg_type
-        features_df_list.append(features_df)
+        # For each alpha value
+        for alpha in args.alphas:
+            try:
+                # Check if features already exist
+                feature_filename = f"features_segtype_{seg_type}_alpha_{alpha:.1f}.csv"
+                feature_path = seg_output_dir / feature_filename
+                
+                if os.path.exists(feature_path) and not args.force_recompute:
+                    logger.info(f"Features already exist at {feature_path}. Use --force_recompute to recompute.")
+                    feature_files.append(str(feature_path))
+                    continue
+                    
+                # Create dataset and extract features
+                if 'synapse_data' not in locals() or 'volumes' not in locals():
+                    # Load synapse data
+                    synapse_data = load_synapse_data(
+                        bbox_names=args.bbox_names,
+                        excel_dir=args.excel_dir
+                    )
+                    
+                    # Load volumes
+                    volumes = load_all_volumes(
+                        bbox_names=args.bbox_names,
+                        raw_base_dir=args.raw_base_dir,
+                        seg_base_dir=args.seg_base_dir,
+                        add_mask_base_dir=args.add_mask_base_dir
+                    )
+                
+                # Create a processor with sample-wise normalization enabled
+                processor = Synapse3DProcessor(
+                    size=tuple(args.size),
+                    apply_sample_norm=True  # Enable sample-wise normalization
+                )
+                
+                # Create dataset
+                dataset = SynapseDataset(
+                    vol_data_dict=volumes,
+                    synapse_df=synapse_data,
+                    processor=processor,
+                    segmentation_type=seg_type,
+                    subvol_size=args.subvol_size,
+                    num_frames=args.num_frames,
+                    alpha=alpha
+                )
+                
+                # Extract features
+                feature_path = extract_and_save_features(
+                    model=model,
+                    dataset=dataset,
+                    seg_type=seg_type,
+                    alpha=alpha,
+                    output_dir=str(seg_output_dir),
+                    batch_size=args.batch_size,
+                    num_workers=args.num_workers,
+                    drive_dir=str(drive_dir) if drive_dir else None
+                )
+                
+                feature_files.append(feature_path)
+                
+            except Exception as e:
+                logger.error(f"Error processing segmentation type {seg_type} with alpha {alpha}: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
     
-    # Combine features from all segmentation types
-    if len(features_df_list) > 0:
-        combined_features_df = pd.concat(features_df_list, ignore_index=True)
-        combined_features_path = os.path.join(args.output_dir, 'combined_features.csv')
-        
-        # Check if combined features file already exists
-        if not os.path.exists(combined_features_path):
-            combined_features_df.to_csv(combined_features_path, index=False)
-            logger.info(f"Combined features saved to {combined_features_path}")
-        else:
-            logger.info(f"Combined features file {combined_features_path} already exists. Skipping save.")
-        
-        return combined_features_df
-    else:
-        logger.warning("No features were extracted!")
-        return None
+    # Combine features if we have multiple feature files
+    if len(feature_files) > 0:
+        try:
+            combined_features_path = output_dir / "combined_features.csv"
+            
+            # Load and combine all feature files
+            dfs = []
+            for file_path in feature_files:
+                if os.path.exists(file_path):
+                    df = pd.read_csv(file_path)
+                    # Add segmentation type and alpha if they're not already in the file
+                    if 'seg_type' not in df.columns:
+                        seg_type_str = os.path.basename(file_path).split('_')[2]
+                        df['seg_type'] = int(seg_type_str) if seg_type_str.isdigit() else seg_type_str
+                    if 'alpha' not in df.columns:
+                        alpha_str = os.path.basename(file_path).split('_')[-1].replace('.csv', '')
+                        df['alpha'] = float(alpha_str)
+                    dfs.append(df)
+            
+            if dfs:
+                combined_df = pd.concat(dfs, ignore_index=True)
+                combined_df.to_csv(combined_features_path, index=False)
+                logger.info(f"Combined features saved to {combined_features_path}")
+                
+                # Copy to Google Drive if in Colab
+                if drive_dir:
+                    drive_combined_path = drive_dir / "combined_features.csv"
+                    combined_df.to_csv(drive_combined_path, index=False)
+            else:
+                logger.warning("No feature files could be loaded. Combined features not created.")
+        except Exception as e:
+            logger.error(f"Error combining features: {e}")
+    
+    return feature_files
 
 def perform_cluster_analysis(args, features_df=None):
     """Perform clustering analysis on extracted features"""
@@ -811,61 +830,116 @@ def create_visualizations(args, clustered_df=None, clustering_model=None):
     logger.info(f"All visualizations saved to {viz_output_dir}")
 
 def main():
-    """Main function to run the complete analysis pipeline"""
-    # Parse command line arguments
+    """Main entry point of the application."""
+    # Parse arguments
     args = parse_args()
     
+    # Set up logging
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    if args.output_dir:
+        output_dir = Path(args.output_dir)
+        os.makedirs(output_dir, exist_ok=True)
+        log_file = output_dir / f"synapse_analysis_{timestamp}.log"
+        file_handler = logging.FileHandler(log_file)
+        file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+        logger.addHandler(file_handler)
+        logger.info(f"Logging to {log_file}")
+    
+    # Fix any path issues in the configuration
+    if hasattr(args, 'add_mask_base_dir') and args.add_mask_base_dir == "":
+        args.add_mask_base_dir = None
+        
     # Set random seed for reproducibility
-    set_seed(args.seed)
+    random.seed(args.seed)
+    np.random.seed(args.seed)
+    torch.manual_seed(args.seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(args.seed)
+    logger.info(f"Random seed set to {args.seed}")
     
-    # Create output directory
-    os.makedirs(args.output_dir, exist_ok=True)
-    
-    # Set up file logging
-    log_file = setup_file_logger(args.output_dir)
-    logger.info(f"Logging to {log_file}")
-    
-    # Set logging level based on verbose flag
-    if args.verbose:
-        logger.setLevel(logging.INFO)
-    else:
-        logger.setLevel(logging.WARNING)
-    
-    # Log the arguments
+    # Log the parameters
     logger.info("Starting SynapseClusterEM analysis with the following parameters:")
-    for arg, value in vars(args).items():
-        logger.info(f"  {arg}: {value}")
+    for key, value in vars(args).items():
+        logger.info(f"  {key}: {value}")
     
-    # Save the arguments for reproducibility
-    args_file = os.path.join(args.output_dir, 'args.json')
-    with open(args_file, 'w') as f:
-        json.dump(vars(args), f, indent=2)
+    # Backward compatibility for flattened config files
+    try:
+        if os.path.exists(args.config):
+            with open(args.config, 'r') as f:
+                config = yaml.safe_load(f)
+                if 'data_paths' in config:
+                    paths = config['data_paths']
+                    for key in ['raw_base_dir', 'seg_base_dir', 'add_mask_base_dir', 'excel_dir', 'output_dir', 'checkpoint_path']:
+                        if key in paths:
+                            setattr(args, key, paths[key])
+    except (TypeError, AttributeError):
+        logger.debug("Skipping backward compatibility check for config file.")
     
-    # Run the selected mode(s)
-    features_df = None
-    clustered_df = None
-    clustering_model = None
-    
+    # Run the pipeline according to the selected mode
     try:
         if args.mode in ['preprocess', 'all']:
-            args = preprocess_data(args)
-        
+            logger.info("Starting data preprocessing...")
+            
         if args.mode in ['extract', 'all']:
-            features_df = extract_features(args)
-        
-        if args.mode in ['cluster', 'all'] and (features_df is not None or args.mode != 'all'):
+            logger.info("Starting feature extraction...")
+            feature_files = extract_features(args)
+            
+            # If feature extraction succeeded, get the DataFrame
+            if feature_files:
+                # Load combined features if they exist
+                combined_file = os.path.join(args.output_dir, "combined_features.csv")
+                if os.path.exists(combined_file):
+                    features_df = pd.read_csv(combined_file)
+                else:
+                    # Try to load the first feature file
+                    if os.path.exists(feature_files[0]):
+                        features_df = pd.read_csv(feature_files[0])
+                    else:
+                        features_df = None
+            else:
+                features_df = None
+                
+        if args.mode in ['cluster', 'all'] and (args.mode != 'all' or 'features_df' in locals()):
+            logger.info("Starting clustering analysis...")
+            if args.mode == 'cluster' and 'features_df' not in locals():
+                # Load combined features if we're only doing clustering
+                combined_file = os.path.join(args.output_dir, "combined_features.csv")
+                if os.path.exists(combined_file):
+                    features_df = pd.read_csv(combined_file)
+                else:
+                    logger.error("No features found. Please run the 'extract' mode first.")
+                    return
+            
             clustered_df, clustering_model = perform_cluster_analysis(args, features_df)
-        
-        if args.mode in ['visualize', 'all'] and (clustered_df is not None or args.mode != 'all'):
-            create_visualizations(args, clustered_df, clustering_model)
-        
-        logger.info("SynapseClusterEM analysis completed successfully!")
-        
-    except Exception as e:
-        logger.exception(f"Error during analysis: {str(e)}")
-        return 1
+            
+        if args.mode in ['visualize', 'all'] and (args.mode != 'all' or 'clustered_df' in locals()):
+            logger.info("Creating visualizations...")
+            if args.mode == 'visualize' and 'clustered_df' not in locals():
+                # Load clustered data if we're only doing visualization
+                clustered_file = os.path.join(args.output_dir, "clustering", "clustered_data.csv")
+                if os.path.exists(clustered_file):
+                    clustered_df = pd.read_csv(clustered_file)
+                else:
+                    logger.error("No clustered data found. Please run the 'cluster' mode first.")
+                    return
+                    
+                # Load features for visualization
+                combined_file = os.path.join(args.output_dir, "combined_features.csv")
+                if os.path.exists(combined_file):
+                    features_df = pd.read_csv(combined_file)
+                else:
+                    logger.error("No features found. Visualizations will be limited.")
+                    features_df = None
+            
+            create_visualizations(args, clustered_df, features_df)
     
-    return 0
+    except Exception as e:
+        logger.error(f"Error during analysis: {str(e)}")
+        if args.verbose:
+            import traceback
+            logger.error(traceback.format_exc())
+    
+    logger.info("SynapseClusterEM analysis completed.")
 
 if __name__ == "__main__":
     sys.exit(main()) 

@@ -82,10 +82,16 @@ def extract_features(model: nn.Module,
     synapse_info = []
     bbox_names = []
     
+    # Get the device of the model
+    device = next(model.parameters()).device
+    
     model.eval()
     with torch.no_grad():
         for batch in data_loader:
             inputs, info, bbox = batch
+            
+            # Move inputs to the same device as the model
+            inputs = inputs.to(device)
             
             # Reshape inputs to match model expectations
             # Model expects [batch_size, channels, depth, height, width]

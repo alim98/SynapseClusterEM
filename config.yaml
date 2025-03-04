@@ -5,44 +5,46 @@
 mode: "all"  # Options: preprocess, extract, cluster, visualize, all
 
 # Data paths
-data_paths:
-  raw_base_dir: "data/7_bboxes_plus_seg/raw"
-  seg_base_dir: "data/7_bboxes_plus_seg/seg"
-  add_mask_base_dir: "data/vesicle_cloud__syn_interface__mitochondria_annotation"
-  excel_dir: "data/7_bboxes_plus_seg"  # Contains bbox1.xlsx through bbox7.xlsx
-  output_dir: "outputs/main_results"
-  checkpoint_path: "hemibrain_production.checkpoint"
+raw_base_dir: "data/7_bboxes_plus_seg/raw"
+seg_base_dir: "data/7_bboxes_plus_seg/seg"
+add_mask_base_dir: "data/vesicle_cloud__syn_interface__mitochondria_annotation"
+excel_dir: "data/7_bboxes_plus_seg"  # Contains bbox1.xlsx through bbox7.xlsx
+output_dir: "outputs/main_results"
+checkpoint_path: "hemibrain_production.checkpoint"
 
 # Dataset parameters
-dataset:
-  bbox_names:
-    - "bbox1"
-    - "bbox2"
-    # - "bbox3"
-    # - "bbox4"
-    # - "bbox5"
-    # - "bbox6"
-    # - "bbox7"
-  size: [80, 80]  # [height, width]
-  subvol_size: 80
-  num_frames: 80
+bbox_names:
+  - "bbox1"
+  - "bbox2"
+  # - "bbox3"
+  # - "bbox4"
+  # - "bbox5"
+  # - "bbox6"
+  # - "bbox7"
+size: [80, 80]  # [height, width]
+subvol_size: 80
+num_frames: 80
 
 # Analysis parameters
-analysis:
-  segmentation_types: [1]
-  alphas: [1.0]
-  n_clusters: 10
-  clustering_method: "kmeans"  # Options: kmeans, dbscan
-  batch_size: 2
-  num_workers: 0
+segmentation_types: [10]
+alphas: [1.0]
+n_clusters: 10
+clustering_method: "kmeans"  # Options: kmeans, dbscan
+batch_size: 1
+num_workers: 0
+
+# Normalization parameters
+use_global_norm: false
+global_stats_path: null
+num_samples_for_stats: 100
 
 # Visualization parameters
-visualization:
-  create_3d_plots: true
-  save_interactive: true
+create_3d_plots: true
+save_interactive: true
 
 # System parameters
-system:
-  gpu_id: 0  # GPU ID to use (-1 for CPU)
-  seed: 42  # Random seed for reproducibility
-  verbose: true  # Enable verbose logging 
+gpu_id: 0  # GPU ID to use (-1 for CPU)
+device: "cuda:0"  # Device to use (cpu, cuda:0, etc.)
+seed: 42  # Random seed for reproducibility
+verbose: true  # Enable verbose logging
+force_recompute: false  # Force recomputation of features 
