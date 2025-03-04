@@ -361,28 +361,28 @@ def main():
     
     synapse_df = load_synapse_data(args.bbox_names, args.excel_dir)
     
-    # Initialize processor with global normalization if requested
-    if args.use_global_norm:
-        # Calculate global statistics from volumes
-        global_stats = Synapse3DProcessor.calculate_global_stats_from_volumes(vol_data_dict)
+    # # Initialize processor with global normalization if requested
+    # if args.use_global_norm:
+    #     # Calculate global statistics from volumes
+    #     # global_stats = Synapse3DProcessor.calculate_global_stats_from_volumes(vol_data_dict)
         
-        # Save global stats for reference
-        stats_file = output_dir / 'global_stats.json'
-        with open(stats_file, 'w') as f:
-            json.dump(global_stats, f)
-        print(f"  Global stats saved to {stats_file}")
-        print(f"  Global mean: {global_stats['mean']}")
-        print(f"  Global std: {global_stats['std']}")
+    #     # Save global stats for reference
+    #     # stats_file = output_dir / 'global_stats.json'
+    #     # with open(stats_file, 'w') as f:
+    #     #     json.dump(global_stats, f)
+    #     # print(f"  Global stats saved to {stats_file}")
+    #     # print(f"  Global mean: {global_stats['mean']}")
+    #     # print(f"  Global std: {global_stats['std']}")
         
-        # Create processor with global normalization
-        processor = Synapse3DProcessor(
-            size=(80, 80),
-            apply_global_norm=True,
-            global_stats=global_stats
-        )
-    else:
-        # Use default processor without global normalization
-        processor = Synapse3DProcessor(size=(80, 80))
+    #     # Create processor with global normalization
+    #     processor = Synapse3DProcessor(
+    #         size=(80, 80),
+    #         apply_global_norm=True,
+    #         global_stats=global_stats
+    #     )
+    # else:
+    #     # Use default processor without global normalization
+    processor = Synapse3DProcessor(size=(80, 80))
     
     # Create dataset with the specified segmentation type and alpha
     dataset = SynapseDataset(

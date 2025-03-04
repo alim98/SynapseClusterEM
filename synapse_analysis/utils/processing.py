@@ -279,18 +279,59 @@ def create_segmented_cube(raw_vol: np.ndarray,
     # Convert to float32
     sub_raw = sub_raw.astype(np.float32)
     
-    # Create RGB version
-    sub_rgb = np.repeat(sub_raw[..., np.newaxis], 3, axis=-1)
+    # Log raw data statistics
+    print(f"[DEBUG] Raw data stats for {bbox_name}:")
+    print(f"[DEBUG] - Shape: {sub_raw.shape}")
+    print(f"[DEBUG] - Min value: {np.min(sub_raw)}")
+    print(f"[DEBUG] - Max value: {np.max(sub_raw)}")
+    print(f"[DEBUG] - Mean value: {np.mean(sub_raw)}")
+    print(f"[DEBUG] - Std dev: {np.std(sub_raw)}")
     
-    # Apply mask with simple gray overlay
-    # Where mask is False, use a fixed value of 128 (medium gray in 0-255 range)
+    # Log mask statistics
+    mask_coverage = np.sum(sub_combined_mask) / sub_combined_mask.size * 100
+    print(f"[DEBUG] Mask stats for {bbox_name}:")
+    print(f"[DEBUG] - Mask coverage: {mask_coverage:.2f}%")
+    
+    # First normalize the raw data to 0-255 range for consistent visualization
+    min_val = np.min(sub_raw)
+    max_val = np.max(sub_raw)
+    
+    # Avoid division by zero
+    if max_val > min_val:
+        normalized_raw = 255.0 * (sub_raw - min_val) / (max_val - min_val)
+        print(f"[DEBUG] Normalized data from range [{min_val}, {max_val}] to [0, 255]")
+    else:
+        normalized_raw = np.zeros_like(sub_raw)
+        print(f"[DEBUG] Warning: Uniform intensity image (min=max={min_val}), set to zeros")
+    
+    # Log normalized data statistics
+    print(f"[DEBUG] Normalized data stats:")
+    print(f"[DEBUG] - Min value: {np.min(normalized_raw)}")
+    print(f"[DEBUG] - Max value: {np.max(normalized_raw)}")
+    print(f"[DEBUG] - Mean value: {np.mean(normalized_raw)}")
+    
+    # Now apply mask with fixed gray value (128 is middle of 0-255 range)
     gray_value = 128.0
-    mask_3d = sub_combined_mask[..., np.newaxis]  # Add dimension for broadcasting
+    print(f"[DEBUG] Using gray value: {gray_value}")
     
-    # Simple blending between raw data and gray
-    result = np.where(mask_3d, sub_rgb, gray_value)
+    # Apply mask overlay
+    result = np.where(sub_combined_mask, normalized_raw, gray_value)
+    
+    # Log result statistics
+    print(f"[DEBUG] Result stats after masking:")
+    print(f"[DEBUG] - Min value: {np.min(result)}")
+    print(f"[DEBUG] - Max value: {np.max(result)}")
+    print(f"[DEBUG] - Mean value: {np.mean(result)}")
+    print(f"[DEBUG] - Unique values in masked regions: {np.unique(result[~sub_combined_mask])}")
+    
+    # Add a dimension to match expected output format [H, W, 1, D]
+    # This maintains compatibility with existing code but uses only 1 channel
+    result = result[..., np.newaxis]
     
     # Transpose dimensions to match expected output format [H, W, C, D]
     overlaid_cube = np.transpose(result, (0, 1, 3, 2))
+    
+    print(f"[DEBUG] Final output shape: {overlaid_cube.shape}")
+    print(f"[DEBUG] ----------------------------------------")
     
     return overlaid_cube 

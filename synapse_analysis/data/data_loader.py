@@ -169,7 +169,7 @@ class Synapse3DProcessor:
             Dictionary with global 'mean' and 'std' values
         """
         # Create processor with no normalization for this calculation
-        temp_processor = Synapse3DProcessor()
+        # temp_processor = Synapse3DProcessor()
         
         # Collect samples
         all_samples = []
@@ -244,71 +244,71 @@ class Synapse3DProcessor:
         print(f"Calculated global stats - mean: {mean}, std: {std}")
         return global_stats
 
-    @classmethod
-    def create_with_global_norm(cls, data_loader, size=(80, 80), num_samples=None):
-        """
-        Factory method to create processor with standard normalization.
-        This method is kept for backward compatibility but no longer uses global normalization.
+    # @classmethod
+    # def create_with_global_norm(cls, data_loader, size=(80, 80), num_samples=None):
+    #     """
+    #     Factory method to create processor with standard normalization.
+    #     This method is kept for backward compatibility but no longer uses global normalization.
         
-        Args:
-            data_loader: DataLoader (not used for normalization)
-            size: Size for the images
-            num_samples: Number of samples (not used)
+    #     Args:
+    #         data_loader: DataLoader (not used for normalization)
+    #         size: Size for the images
+    #         num_samples: Number of samples (not used)
             
-        Returns:
-            Processor instance with standard normalization applied
-        """
-        print("Warning: Global normalization is deprecated. Using standard normalization instead.")
-        return cls(
-            size=size,
-            mean=(0.485,),
-            std=(0.229,),
-            apply_global_norm=False,
-            global_stats=None
-        )
+    #     Returns:
+    #         Processor instance with standard normalization applied
+    #     """
+    #     print("Warning: Global normalization is deprecated. Using standard normalization instead.")
+    #     return cls(
+    #         size=size,
+    #         mean=(0.485,),
+    #         std=(0.229,),
+    #         apply_global_norm=False,
+    #         global_stats=None
+    #     )
         
-    @classmethod
-    def create_with_global_norm_from_volumes(cls, vol_data_dict, size=(80, 80)):
-        """
-        Factory method to create processor with standard normalization.
-        This method is kept for backward compatibility but no longer uses global normalization.
+    # @classmethod
+    # def create_with_global_norm_from_volumes(cls, vol_data_dict, size=(80, 80)):
+    #     """
+    #     Factory method to create processor with standard normalization.
+    #     This method is kept for backward compatibility but no longer uses global normalization.
         
-        Args:
-            vol_data_dict: Dictionary mapping bbox names to (raw_vol, seg_vol, add_mask_vol) tuples (not used for normalization)
-            size: Size for the images
+    #     Args:
+    #         vol_data_dict: Dictionary mapping bbox names to (raw_vol, seg_vol, add_mask_vol) tuples (not used for normalization)
+    #         size: Size for the images
             
-        Returns:
-            Processor instance with standard normalization applied
-        """
-        print("Warning: Global normalization is deprecated. Using standard normalization instead.")
-        return cls(
-            size=size,
-            mean=(0.485,),
-            std=(0.229,),
-            apply_global_norm=False,
-            global_stats=None
-        )
+    #     Returns:
+    #         Processor instance with standard normalization applied
+    #     """
+    #     print("Warning: Global normalization is deprecated. Using standard normalization instead.")
+    #     return cls(
+    #         size=size,
+    #         mean=(0.485,),
+    #         std=(0.229,),
+    #         apply_global_norm=False,
+    #         global_stats=None
+    #     )
 
-    @classmethod
-    def create_with_standard_norm(cls, size=(80, 80), mean=(0.485,), std=(0.229,)):
-        """
-        Factory method to create processor with standard normalization (no global normalization).
+    # @classmethod
+    # def create_with_standard_norm(cls, size=(80, 80), mean=(0.485,), std=(0.229,)):
+    #     """
+    #     Factory method to create processor with standard normalization (no global normalization).
         
-        Args:
-            size: Size for the images
-            mean: Mean values for normalization
-            std: Standard deviation values for normalization
+    #     Args:
+    #         size: Size for the images
+    #         mean: Mean values for normalization
+    #         std: Standard deviation values for normalization
             
-        Returns:
-            Processor instance with standard normalization applied
-        """
-        return cls(
-            size=size,
-            mean=mean,
-            std=std,
-            apply_global_norm=False,
-            global_stats=None
-        )
+    #     Returns:
+    #         Processor instance with standard normalization applied
+    #     """
+    #     return cls(
+    #         size=size,
+    #         mean=mean,
+    #         std=std,
+    #         apply_global_norm=False,
+    #         global_stats=None
+    #     )
 
 def load_volumes(bbox_name: str, raw_base_dir: str, seg_base_dir: str, 
                 add_mask_base_dir: str) -> Tuple[Optional[np.ndarray], Optional[np.ndarray], Optional[np.ndarray]]:
@@ -409,56 +409,33 @@ def load_all_volumes(bbox_names: list, raw_base_dir: str, seg_base_dir: str,
             vol_data_dict[bbox_name] = volumes
     return vol_data_dict
 
-def calculate_global_stats(raw_base_dir, seg_base_dir, add_mask_base_dir, excel_dir, 
-                     segmentation_types=None, bbox_names=None, num_samples=100):
-    """
-    Calculate global mean and standard deviation for normalization across all volumes.
+# def normalize_raw_data_before_segmentation(raw_data, size=(80, 80), mean=(0.485,), std=(0.229,)):
+#     """
+#     Normalize raw data before any segmentation step, without using global normalization.
     
-    Args:
-        raw_base_dir: Base directory for raw data
-        seg_base_dir: Base directory for segmentation data
-        add_mask_base_dir: Base directory for additional mask data
-        excel_dir: Directory containing Excel files
-        segmentation_types: List of segmentation types to use
-        bbox_names: List of bounding box names
-        num_samples: Number of samples to use for statistics
+#     Args:
+#         raw_data: Raw image data as a list of frames or 3D volume
+#         size: Target size for the processed images
+#         mean: Mean values for normalization
+#         std: Standard deviation values for normalization
         
-    Returns:
-        Dictionary with global 'mean' and 'std' values
-    """
-    # Load volumes
-    vol_data_dict = load_all_volumes(bbox_names, raw_base_dir, seg_base_dir, add_mask_base_dir)
+#     Returns:
+#         Normalized raw data ready for segmentation
+#     """
+#     # Create processor with standard normalization (no global normalization)
+#     processor = Synapse3DProcessor.create_with_standard_norm(
+#         size=size,
+#         mean=mean,
+#         std=std
+#     )
     
-    # Use the class method to calculate stats from volumes
-    return Synapse3DProcessor.calculate_global_stats_from_volumes(vol_data_dict)
-
-def normalize_raw_data_before_segmentation(raw_data, size=(80, 80), mean=(0.485,), std=(0.229,)):
-    """
-    Normalize raw data before any segmentation step, without using global normalization.
+#     # Convert to list of frames if the input is a 3D volume
+#     if isinstance(raw_data, np.ndarray) and raw_data.ndim == 3:
+#         frames = [raw_data[i] for i in range(raw_data.shape[0])]
+#     else:
+#         frames = raw_data
     
-    Args:
-        raw_data: Raw image data as a list of frames or 3D volume
-        size: Target size for the processed images
-        mean: Mean values for normalization
-        std: Standard deviation values for normalization
-        
-    Returns:
-        Normalized raw data ready for segmentation
-    """
-    # Create processor with standard normalization (no global normalization)
-    processor = Synapse3DProcessor.create_with_standard_norm(
-        size=size,
-        mean=mean,
-        std=std
-    )
+#     # Apply normalization to raw data
+#     normalized_data = processor(frames)
     
-    # Convert to list of frames if the input is a 3D volume
-    if isinstance(raw_data, np.ndarray) and raw_data.ndim == 3:
-        frames = [raw_data[i] for i in range(raw_data.shape[0])]
-    else:
-        frames = raw_data
-    
-    # Apply normalization to raw data
-    normalized_data = processor(frames)
-    
-    return normalized_data 
+#     return normalized_data 

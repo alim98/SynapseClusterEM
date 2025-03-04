@@ -18,7 +18,6 @@ import os
 import sys
 import argparse
 import json
-import logging
 import yaml
 from pathlib import Path
 import pandas as pd
@@ -39,7 +38,6 @@ from synapse_analysis.data.data_loader import (
     Synapse3DProcessor,
     load_all_volumes,
     load_synapse_data,
-    # calculate_global_stats
 )
 from synapse_analysis.data.dataset import SynapseDataset
 from synapse_analysis.analysis.feature_extraction import extract_and_save_features
@@ -50,184 +48,14 @@ from synapse_analysis.analysis.clustering import (
     save_cluster_visualizations
 )
 
-# Set up logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-    ]
-)
-logger = logging.getLogger('SynapseClusterEM')
+# Import the SynapseLogger class
+from logger import SynapseLogger
 
-def setup_file_logger(output_dir):
-    """Set up file logging in addition to console logging"""
-    log_file = os.path.join(output_dir, f"synapse_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
-    file_handler = logging.FileHandler(log_file)
-    file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
-    logger.addHandler(file_handler)
-    return log_file
+# Import the ArgumentParser class
+from argument_parser import ArgumentParser
 
-def load_config(config_path):
-    """Load configuration from YAML file"""
-    try:
-        with open(config_path, 'r') as f:
-            config = yaml.safe_load(f)
-        logger.info(f"Loaded configuration from {config_path}")
-        return config
-    except Exception as e:
-        logger.error(f"Error loading configuration from {config_path}: {str(e)}")
-        sys.exit(1)
-
-def config_to_args(config):
-    """Convert configuration dictionary to argparse namespace"""
-    args = argparse.Namespace()
-    
-    # Workflow control
-    args.mode = config.get('mode', 'all')
-    
-    # Data paths
-    data_paths = config.get('data_paths', {})
-    args.raw_base_dir = data_paths.get('raw_base_dir')
-    args.seg_base_dir = data_paths.get('seg_base_dir')
-    args.add_mask_base_dir = data_paths.get('add_mask_base_dir', '')
-    args.excel_dir = data_paths.get('excel_dir')
-    args.output_dir = data_paths.get('output_dir', 'outputs/default')
-    args.checkpoint_path = data_paths.get('checkpoint_path')
-    
-    # Dataset parameters
-    dataset = config.get('dataset', {})
-    args.bbox_names = dataset.get('bbox_names', ['bbox1'])
-    args.size = dataset.get('size', [80, 80])
-    args.subvol_size = dataset.get('subvol_size', 80)
-    args.num_frames = dataset.get('num_frames', 80)
-    
-    # Analysis parameters
-    analysis = config.get('analysis', {})
-    args.segmentation_types = analysis.get('segmentation_types', [9, 10])
-    args.alphas = analysis.get('alphas', [1.0])
-    args.n_clusters = analysis.get('n_clusters', 10)
-    args.clustering_method = analysis.get('clustering_method', 'kmeans')
-    args.batch_size = analysis.get('batch_size', 2)
-    args.num_workers = analysis.get('num_workers', 0)
-    
-    # # Global normalization parameters
-    # normalization = config.get('normalization', {})
-    # args.use_global_norm = normalization.get('use_global_norm', False)
-    # args.global_stats_path = normalization.get('global_stats_path')
-    # args.num_samples_for_stats = normalization.get('num_samples_for_stats', 100)
-    
-    # Visualization parameters
-    visualization = config.get('visualization', {})
-    args.create_3d_plots = visualization.get('create_3d_plots', False)
-    args.save_interactive = visualization.get('save_interactive', False)
-    
-    # System parameters
-    system = config.get('system', {})
-    args.gpu_id = system.get('gpu_id', 0)
-    args.seed = system.get('seed', 42)
-    args.verbose = system.get('verbose', True)
-    
-    return args
-
-def parse_args():
-    """Parse command line arguments."""
-    parser = argparse.ArgumentParser(
-        description='Synapse cluster analysis from 3D EM data',
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter
-    )
-    
-    # Mode selection
-    parser.add_argument('--mode', type=str, default='all',
-                        choices=['preprocess', 'extract', 'cluster', 'visualize', 'all'],
-                        help='Mode of operation')
-    
-    # Configuration file
-    parser.add_argument('--config', type=str, default='config.yaml',
-                        help='Path to a YAML configuration file (defaults to config.yaml)')
-    
-    # Data paths
-    parser.add_argument('--raw_base_dir', type=str, default='data/raw',
-                        help='Base directory for raw data')
-    parser.add_argument('--seg_base_dir', type=str, default='data/seg',
-                        help='Base directory for segmentation data')
-    parser.add_argument('--add_mask_base_dir', type=str, default=None,
-                        help='Base directory for additional mask data')
-    parser.add_argument('--excel_dir', type=str, default='data',
-                        help='Directory containing Excel files with synapse data')
-    parser.add_argument('--output_dir', type=str, default='outputs',
-                        help='Output directory for results')
-    parser.add_argument('--checkpoint_path', type=str, required=False,
-                        default='hemibrain_production.checkpoint',
-                        help='Path to the model checkpoint')
-    
-    # Parameters
-    parser.add_argument('--bbox_names', nargs='+', default=['bbox1', 'bbox2'],
-                        help='Names of bounding boxes to process')
-    parser.add_argument('--size', nargs=2, type=int, default=[80, 80],
-                        help='Size of each frame (height, width)')
-    parser.add_argument('--subvol_size', type=int, default=80,
-                        help='Size of the cubic subvolume to extract')
-    parser.add_argument('--num_frames', type=int, default=80,
-                        help='Number of frames to use')
-    parser.add_argument('--segmentation_types', nargs='+', type=int, default=[1],
-                        help='Segmentation types to process')
-    parser.add_argument('--alphas', nargs='+', type=float, default=[1.0],
-                        help='Alpha values for blending segmentation')
-    parser.add_argument('--n_clusters', type=int, default=10,
-                        help='Number of clusters for clustering')
-    parser.add_argument('--clustering_method', type=str, default='kmeans',
-                        choices=['kmeans', 'hierarchical', 'dbscan'],
-                        help='Clustering method to use')
-    parser.add_argument('--batch_size', type=int, default=2,
-                        help='Batch size for feature extraction')
-    parser.add_argument('--num_workers', type=int, default=0,
-                        help='Number of worker processes for data loading')
-    # parser.add_argument('--use_global_norm', action='store_true',
-    #                     help='Use global normalization')
-    # parser.add_argument('--global_stats_path', type=str, default=None,
-    #                     help='Path to JSON file containing global normalization statistics')
-    # parser.add_argument('--num_samples_for_stats', type=int, default=100,
-    #                     help='Number of samples to use for calculating global statistics')
-    parser.add_argument('--create_3d_plots', action='store_true',
-                        help='Create 3D plots of the UMAP embeddings')
-    parser.add_argument('--save_interactive', action='store_true',
-                        help='Save interactive plots')
-    parser.add_argument('--gpu_id', type=int, default=0,
-                        help='GPU ID to use (-1 for CPU)')
-    parser.add_argument('--seed', type=int, default=42,
-                        help='Random seed for reproducibility')
-    parser.add_argument('--force_recompute', action='store_true',
-                        help='Force recomputation of features even if they already exist')
-    parser.add_argument('--verbose', action='store_true',
-                        help='Enable verbose output')
-    parser.add_argument('--device', type=str, default='cuda:0',
-                        help='Device to use for computation (e.g., "cpu", "cuda:0")')
-    
-    args = parser.parse_args()
-    
-    # Load configuration from file if provided
-    if args.config:
-        if os.path.exists(args.config):
-            with open(args.config, 'r') as f:
-                config = yaml.safe_load(f)
-                # Update args with config values (only for keys that exist in args)
-                arg_dict = vars(args)
-                for key, value in config.items():
-                    if key in arg_dict:
-                        arg_dict[key] = value
-                logger.info(f"Loaded configuration from {args.config}")
-        else:
-            logger.warning(f"Configuration file {args.config} not found. Using default values.")
-    
-    # Set device based on gpu_id for backward compatibility
-    if not hasattr(args, 'device') or args.device is None:
-        if args.gpu_id >= 0 and torch.cuda.is_available():
-            args.device = f'cuda:{args.gpu_id}'
-        else:
-            args.device = 'cpu'
-    
-    return args
+# Initialize the logger
+logger = SynapseLogger()
 
 def set_seed(seed):
     """Set random seed for reproducibility"""
@@ -235,49 +63,8 @@ def set_seed(seed):
     np.random.seed(seed)
     torch.manual_seed(seed)
     if torch.cuda.is_available():
-        torch.cuda.manual_seed(seed)
         torch.cuda.manual_seed_all(seed)
-        torch.backends.cudnn.deterministic = True
-        torch.backends.cudnn.benchmark = False
     logger.info(f"Random seed set to {seed}")
-
-# def preprocess_data(args):
-#     """Preprocess data and calculate global normalization statistics if needed"""
-#     logger.info("Starting data preprocessing...")
-    
-#     # Create output directory
-#     os.makedirs(args.output_dir, exist_ok=True)
-    
-#     # If global normalization is requested but no stats file is provided, calculate them
-#     if args.use_global_norm and not args.global_stats_path:
-#         # Check if global stats file already exists in the output directory
-#         global_stats_path = os.path.join(args.output_dir, 'global_stats.json')
-        
-#         if os.path.exists(global_stats_path):
-#             logger.info(f"Global statistics file {global_stats_path} already exists. Skipping calculation.")
-#             args.global_stats_path = global_stats_path
-#         else:
-#             logger.info("Calculating global normalization statistics...")
-            
-#             # Calculate global stats
-#             global_stats = calculate_global_stats(
-#                 raw_base_dir=args.raw_base_dir,
-#                 seg_base_dir=args.seg_base_dir,
-#                 add_mask_base_dir=args.add_mask_base_dir,
-#                 excel_dir=args.excel_dir,
-#                 segmentation_types=args.segmentation_types,
-#                 bbox_names=args.bbox_names,
-#                 num_samples=args.num_samples_for_stats
-#             )
-            
-#             # Save global stats
-#             with open(global_stats_path, 'w') as f:
-#                 json.dump(global_stats, f)
-            
-#             args.global_stats_path = global_stats_path
-#             logger.info(f"Global statistics saved to {global_stats_path}")
-    
-#     return args
 
 def extract_features(args):
     """Extract features from synapse volumes"""
@@ -315,18 +102,6 @@ def extract_features(args):
         logger.warning(f"Additional mask directory {args.add_mask_base_dir} not found. Using None.")
         args.add_mask_base_dir = None
     
-    # Load global stats if needed
-    # global_stats = None
-    # if args.use_global_norm and args.global_stats_path and os.path.exists(args.global_stats_path):
-    #     try:
-    #         with open(args.global_stats_path, 'r') as f:
-    #             global_stats = json.load(f)
-    #         logger.info(f"Loaded global stats from {args.global_stats_path}")
-    #     except Exception as e:
-    #         logger.error(f"Error loading global stats: {e}")
-    #         global_stats = None
-    
-    # Process each segmentation type
     feature_files = []
     for seg_type in args.segmentation_types:
         logger.info(f"Processing segmentation type {seg_type}...")
@@ -418,8 +193,47 @@ def extract_features(args):
                 central_slice = segmented_cube[:, :, segmented_cube.shape[2] // 2, :]
                 slice_img = central_slice[:, :, central_slice.shape[2] // 2]
                 
+                # Log slice image statistics
+                print(f"[VIZ DEBUG] Slice image stats for sample {i+1}, {bbox_name}, Synapse {syn_info['Var1']}:")
+                print(f"[VIZ DEBUG] - Shape: {slice_img.shape}")
+                print(f"[VIZ DEBUG] - Min value: {np.min(slice_img)}")
+                print(f"[VIZ DEBUG] - Max value: {np.max(slice_img)}")
+                print(f"[VIZ DEBUG] - Mean value: {np.mean(slice_img)}")
+                print(f"[VIZ DEBUG] - Std dev: {np.std(slice_img)}")
+                
+                # Create a mask for the gray regions (where value is exactly 128.0)
+                gray_mask = np.isclose(slice_img, 128.0)
+                print(f"[VIZ DEBUG] - Gray mask coverage: {np.sum(gray_mask) / gray_mask.size * 100:.2f}%")
+                
+                # Normalize the slice to ensure consistent visualization
+                # This ensures the gray value appears the same across all images
+                normalized_slice = slice_img.copy()
+                
+                # Replace the gray value with a special value temporarily
+                special_value = -1000  # A value that won't occur naturally
+                normalized_slice[gray_mask] = special_value
+                
+                # Normalize the non-gray parts
+                non_gray_mask = ~gray_mask
+                if np.any(non_gray_mask):
+                    min_val = np.min(normalized_slice[non_gray_mask])
+                    max_val = np.max(normalized_slice[non_gray_mask])
+                    
+                    # Avoid division by zero
+                    if max_val > min_val:
+                        # Scale the non-gray parts to 0-255
+                        normalized_slice[non_gray_mask] = 255.0 * (normalized_slice[non_gray_mask] - min_val) / (max_val - min_val)
+                
+                # Set the gray parts to a consistent value (128)
+                normalized_slice[gray_mask] = 128.0
+                
+                print(f"[VIZ DEBUG] Normalized slice stats:")
+                print(f"[VIZ DEBUG] - Min value: {np.min(normalized_slice)}")
+                print(f"[VIZ DEBUG] - Max value: {np.max(normalized_slice)}")
+                
                 plt.figure(figsize=(8, 8))
-                plt.imshow(slice_img, cmap='gray')
+                # Use the normalized slice with consistent gray value
+                plt.imshow(normalized_slice, cmap='gray', vmin=0, vmax=255)
                 plt.title(f"Sample {i+1}: {bbox_name}, Synapse {syn_info['Var1']}")
                 plt.axis('off')
                 
@@ -467,10 +281,10 @@ def extract_features(args):
                         add_mask_base_dir=args.add_mask_base_dir
                     )
                 
-                # Create a processor with sample-wise normalization enabled
+                # Create a processor with sample-wise normalization disabled
                 processor = Synapse3DProcessor(
                     size=tuple(args.size),
-                    apply_sample_norm=True  # Enable sample-wise normalization
+                    apply_sample_norm=False  # Disable sample-wise normalization
                 )
                 
                 # Create dataset
@@ -831,31 +645,22 @@ def create_visualizations(args, clustered_df=None, clustering_model=None):
 
 def main():
     """Main entry point of the application."""
-    # Parse arguments
-    args = parse_args()
+    # Parse arguments using the ArgumentParser class
+    arg_parser = ArgumentParser(logger)
+    args = arg_parser.parse_args()
     
-    # Set up logging
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    # Set up logging to file if output directory is specified
     if args.output_dir:
         output_dir = Path(args.output_dir)
         os.makedirs(output_dir, exist_ok=True)
-        log_file = output_dir / f"synapse_analysis_{timestamp}.log"
-        file_handler = logging.FileHandler(log_file)
-        file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
-        logger.addHandler(file_handler)
-        logger.info(f"Logging to {log_file}")
+        log_file = logger.setup_file_logger(output_dir)
     
     # Fix any path issues in the configuration
     if hasattr(args, 'add_mask_base_dir') and args.add_mask_base_dir == "":
         args.add_mask_base_dir = None
         
     # Set random seed for reproducibility
-    random.seed(args.seed)
-    np.random.seed(args.seed)
-    torch.manual_seed(args.seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(args.seed)
-    logger.info(f"Random seed set to {args.seed}")
+    set_seed(args.seed)
     
     # Log the parameters
     logger.info("Starting SynapseClusterEM analysis with the following parameters:")
@@ -865,13 +670,12 @@ def main():
     # Backward compatibility for flattened config files
     try:
         if os.path.exists(args.config):
-            with open(args.config, 'r') as f:
-                config = yaml.safe_load(f)
-                if 'data_paths' in config:
-                    paths = config['data_paths']
-                    for key in ['raw_base_dir', 'seg_base_dir', 'add_mask_base_dir', 'excel_dir', 'output_dir', 'checkpoint_path']:
-                        if key in paths:
-                            setattr(args, key, paths[key])
+            config = arg_parser.load_config(args.config)
+            if config and 'data_paths' in config:
+                paths = config['data_paths']
+                for key in ['raw_base_dir', 'seg_base_dir', 'add_mask_base_dir', 'excel_dir', 'output_dir', 'checkpoint_path']:
+                    if key in paths:
+                        setattr(args, key, paths[key])
     except (TypeError, AttributeError):
         logger.debug("Skipping backward compatibility check for config file.")
     
