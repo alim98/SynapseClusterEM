@@ -45,6 +45,12 @@ Thumbs.db
 
 # Project specific
 outputs/
+outputs/**/*
+checkpoints/
+checkpoint/
+model_checkpoints/
+logs/
+*.log
 *.pth
 *.pt
 *.pkl
@@ -61,6 +67,13 @@ outputs/
 *.mp4
 *.avi
 *.mov
+*.ckpt
+*.model
+*.csv
+*.xlsx
+*.xls
 
 # Keep .gitkeep files
-!.gitkeep 
+!.gitkeep
+!outputs/.gitkeep
+!outputs/**/.gitkeep 
