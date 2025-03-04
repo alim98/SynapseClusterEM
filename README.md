@@ -9,7 +9,6 @@ A Python package for analyzing and clustering 3D synapse structures from electro
 - Perform clustering analysis on extracted features
 - Generate 2D and 3D visualizations of synapse clusters
 - Support for multiple segmentation types and bounding boxes
-- **Global data normalization** across the entire dataset for improved model performance
 
 ## Installation
 
@@ -54,69 +53,6 @@ python scripts/run_analysis.py \
 - `--output_dir`: Directory to save results
 - `--batch_size`: Batch size for processing (default: 4)
 - `--num_workers`: Number of worker processes (default: 2)
-- `--use_global_norm`: Whether to use global normalization (default: False)
-- `--num_samples_for_stats`: Number of samples to use for calculating global stats (default: 100, use 0 for all)
-
-## Global Normalization
-
-The package now includes support for global normalization of data. This method calculates the mean and standard deviation across the entire dataset, rather than using fixed values. Global normalization typically leads to better model performance, especially when working with datasets that have varying intensity distributions.
-
-There are two methods for calculating global normalization statistics:
-
-### Method 1: Direct Volume-Based Normalization
-
-This method calculates statistics directly from the raw volumes, which is faster and more memory-efficient:
-
-```bash
-python scripts/global_norm_example.py \
-    --raw_base_dir /path/to/raw/data \
-    --seg_base_dir /path/to/seg/data \
-    --add_mask_base_dir /path/to/mask/data \
-    --excel_dir /path/to/excel/files \
-    --output_dir outputs/global_norm
-```
-
-### Method 2: Dataset-Based Normalization
-
-This method calculates statistics from processed samples in the dataset:
-
-```bash
-python scripts/global_normalization_example.py \
-    --raw_base_dir /path/to/raw/data \
-    --seg_base_dir /path/to/seg/data \
-    --add_mask_base_dir /path/to/mask/data \
-    --excel_dir /path/to/excel/files \
-    --output_dir outputs \
-    --num_samples_for_stats 100
-```
-
-Both methods will:
-1. Calculate global mean and standard deviation
-2. Save the statistics for future use
-3. Create a data processor that applies global normalization
-
-The global statistics are saved to JSON files for reuse in future runs.
-
-### Using Global Normalization in Your Code
-
-To use global normalization in your own code:
-
-```python
-from synapse_analysis.data.data_loader import Synapse3DProcessor, load_all_volumes
-
-# Load your volume data
-vol_data_dict = load_all_volumes(bbox_names, raw_base_dir, seg_base_dir, add_mask_base_dir)
-
-# Method 1: Calculate global stats directly from volumes
-processor = Synapse3DProcessor.create_with_global_norm_from_volumes(vol_data_dict)
-
-# Method 2: Load pre-calculated global stats
-import json
-with open('path/to/global_stats.json', 'r') as f:
-    global_stats = json.load(f)
-    
-processor = Synapse3DProcessor(apply_global_norm=True, global_stats=global_stats)
-```
 
 ## Project Structure
 
@@ -127,7 +63,7 @@ SynapseClusterEM/
 │   │   └── vgg3d.py         # VGG3D model implementation
 │   ├── data/
 │   │   ├── dataset.py       # Dataset class
-│   │   └── data_loader.py   # Data loading utilities with global normalization
+│   │   └── data_loader.py   # Data loading utilities
 │   ├── utils/
 │   │   └── processing.py    # Image processing utilities
 │   └── analysis/
@@ -137,14 +73,11 @@ SynapseClusterEM/
 │   ├── run_analysis.py      # Main analysis script
 │   ├── run_notebook_analysis.py  # Analysis script for notebooks
 │   ├── run_notebook_analysis.sh  # Shell script for notebook analysis
-│   ├── global_norm_example.py  # Global normalization example
-│   ├── global_norm_example.sh  # Shell script for global normalization
 │   ├── visualize_sample_as_gif.py  # Visualization script for samples
 │   ├── visualize_sample_as_gif.sh  # Shell script for visualization
 │   └── workflow.sh          # Complete analysis pipeline script
 ├── outputs/
-│   ├── gif_visualization/   # Output directory for GIF visualizations
-│   └── global_norm/         # Output directory for global normalization statistics
+│   └── gif_visualization/   # Output directory for GIF visualizations
 ├── requirements.txt         # Package dependencies
 └── setup.py                # Package setup file
 ```
@@ -164,22 +97,7 @@ This project follows a clear workflow for analyzing 3D synapse structures:
 
 ### 1. Data Preprocessing
 
-```bash
-# Preprocess data with global normalization
-python scripts/global_norm_example.py \
-    --raw_base_dir /path/to/raw/data \
-    --seg_base_dir /path/to/seg/data \
-    --add_mask_base_dir /path/to/mask/data \
-    --excel_dir /path/to/excel/files \
-    --output_dir outputs/global_norm \
-    --segmentation_type 1
-```
-
-This step:
-- Loads raw, segmentation, and additional mask volumes
-- Calculates global normalization statistics across all volumes
-- Saves the statistics to `outputs/global_norm/global_stats.json`
-- Creates a dataset with globally normalized samples
+Data preprocessing involves loading and preparing the raw, segmentation, and additional mask volumes for analysis.
 
 ### 2. Feature Extraction
 
@@ -194,15 +112,12 @@ python scripts/run_analysis.py \
     --bbox_names bbox1 bbox2 bbox3 bbox4 bbox5 bbox6 bbox7 \
     --segmentation_types 1 2 3 \
     --alphas 1.0 \
-    --output_dir outputs/analysis \
-    --use_global_norm True \
-    --global_stats_path outputs/global_norm/global_stats.json
+    --output_dir outputs/analysis
 ```
 
 This step:
-- Uses the globally normalized dataset
 - Loads a pre-trained VGG3D model
-- Extracts features from the normalized samples
+- Extracts features from the samples
 - Saves the extracted features to `outputs/analysis/features.pkl`
 
 ### 3. Dimensionality Reduction & Visualization
@@ -255,9 +170,8 @@ For a complete analysis pipeline, you can use the provided workflow script:
 ```
 
 This script will:
-1. Calculate global normalization statistics
-2. Run feature extraction, clustering, and visualization
-3. Visualize representative samples from each cluster
+1. Run feature extraction, clustering, and visualization
+2. Visualize representative samples from each cluster
 
 Before running, make sure to edit the script to set the correct paths for your environment:
 - `RAW_BASE_DIR`: Path to raw data
@@ -269,10 +183,7 @@ Before running, make sure to edit the script to set the correct paths for your e
 Alternatively, you can run each step manually:
 
 ```bash
-# 1. Preprocess data with global normalization
-./scripts/global_norm_example.sh
-
-# 2. Extract features, perform clustering, and generate visualizations
+# 1. Extract features, perform clustering, and generate visualizations
 python scripts/run_analysis.py \
     --raw_base_dir /path/to/raw/data \
     --seg_base_dir /path/to/seg/data \
@@ -282,11 +193,9 @@ python scripts/run_analysis.py \
     --bbox_names bbox1 bbox2 bbox3 bbox4 bbox5 bbox6 bbox7 \
     --segmentation_types 1 2 3 \
     --alphas 1.0 \
-    --output_dir outputs/analysis \
-    --use_global_norm True \
-    --global_stats_path outputs/global_norm/global_stats.json
+    --output_dir outputs/analysis
 
-# 3. Visualize specific samples of interest
+# 2. Visualize specific samples of interest
 ./scripts/visualize_sample_as_gif.sh \
     --bbox_name bbox1 \
     --sample_index 0 \
