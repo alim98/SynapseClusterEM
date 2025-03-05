@@ -7,6 +7,7 @@ from typing import Tuple, Dict, Optional, List, Union
 from torchvision import transforms
 import torch
 from .sample_normalization import apply_sample_normalization
+import json
 
 def apply_global_normalization(tensor_data: Union[torch.Tensor, np.ndarray], 
                               global_stats: Dict[str, List[float]]) -> torch.Tensor:
@@ -60,7 +61,9 @@ def apply_global_normalization(tensor_data: Union[torch.Tensor, np.ndarray],
 
 class Synapse3DProcessor:
     def __init__(self, size=(80, 80), mean=(0.485,), std=(0.229,), 
-                 apply_global_norm=False, global_stats=None, apply_sample_norm=False):
+                 apply_global_norm=False, global_stats=None, apply_sample_norm=False,
+                 global_stats_path=None, auto_compute_stats=False, bbox_names=None,
+                 raw_base_dir=None, seg_base_dir=None, add_mask_base_dir=None):
         """
         Initialize the Synapse3DProcessor for image processing and normalization.
         
@@ -68,17 +71,36 @@ class Synapse3DProcessor:
             size: Target size for the images (height, width)
             mean: Mean for normalization (per channel)
             std: Standard deviation for normalization (per channel)
-            apply_global_norm: Whether to apply global normalization (deprecated, always False)
-            global_stats: Dictionary containing global 'mean' and 'std' if apply_global_norm is True (deprecated)
+            apply_global_norm: Whether to apply global normalization
+            global_stats: Dictionary containing global 'mean' and 'std' if apply_global_norm is True
             apply_sample_norm: Whether to apply sample-wise normalization
+            global_stats_path: Path to JSON file containing global stats
+            auto_compute_stats: Whether to auto-compute global stats if not available
+            bbox_names: List of bounding box names for auto-computing stats
+            raw_base_dir: Base directory for raw data, for auto-computing stats
+            seg_base_dir: Base directory for segmentation data, for auto-computing stats
+            add_mask_base_dir: Base directory for additional mask data, for auto-computing stats
         """
         self.size = size
         self.mean = mean
         self.std = std
-        # Global normalization is disabled
-        self.apply_global_norm = False
-        self.global_stats = None
+        
+        # Global normalization settings
+        self.apply_global_norm = apply_global_norm
+        self.global_stats = global_stats
+        self.global_stats_path = global_stats_path
         self.apply_sample_norm = apply_sample_norm
+        
+        # Auto-compute settings
+        self.auto_compute_stats = auto_compute_stats
+        self.bbox_names = bbox_names
+        self.raw_base_dir = raw_base_dir
+        self.seg_base_dir = seg_base_dir
+        self.add_mask_base_dir = add_mask_base_dir
+        
+        # Load or compute global stats if needed
+        if self.apply_global_norm:
+            self._initialize_global_stats()
 
         # Base transform without normalization
         self.base_transform = transforms.Compose([
@@ -88,13 +110,56 @@ class Synapse3DProcessor:
             transforms.ToTensor(),
         ])
 
-        # Full transform with normalization (always using standard normalization)
+        # Setup transforms based on normalization settings
+        self._setup_transforms()
+        
+    def _initialize_global_stats(self):
+        """Initialize global stats by loading from file or computing."""
+        if self.global_stats is not None:
+            # Already have global stats
+            print("Using provided global stats.")
+            return
+            
+        if self.global_stats_path:
+            # Try to load from file
+            try:
+                with open(self.global_stats_path, 'r') as f:
+                    self.global_stats = json.load(f)
+                print(f"Loaded global stats from {self.global_stats_path}")
+                self.mean = self.global_stats.get('mean')
+                self.std = self.global_stats.get('std')
+                return
+            except Exception as e:
+                print(f"Error loading global stats from {self.global_stats_path}: {e}")
+                
+        # Stats not provided and couldn't load from file
+        if self.auto_compute_stats and self.bbox_names and self.raw_base_dir:
+            print("Auto-computing global normalization stats...")
+            calculator = GlobalNormalizationCalculator(
+                raw_base_dir=self.raw_base_dir,
+                output_file=self.global_stats_path
+            )
+            self.global_stats = calculator.compute_from_volumes(
+                bbox_names=self.bbox_names,
+                seg_base_dir=self.seg_base_dir,
+                add_mask_base_dir=self.add_mask_base_dir
+            )
+            self.mean = self.global_stats.get('mean')
+            self.std = self.global_stats.get('std')
+            print(f"Auto-computed global stats - mean: {self.mean}, std: {self.std}")
+        else:
+            print("Global normalization requested but no stats available. Using default values.")
+            # Keep using the default values
+            
+    def _setup_transforms(self):
+        """Setup the transformation pipeline based on normalization settings."""
+        # Full transform with normalization
         self.transform = transforms.Compose([
             transforms.ToPILImage(),
-            transforms.Resize(size),
+            transforms.Resize(self.size),
             transforms.Grayscale(num_output_channels=1),
             transforms.ToTensor(),
-            transforms.Normalize(mean=mean, std=std),
+            transforms.Normalize(mean=self.mean, std=self.std),
         ])
 
     def __call__(self, frames, return_tensors=None, skip_normalization=False):
@@ -110,12 +175,17 @@ class Synapse3DProcessor:
             Processed frames as tensors
         """
         if skip_normalization:
+            # Apply only base transform without any normalization
             processed_frames = [self.base_transform(frame) for frame in frames]
+            pixel_values = torch.stack(processed_frames)
         else:
-            # Use regular transform with per-frame normalization
-            processed_frames = [self.transform(frame) for frame in frames]
+            # Apply base transform and then normalization
+            base_frames = [self.base_transform(frame) for frame in frames]
+            pixel_values = torch.stack(base_frames)
             
-        pixel_values = torch.stack(processed_frames)
+            # Apply normalization using normalize_tensor method
+            pixel_values = self.normalize_tensor(pixel_values)
+            
         if return_tensors == "pt":
             return {"pixel_values": pixel_values}
         else:
@@ -127,34 +197,40 @@ class Synapse3DProcessor:
         
         Args:
             tensor: Input tensor to normalize
-            use_global_norm: Whether to use global normalization (deprecated, always False)
+            use_global_norm: Whether to use global normalization
             use_sample_norm: Whether to use sample-wise normalization (overrides instance setting)
             
         Returns:
             Normalized tensor
         """
-        # Determine normalization type
+        # Determine normalization types
+        apply_global = self.apply_global_norm if use_global_norm is None else use_global_norm
         apply_sample = self.apply_sample_norm if use_sample_norm is None else use_sample_norm
         
-        # Sample-wise normalization
+        # First apply global normalization if required
+        if apply_global and self.global_stats:
+            # If global stats available, use them
+            global_mean = torch.tensor(self.global_stats['mean'], device=tensor.device)
+            global_std = torch.tensor(self.global_stats['std'], device=tensor.device)
+            # Reshape for broadcasting
+            if len(tensor.shape) == 4:  # (N, C, H, W)
+                global_mean = global_mean.view(1, -1, 1, 1)
+                global_std = global_std.view(1, -1, 1, 1)
+            elif len(tensor.shape) == 3:  # (C, H, W)
+                global_mean = global_mean.view(-1, 1, 1)
+                global_std = global_std.view(-1, 1, 1)
+            
+            # Apply normalization
+            tensor = (tensor - global_mean) / global_std
+        elif apply_global:
+            # Global normalization requested but no stats - use standard normalization
+            return transforms.Normalize(mean=self.mean, std=self.std)(tensor)
+        
+        # Then apply sample normalization if required
         if apply_sample:
-            # Use sample-wise normalization
-            return apply_sample_normalization(tensor)
-        else:
-            # Use standard normalization
-            if tensor.dim() == 5:  # [B, C, D, H, W]
-                mean = torch.tensor(self.mean).view(1, -1, 1, 1, 1).to(tensor.device)
-                std = torch.tensor(self.std).view(1, -1, 1, 1, 1).to(tensor.device)
-            elif tensor.dim() == 4:  # [B, C, H, W]
-                mean = torch.tensor(self.mean).view(1, -1, 1, 1).to(tensor.device)
-                std = torch.tensor(self.std).view(1, -1, 1, 1).to(tensor.device)
-            elif tensor.dim() == 3:  # [C, H, W]
-                mean = torch.tensor(self.mean).view(-1, 1, 1).to(tensor.device)
-                std = torch.tensor(self.std).view(-1, 1, 1).to(tensor.device)
-            else:
-                raise ValueError(f"Unsupported tensor dimensions: {tensor.dim()}")
-                
-            return (tensor - mean) / std
+            tensor = apply_sample_normalization(tensor)
+            
+        return tensor
 
     @staticmethod
     def calculate_global_stats(data_loader, num_samples=None):
@@ -244,71 +320,48 @@ class Synapse3DProcessor:
         print(f"Calculated global stats - mean: {mean}, std: {std}")
         return global_stats
 
-    # @classmethod
-    # def create_with_global_norm(cls, data_loader, size=(80, 80), num_samples=None):
-    #     """
-    #     Factory method to create processor with standard normalization.
-    #     This method is kept for backward compatibility but no longer uses global normalization.
+    @classmethod
+    def from_config(cls, config):
+        """
+        Create a Synapse3DProcessor from config parameters.
         
-    #     Args:
-    #         data_loader: DataLoader (not used for normalization)
-    #         size: Size for the images
-    #         num_samples: Number of samples (not used)
-            
-    #     Returns:
-    #         Processor instance with standard normalization applied
-    #     """
-    #     print("Warning: Global normalization is deprecated. Using standard normalization instead.")
-    #     return cls(
-    #         size=size,
-    #         mean=(0.485,),
-    #         std=(0.229,),
-    #         apply_global_norm=False,
-    #         global_stats=None
-    #     )
+        Args:
+            config: Dictionary or object with configuration parameters
+                Required: size
+                Optional: use_global_norm, global_stats_path, apply_sample_norm,
+                          auto_compute_stats, bbox_names, raw_base_dir, seg_base_dir,
+                          add_mask_base_dir
         
-    # @classmethod
-    # def create_with_global_norm_from_volumes(cls, vol_data_dict, size=(80, 80)):
-    #     """
-    #     Factory method to create processor with standard normalization.
-    #     This method is kept for backward compatibility but no longer uses global normalization.
+        Returns:
+            Synapse3DProcessor instance configured according to parameters
+        """
+        # Get required parameters
+        size = getattr(config, 'size', (80, 80))
         
-    #     Args:
-    #         vol_data_dict: Dictionary mapping bbox names to (raw_vol, seg_vol, add_mask_vol) tuples (not used for normalization)
-    #         size: Size for the images
-            
-    #     Returns:
-    #         Processor instance with standard normalization applied
-    #     """
-    #     print("Warning: Global normalization is deprecated. Using standard normalization instead.")
-    #     return cls(
-    #         size=size,
-    #         mean=(0.485,),
-    #         std=(0.229,),
-    #         apply_global_norm=False,
-    #         global_stats=None
-    #     )
-
-    # @classmethod
-    # def create_with_standard_norm(cls, size=(80, 80), mean=(0.485,), std=(0.229,)):
-    #     """
-    #     Factory method to create processor with standard normalization (no global normalization).
+        # Get optional parameters
+        apply_global_norm = getattr(config, 'use_global_norm', False)
+        global_stats_path = getattr(config, 'global_stats_path', None)
+        apply_sample_norm = getattr(config, 'apply_sample_norm', False)
+        auto_compute_stats = getattr(config, 'auto_compute_stats', False)
         
-    #     Args:
-    #         size: Size for the images
-    #         mean: Mean values for normalization
-    #         std: Standard deviation values for normalization
-            
-    #     Returns:
-    #         Processor instance with standard normalization applied
-    #     """
-    #     return cls(
-    #         size=size,
-    #         mean=mean,
-    #         std=std,
-    #         apply_global_norm=False,
-    #         global_stats=None
-    #     )
+        # Get parameters for auto-computing stats if needed
+        bbox_names = getattr(config, 'bbox_names', None)
+        raw_base_dir = getattr(config, 'raw_base_dir', None)
+        seg_base_dir = getattr(config, 'seg_base_dir', None)
+        add_mask_base_dir = getattr(config, 'add_mask_base_dir', None)
+        
+        # Create processor
+        return cls(
+            size=size,
+            apply_global_norm=apply_global_norm,
+            global_stats_path=global_stats_path,
+            apply_sample_norm=apply_sample_norm,
+            auto_compute_stats=auto_compute_stats,
+            bbox_names=bbox_names,
+            raw_base_dir=raw_base_dir,
+            seg_base_dir=seg_base_dir,
+            add_mask_base_dir=add_mask_base_dir
+        )
 
 def load_volumes(bbox_name: str, raw_base_dir: str, seg_base_dir: str, 
                 add_mask_base_dir: str) -> Tuple[Optional[np.ndarray], Optional[np.ndarray], Optional[np.ndarray]]:
@@ -409,33 +462,175 @@ def load_all_volumes(bbox_names: list, raw_base_dir: str, seg_base_dir: str,
             vol_data_dict[bbox_name] = volumes
     return vol_data_dict
 
-# def normalize_raw_data_before_segmentation(raw_data, size=(80, 80), mean=(0.485,), std=(0.229,)):
-#     """
-#     Normalize raw data before any segmentation step, without using global normalization.
+class GlobalNormalizationCalculator:
+    """
+    A class for computing global normalization statistics from raw data.
     
-#     Args:
-#         raw_data: Raw image data as a list of frames or 3D volume
-#         size: Target size for the processed images
-#         mean: Mean values for normalization
-#         std: Standard deviation values for normalization
+    This class provides functionality to:
+    1. Load raw volumes from specified directories
+    2. Compute global statistics (mean, std, min, max)
+    3. Save the computed statistics to a file
+    4. Load pre-computed statistics from a file
+    """
+    
+    def __init__(self, raw_base_dir=None, output_file=None):
+        """
+        Initialize the GlobalNormalizationCalculator.
         
-#     Returns:
-#         Normalized raw data ready for segmentation
-#     """
-#     # Create processor with standard normalization (no global normalization)
-#     processor = Synapse3DProcessor.create_with_standard_norm(
-#         size=size,
-#         mean=mean,
-#         std=std
-#     )
+        Args:
+            raw_base_dir (str, optional): Base directory for raw data
+            output_file (str, optional): File path to save computed statistics
+        """
+        self.raw_base_dir = raw_base_dir
+        self.output_file = output_file
+        self.stats = None
     
-#     # Convert to list of frames if the input is a 3D volume
-#     if isinstance(raw_data, np.ndarray) and raw_data.ndim == 3:
-#         frames = [raw_data[i] for i in range(raw_data.shape[0])]
-#     else:
-#         frames = raw_data
+    def compute_from_volumes(self, bbox_names, seg_base_dir=None, add_mask_base_dir=None, verbose=True):
+        """
+        Compute global statistics from raw volumes.
+        
+        Args:
+            bbox_names (list): List of bounding box names
+            seg_base_dir (str, optional): Base directory for segmentation data (not used for stats)
+            add_mask_base_dir (str, optional): Base directory for additional masks (not used for stats)
+            verbose (bool): Whether to print detailed information during computation
+            
+        Returns:
+            dict: Dictionary containing global statistics
+        """
+        if verbose:
+            print(f"Computing global normalization stats for {len(bbox_names)} volumes...")
+        
+        # Load all volumes
+        vol_data_dict = load_all_volumes(
+            bbox_names, 
+            self.raw_base_dir, 
+            seg_base_dir or self.raw_base_dir, 
+            add_mask_base_dir or self.raw_base_dir
+        )
+        
+        # Use the existing method to calculate stats
+        self.stats = Synapse3DProcessor.calculate_global_stats_from_volumes(vol_data_dict)
+        
+        # Add additional statistics
+        all_values = []
+        for bbox_name, (raw_vol, _, _) in vol_data_dict.items():
+            flat_vol = raw_vol.astype(np.float32).flatten()
+            all_values.append(flat_vol)
+        
+        if all_values:
+            all_data = np.concatenate(all_values)
+            self.stats['min'] = float(np.min(all_data))
+            self.stats['max'] = float(np.max(all_data))
+            self.stats['percentile_1'] = float(np.percentile(all_data, 1))
+            self.stats['percentile_99'] = float(np.percentile(all_data, 99))
+        
+        if self.output_file and self.stats:
+            self.save_stats()
+            
+        if verbose:
+            self._print_stats()
+            
+        return self.stats
     
-#     # Apply normalization to raw data
-#     normalized_data = processor(frames)
+    def compute_from_dataloader(self, data_loader, num_samples=None, verbose=True):
+        """
+        Compute global statistics from a DataLoader.
+        
+        Args:
+            data_loader: PyTorch DataLoader containing the dataset
+            num_samples (int, optional): Number of samples to use (None for all)
+            verbose (bool): Whether to print detailed information during computation
+            
+        Returns:
+            dict: Dictionary containing global statistics
+        """
+        if verbose:
+            print(f"Computing global normalization stats from dataloader...")
+        
+        # Use the existing method to calculate stats
+        self.stats = Synapse3DProcessor.calculate_global_stats(data_loader, num_samples)
+        
+        if self.output_file and self.stats:
+            self.save_stats()
+            
+        if verbose:
+            self._print_stats()
+            
+        return self.stats
     
-#     return normalized_data 
+    def save_stats(self, output_file=None):
+        """
+        Save the computed statistics to a file.
+        
+        Args:
+            output_file (str, optional): File path to save to (uses self.output_file if None)
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        if not self.stats:
+            print("No statistics to save.")
+            return False
+            
+        out_file = output_file or self.output_file
+        if not out_file:
+            print("No output file specified.")
+            return False
+            
+        try:
+            with open(out_file, 'w') as f:
+                json.dump(self.stats, f, indent=4)
+            print(f"Statistics saved to {out_file}")
+            return True
+        except Exception as e:
+            print(f"Error saving statistics: {e}")
+            return False
+    
+    def load_stats(self, input_file=None):
+        """
+        Load pre-computed statistics from a file.
+        
+        Args:
+            input_file (str, optional): File path to load from (uses self.output_file if None)
+            
+        Returns:
+            dict: Loaded statistics dictionary
+        """
+        in_file = input_file or self.output_file
+        if not in_file:
+            print("No input file specified.")
+            return None
+            
+        try:
+            with open(in_file, 'r') as f:
+                self.stats = json.load(f)
+            print(f"Statistics loaded from {in_file}")
+            return self.stats
+        except Exception as e:
+            print(f"Error loading statistics: {e}")
+            return None
+    
+    def _print_stats(self):
+        """Print the computed statistics in a readable format."""
+        if not self.stats:
+            print("No statistics available.")
+            return
+            
+        print("\nGlobal Normalization Statistics:")
+        print("-" * 30)
+        for key, value in self.stats.items():
+            print(f"{key}: {value}")
+        print("-" * 30)
+    
+    def get_normalization_parameters(self):
+        """
+        Get the mean and std for use with normalization.
+        
+        Returns:
+            tuple: (mean, std) as expected by Synapse3DProcessor
+        """
+        if not self.stats:
+            return None, None
+            
+        return self.stats.get('mean'), self.stats.get('std')

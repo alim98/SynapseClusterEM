@@ -129,6 +129,188 @@ def create_segmented_cube(raw_vol: np.ndarray,
                          segmentation_type: int,
                          subvolume_size: int = 80,
                          alpha: float = 0.3,
+                         bbox_name: str = "") -> np.ndarray:
+    """
+    Create a segmented cube from the input volumes.
+    Returns a single-channel grayscale volume.
+    
+    Args:
+        raw_vol: Raw image volume (single channel)
+        seg_vol: Segmentation volume
+        add_mask_vol: Additional mask volume
+        central_coord: Central coordinate (z, y, x)
+        side1_coord: Side 1 coordinate (z, y, x)
+        side2_coord: Side 2 coordinate (z, y, x)
+        segmentation_type: Type of segmentation to apply
+        subvolume_size: Size of the output cube
+        alpha: Alpha blending factor
+        bbox_name: Name of the bounding box
+        
+    Returns:
+        Single-channel segmented cube as numpy array with shape [H, W, 1, D]
+    """
+    labels = get_bbox_labels(bbox_name)
+    
+    # --- Always calculate subvolume bounds FIRST ---
+    half_size = subvolume_size // 2
+    cx, cy, cz = central_coord
+    x_start = max(cx - half_size, 0)
+    x_end = min(cx + half_size, raw_vol.shape[2])
+    y_start = max(cy - half_size, 0)
+    y_end = min(cy + half_size, raw_vol.shape[1])
+    z_start = max(cz - half_size, 0)
+    z_end = min(cz + half_size, raw_vol.shape[0])
+
+    # --- Vesicle filtering (critical for presynapse determination) ---
+    vesicle_full_mask = (add_mask_vol == labels['vesicle_label'])
+    vesicle_mask = get_closest_component_mask(
+        vesicle_full_mask,
+        z_start, z_end,
+        y_start, y_end,
+        x_start, x_end,
+        (cx, cy, cz)
+    )
+
+    # --- Side masks ---
+    def create_segment_masks(segmentation_volume, s1_coord, s2_coord):
+        x1, y1, z1 = s1_coord
+        x2, y2, z2 = s2_coord
+        seg_id_1 = segmentation_volume[z1, y1, x1]
+        seg_id_2 = segmentation_volume[z2, y2, x2]
+        mask_1 = (segmentation_volume == seg_id_1) if seg_id_1 != 0 else np.zeros_like(segmentation_volume, dtype=bool)
+        mask_2 = (segmentation_volume == seg_id_2) if seg_id_2 != 0 else np.zeros_like(segmentation_volume, dtype=bool)
+        return mask_1, mask_2
+
+    mask_1_full, mask_2_full = create_segment_masks(seg_vol, side1_coord, side2_coord)
+
+    # --- Determine pre-synapse side using filtered vesicles ---
+    overlap_side1 = np.sum(np.logical_and(mask_1_full, vesicle_mask))
+    overlap_side2 = np.sum(np.logical_and(mask_2_full, vesicle_mask))
+    presynapse_side = 1 if overlap_side1 > overlap_side2 else 2
+    # print(f"overlap_side1={overlap_side1}_overlap_side2={overlap_side2}_side1_coord:{side1_coord}_side1_coord:{side2_coord}")
+    # --- Segmentation type handling ---
+    if segmentation_type == 0: # Raw data
+        combined_mask_full = np.ones_like(add_mask_vol, dtype=bool)
+    elif segmentation_type == 1:  # Presynapse
+        combined_mask_full = mask_1_full if presynapse_side == 1 else mask_2_full
+    elif segmentation_type == 2:  # Postsynapse
+        combined_mask_full = mask_2_full if presynapse_side == 1 else mask_1_full
+    elif segmentation_type == 3:  # Both sides
+        combined_mask_full = np.logical_or(mask_1_full, mask_2_full)
+    elif segmentation_type == 4:  # Vesicles + Cleft (closest only)
+        vesicle_closest = get_closest_component_mask(
+            (add_mask_vol == labels['vesicle_label']), z_start, z_end, y_start, y_end, x_start, x_end, (cx, cy, cz)
+        )
+        cleft_closest = get_closest_component_mask(
+            ((add_mask_vol == labels['cleft_label'])), z_start, z_end, y_start, y_end, x_start, x_end, (cx, cy, cz)
+        )
+        cleft_closest2 = get_closest_component_mask(
+            ((add_mask_vol == labels['cleft_label2'])), z_start, z_end, y_start, y_end, x_start, x_end, (cx, cy, cz)
+        )
+        combined_mask_full = np.logical_or(vesicle_closest, np.logical_or(cleft_closest,cleft_closest2))
+    elif segmentation_type == 5:  # (closest vesicles/cleft + sides)
+        vesicle_closest = get_closest_component_mask(
+            (add_mask_vol == labels['vesicle_label']), z_start, z_end, y_start, y_end, x_start, x_end, (cx, cy, cz)
+        )
+        cleft_closest = get_closest_component_mask(
+            (add_mask_vol == labels['cleft_label']), z_start, z_end, y_start, y_end, x_start, x_end, (cx, cy, cz)
+        )
+        combined_mask_extra = np.logical_or(vesicle_closest, cleft_closest)
+        combined_mask_full = np.logical_or(mask_1_full, np.logical_or(mask_2_full, combined_mask_extra))
+    elif segmentation_type == 6:  # Vesicle cloud (closest)
+        combined_mask_full = get_closest_component_mask(
+            (add_mask_vol == labels['vesicle_label']), z_start, z_end, y_start, y_end, x_start, x_end, (cx, cy, cz)
+        )
+    elif segmentation_type == 7:  # Cleft (closest)
+        cleft_closest = get_closest_component_mask(
+            ((add_mask_vol == labels['cleft_label'])), z_start, z_end, y_start, y_end, x_start, x_end, (cx, cy, cz)
+        )
+        cleft_closest2 = get_closest_component_mask(
+            ((add_mask_vol == labels['cleft_label2'])), z_start, z_end, y_start, y_end, x_start, x_end, (cx, cy, cz)
+        )
+        combined_mask_full =  np.logical_or(cleft_closest,cleft_closest2)
+    elif segmentation_type == 8:  # Mitochondria (closest)
+        combined_mask_full = get_closest_component_mask(
+            (add_mask_vol == labels['mito_label']), z_start, z_end, y_start, y_end, x_start, x_end, (cx, cy, cz)
+        )
+    elif segmentation_type == 10:  #  +Cleft +pre
+        # vesicle_closest = get_closest_component_mask(
+        #     (add_mask_vol == vesicle_label), z_start, z_end, y_start, y_end, x_start, x_end, (cx, cy, cz)
+        # )
+        cleft_closest = get_closest_component_mask(
+            (add_mask_vol == labels['cleft_label']), z_start, z_end, y_start, y_end, x_start, x_end, (cx, cy, cz)
+        )
+        pre_mask_full = mask_1_full if presynapse_side == 1 else mask_2_full
+
+        combined_mask_full = np.logical_or(cleft_closest,pre_mask_full)
+
+    elif segmentation_type == 9:  # cleft+vesicle
+        vesicle_closest = get_closest_component_mask(
+            (add_mask_vol == labels['vesicle_label']), z_start, z_end, y_start, y_end, x_start, x_end, (cx, cy, cz)
+        )
+        cleft_closest = get_closest_component_mask(
+            (add_mask_vol == labels['cleft_label']), z_start, z_end, y_start, y_end, x_start, x_end, (cx, cy, cz)
+        )
+        # pre_mask_full = mask_1_full if presynapse_side == 1 else mask_2_full
+
+        combined_mask_full = np.logical_or(cleft_closest,vesicle_closest)
+
+    else:
+        raise ValueError(f"Unsupported segmentation type: {segmentation_type}")
+    
+    # Extract and process subvolume
+    sub_raw = raw_vol[z_start:z_end, y_start:y_end, x_start:x_end]
+    sub_combined_mask = combined_mask_full[z_start:z_end, y_start:y_end, x_start:x_end]
+    
+    # Padding if needed
+    pad_z = subvolume_size - sub_raw.shape[0]
+    pad_y = subvolume_size - sub_raw.shape[1]
+    pad_x = subvolume_size - sub_raw.shape[2]
+    if pad_z > 0 or pad_y > 0 or pad_x > 0:
+        sub_raw = np.pad(sub_raw, ((0, pad_z), (0, pad_y), (0, pad_x)), mode='constant', constant_values=0)
+        sub_combined_mask = np.pad(sub_combined_mask, ((0, pad_z), (0, pad_y), (0, pad_x)), mode='constant', constant_values=False)
+    
+    sub_raw = sub_raw[:subvolume_size, :subvolume_size, :subvolume_size]
+    sub_combined_mask = sub_combined_mask[:subvolume_size, :subvolume_size, :subvolume_size]
+    
+    # Convert to float32
+    sub_raw = sub_raw.astype(np.float32)
+    
+    # First normalize the raw data to 0-255 range
+    min_val = np.min(sub_raw)
+    max_val = np.max(sub_raw)
+    
+    # Avoid division by zero
+    if max_val > min_val:
+        normalized_raw = 255.0 * (sub_raw - min_val) / (max_val - min_val)
+    else:
+        normalized_raw = np.zeros_like(sub_raw)
+    
+    # Apply mask with fixed gray value (128 is middle of 0-255 range)
+    gray_value = 128.0
+    result = np.where(sub_combined_mask, normalized_raw, gray_value)
+    
+    # Add channel dimension and transpose to [H, W, C, D] where C=1
+    result = result[..., np.newaxis]  # Add channel dimension
+    overlaid_cube = np.transpose(result, (0, 1, 3, 2))  # [H, W, C, D]
+    
+    return overlaid_cube.astype(np.float32)  # Ensure float32 output
+
+# Rename the original function
+create_segmented_cube_original = create_segmented_cube
+
+# Overwrite with the new simplified version
+create_segmented_cube = create_segmented_cube
+
+def create_segmented_cube(raw_vol: np.ndarray,
+                         seg_vol: np.ndarray,
+                         add_mask_vol: np.ndarray,
+                         central_coord: Tuple[int, int, int],
+                         side1_coord: Tuple[int, int, int],
+                         side2_coord: Tuple[int, int, int],
+                         segmentation_type: int,
+                         subvolume_size: int = 80,
+                         alpha: float = 0.3,
                          bbox_name: str = "",
                          global_mean: float = None,
                          global_std: float = None) -> np.ndarray:

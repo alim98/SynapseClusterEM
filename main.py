@@ -187,41 +187,16 @@ def extract_features(args):
                 
                 # Save central slice
                 central_slice = segmented_cube[:, :, segmented_cube.shape[2] // 2, :]
-                slice_img = central_slice[:, :, central_slice.shape[2] // 2]
+                slice_img = central_slice[:, :, central_slice.shape[2] // 2]  # Get the single channel
                 
-                # Create a mask for the gray regions (where value is exactly 128.0)
-                gray_mask = np.isclose(slice_img, 128.0)
-                
-                # Normalize the slice to ensure consistent visualization
-                # This ensures the gray value appears the same across all images
-                normalized_slice = slice_img.copy()
-                
-                # Replace the gray value with a special value temporarily
-                special_value = -1000  # A value that won't occur naturally
-                normalized_slice[gray_mask] = special_value
-                
-                # Normalize the non-gray parts
-                non_gray_mask = ~gray_mask
-                if np.any(non_gray_mask):
-                    min_val = np.min(normalized_slice[non_gray_mask])
-                    max_val = np.max(normalized_slice[non_gray_mask])
-                    
-                    # Avoid division by zero
-                    if max_val > min_val:
-                        # Scale the non-gray parts to 0-255
-                        normalized_slice[non_gray_mask] = 255.0 * (normalized_slice[non_gray_mask] - min_val) / (max_val - min_val)
-                
-                # Set the gray parts to a consistent value (128)
-                normalized_slice[gray_mask] = 128.0
-                
+                # Ensure single channel visualization
                 plt.figure(figsize=(8, 8))
-                # Use the normalized slice with consistent gray value
-                plt.imshow(normalized_slice, cmap='gray', vmin=0, vmax=255)
+                plt.imshow(slice_img, cmap='gray', vmin=0, vmax=255)  # Explicitly set grayscale range
                 plt.title(f"Sample {i+1}: {bbox_name}, Synapse {syn_info['Var1']}")
                 plt.axis('off')
                 
                 sample_vis_path = sample_vis_dir / f"sample_{i+1}_{bbox_name}_synapse_{syn_info['Var1']}.png"
-                plt.savefig(sample_vis_path, dpi=150, bbox_inches='tight')
+                plt.savefig(sample_vis_path, dpi=150, bbox_inches='tight', format='png')
                 plt.close()
                 
             logger.info(f"Sample visualizations saved to {sample_vis_dir}")

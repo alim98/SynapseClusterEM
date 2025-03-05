@@ -34,8 +34,8 @@ batch_size: 1
 num_workers: 0
 
 # Normalization parameters
-use_global_norm: false
-global_stats_path: null
+use_global_norm: true
+global_stats_path: "global_stats.json"
 num_samples_for_stats: 100
 
 # Visualization parameters
