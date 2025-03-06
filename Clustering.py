@@ -20,7 +20,8 @@ from synapse.utils.clusterhelper import (
     apply_tsne, 
     find_closest_samples_in_clusters,
     save_tsne_plots,
-    save_cluster_samples
+    save_cluster_samples, 
+    find_random_samples_in_clusters
 )
 
 # Define bounding box names to process
@@ -75,7 +76,7 @@ color_mapping = {
 
 # Get CSV file paths using the config helper
 csv_files = [
-    os.path.join('csv_outputs', 'features_seg9_alpha1.csv'),
+    # os.path.join('csv_outputs', 'features_seg9_alpha1.csv'),
     os.path.join('csv_outputs', 'features_seg10_alpha1.csv')
 ]
 
@@ -105,10 +106,12 @@ for csv_file in csv_files:
     save_tsne_plots(features_df, tsne_results_2d, tsne_results_3d, kmeans, color_mapping, output_dir)
 
     # Step 4: Find and save closest samples
-    closest_samples_per_cluster = find_closest_samples_in_clusters(features_df, feature_cols, 4)
-    
+    # closest_samples_per_cluster = find_closest_samples_in_clusters(features_df, feature_cols, 4)
+     # Step 4: Find and save random samples
+    random_samples_per_cluster = find_random_samples_in_clusters(features_df, feature_cols, 4)
+
     # Step 5: Save cluster samples as images
-    save_cluster_samples(dataset, closest_samples_per_cluster, output_dir)
+    save_cluster_samples(dataset, random_samples_per_cluster, output_dir)
 
     print(f"Saved results to {output_dir}")
 

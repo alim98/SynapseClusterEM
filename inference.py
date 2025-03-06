@@ -45,6 +45,9 @@ from synapse.utils.clusterhelper import (
     save_cluster_samples
 )
 
+# Import presynapse analysis function
+from presynapse_analysis import run_presynapse_analysis
+
 # Add unique IDs to fixed_samples
 fixed_samples = [
     {"id": 1, "bbox_name": "bbox1", "Var1": "non_spine_synapse_004", "slice_number": 25},
@@ -310,11 +313,13 @@ def extract_and_save_features(model, dataset, config, seg_type, alpha, output_di
     
     return csv_filepath
 
+
 def run_full_analysis(config, vol_data_dict, syn_df, processor, model):
     output_dir = config.csv_output_dir  # Directory to save CSVs
     
-    segmentation_types = [1]  # Different segmentation types to analyze
-    alpha_values = [ 1.0]  # Different alpha values to analyze
+    # Ensure segmentation_types and alpha_values are lists, not single values
+    segmentation_types = [config.segmentation_type] if isinstance(config.segmentation_type, int) else config.segmentation_type
+    alpha_values = [config.alpha] if isinstance(config.alpha, (int, float)) else config.alpha
     combined_features = []
     
     # Feature extraction for different segmentation types and alpha values
@@ -392,7 +397,15 @@ def run_full_analysis(config, vol_data_dict, syn_df, processor, model):
             import traceback
             traceback.print_exc()
     
-    print("Analysis complete!")
+    print("Main analysis complete!")
+    
+    # Run presynapse analysis to identify synapses with the same presynapse ID
+    print("\n\n" + "="*80)
+    print("Starting presynapse analysis to identify synapses with the same presynapse ID")
+    print("="*80)
+    run_presynapse_analysis(config)
+    
+    print("All analyses complete!")
 
 # Load and prepare data
 def load_and_prepare_data(config):
@@ -434,7 +447,7 @@ if __name__ == '__main__':
     config.parse_args()
     
     # Override specific configuration if needed
-    config.bbox_name = ['bbox1']
+    # config.bbox_name = ['bbox1', ]
 
     # Initialize model
     model = Vgg3D(input_size=(80, 80, 80), fmaps=24, output_classes=7, input_fmaps=1)

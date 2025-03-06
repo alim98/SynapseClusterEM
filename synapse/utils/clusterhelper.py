@@ -205,14 +205,35 @@ def save_tsne_plots(features_df, tsne_results_2d, tsne_results_3d, kmeans, color
 
 # Function to save cluster samples as images
 def save_cluster_samples(dataset, closest_samples_per_cluster, output_dir):
+    """
+    Save visualizations of sample synapses from each cluster.
+    
+    Args:
+        dataset: Dataset containing synapse volume data
+        closest_samples_per_cluster: Dictionary mapping cluster IDs to DataFrames of sample synapses
+        output_dir: Directory to save the visualizations
+    """
     for cluster_id, samples in closest_samples_per_cluster.items():
         fig, axes = plt.subplots(1, 4, figsize=(15, 5))
-        for i, sample in enumerate(samples):
-            pixel_values, syn_info, bbox_name = dataset[sample.name]
-            center_slice = pixel_values[pixel_values.shape[0] // 2, :, :].squeeze()
-            axes[i].imshow(center_slice, cmap='gray')
-            axes[i].axis('off')
-            axes[i].set_title(f'Sample {i+1}\n({syn_info["bbox_name"]})')
+        
+        for i, (idx, _) in enumerate(samples.iterrows()):
+            try:
+                # Get the data for this sample from the dataset
+                pixel_values, syn_info, bbox_name = dataset[idx]
+                
+                # Get the center slice of the volume
+                center_slice = pixel_values[pixel_values.shape[0] // 2, :, :].squeeze()
+                
+                # Plot the center slice
+                axes[i].imshow(center_slice, cmap='gray')
+                axes[i].axis('off')
+                axes[i].set_title(f'Sample {i+1}\n({syn_info["bbox_name"]})')
+            except Exception as e:
+                print(f"Error processing sample at index {idx}: {e}")
+                # If there's an error, just show a blank image
+                axes[i].axis('off')
+                axes[i].set_title(f'Sample {i+1}\n(Error)')
+                
         plt.suptitle(f'Cluster {cluster_id} Samples')
         plt.tight_layout()
         plt.savefig(os.path.join(output_dir, f'cluster_{cluster_id}_samples.png'))

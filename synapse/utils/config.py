@@ -7,15 +7,15 @@ class SynapseConfig:
         self.raw_base_dir = 'data/7_bboxes_plus_seg/raw'
         self.seg_base_dir = 'data/7_bboxes_plus_seg/seg'
         self.add_mask_base_dir = 'data/vesicle_cloud__syn_interface__mitochondria_annotation'
-        self.bbox_name = ['bbox1']
+        self.bbox_name = ['bbox1', 'bbox2', 'bbox3', 'bbox4', 'bbox5', 'bbox6', 'bbox7']
         self.excel_file = 'data/7_bboxes_plus_seg'
         self.csv_output_dir = 'results/csv_outputs'
         self.size = (80, 80)
         self.subvol_size = 80
         self.num_frames = 80
         self.save_gifs_dir = 'results/gifs'
-        self.alpha = 0.5
-        self.segmentation_type = 6
+        self.alpha = 1.0
+        self.segmentation_type = 10
         
         # CSV file configurations
         self.clustering_output_dir = 'results/clustering_results_final'
