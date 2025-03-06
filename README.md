@@ -40,7 +40,7 @@ SynapseClusterEM/
 │       └── sample_fig.py         # Functions for creating visualizations
 ├── run_analysis.py               # Main entry point script
 ├── Clustering.py                 # Clustering analysis script
-├── inference2.py                 # Feature extraction script
+├── inference.py                  # Feature extraction script
 └── requirements.txt              # Project dependencies
 ```
 
@@ -79,7 +79,7 @@ data/
 Run the main analysis script for feature extraction and visualization:
 
 ```bash
-python inference2.py
+python inference.py
 ```
 
 ### Clustering Analysis
@@ -182,4 +182,4 @@ If you use this code or find it helpful for your research, please consider citin
   publisher = {GitHub},
   url = {https://github.com/alim98/SynapseClusterEM}
 }
-``` 
+```

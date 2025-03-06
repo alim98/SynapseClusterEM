@@ -10,6 +10,7 @@ import os
 import argparse
 # Import from the reorganized modules
 from synapse import config, SynapseDataLoader, Synapse3DProcessor, Vgg3D, load_model_from_checkpoint
+from inference import run_full_analysis, load_and_prepare_data
 
 def parse_arguments():
     """Parse command line arguments."""
@@ -62,9 +63,6 @@ def main():
     print(f"  Data directory: {args.data_dir}")
     print(f"  Output directory: {args.output_dir}")
     print()
-    
-    # Import the inference module (done here to avoid circular imports)
-    from inference2 import run_full_analysis, load_and_prepare_data
     
     # Initialize model
     print("Loading model...")
