@@ -119,7 +119,7 @@ class SynapseReportGenerator:
             }
             
             .nav-tabs li {
-                margin-right: 5px;
+                margin-bottom: -1px;
             }
             
             .nav-tabs a {
@@ -127,89 +127,236 @@ class SynapseReportGenerator:
                 padding: 10px 15px;
                 text-decoration: none;
                 color: #555;
-                background-color: #f8f9fa;
-                border: 1px solid #ddd;
-                border-bottom: none;
-                border-radius: 5px 5px 0 0;
+                border: 1px solid transparent;
+                border-radius: 4px 4px 0 0;
+            }
+            
+            .nav-tabs a:hover {
+                background-color: #f5f5f5;
+                border-color: #ddd #ddd transparent;
             }
             
             .nav-tabs a.active {
                 background-color: #fff;
-                border-bottom: 1px solid #fff;
-                margin-bottom: -1px;
-                color: #2c3e50;
+                color: #3498db;
+                border-color: #ddd #ddd #fff;
                 font-weight: bold;
             }
             
             .tab-content {
+                padding: 20px;
                 border: 1px solid #ddd;
                 border-top: none;
-                border-radius: 0 0 5px 5px;
-                padding: 20px;
-                margin-bottom: 20px;
-            }
-            
-            .card {
-                border: 1px solid #ddd;
-                border-radius: 5px;
-                margin-bottom: 20px;
-                overflow: hidden;
-            }
-            
-            .card-header {
-                background-color: #f8f9fa;
-                padding: 15px;
-                border-bottom: 1px solid #ddd;
-            }
-            
-            .card-header h2 {
-                margin: 0;
             }
             
             .gallery {
                 display: flex;
                 flex-wrap: wrap;
-                gap: 20px;
+                justify-content: space-around;
                 margin: 20px 0;
             }
             
             .gallery-item {
-                flex: 0 0 calc(33.333% - 20px);
+                margin: 10px;
+                max-width: 350px;
                 border: 1px solid #ddd;
                 border-radius: 5px;
-                overflow: hidden;
-                box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-                margin-bottom: 20px;
+                padding: 10px;
+                background-color: #fff;
+                box-shadow: 0 0 5px rgba(0,0,0,0.1);
             }
             
             .gallery-item img {
-                width: 100%;
+                max-width: 100%;
                 height: auto;
+                border-radius: 3px;
+            }
+            
+            .gallery-caption {
+                margin-top: 5px;
+                font-size: 0.9em;
+                color: #666;
+                text-align: center;
+            }
+            
+            /* New styles for enhanced UMAP visualizations */
+            .visualization-large {
+                width: 100%;
+                margin: 20px 0;
+                border: 1px solid #ddd;
+                border-radius: 8px;
+                padding: 15px;
+                background-color: #fff;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            }
+            
+            .visualization-large img {
+                max-width: 100%;
+                height: auto;
+                margin: 0 auto;
                 display: block;
+                border-radius: 4px;
+            }
+            
+            .visualization-large .caption {
+                margin-top: 12px;
+                font-size: 1em;
+                color: #555;
+                text-align: center;
+                line-height: 1.5;
+                padding: 0 20px;
+            }
+            
+            .interactive-link {
+                text-align: center;
+                margin: 30px 0;
+                padding: 20px;
+                background-color: #f8f9fa;
+                border-radius: 8px;
+            }
+            
+            .button {
+                display: inline-block;
+                background-color: #3498db;
+                color: white;
+                padding: 12px 24px;
+                text-decoration: none;
+                border-radius: 4px;
+                font-weight: bold;
+                transition: background-color 0.3s;
+            }
+            
+            .button:hover {
+                background-color: #2980b9;
+            }
+            
+            /* Styled toggle for showing/hiding sections */
+            .section-toggle {
+                cursor: pointer;
+                color: #3498db;
+                margin-left: 10px;
+                font-size: 0.8em;
+            }
+            
+            /* Highlight focus sections */
+            .umap-section {
+                border-left: 4px solid #3498db;
+                padding-left: 15px;
+                margin: 30px 0;
+            }
+            
+            /* Card layouts for key visualizations */
+            .visualization-cards {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 20px;
+                justify-content: center;
+                margin: 30px 0;
+            }
+            
+            .visualization-card {
+                flex: 1 1 calc(33.333% - 20px);
+                min-width: 300px;
+                max-width: 500px;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                background-color: #fff;
+                border-radius: 8px;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+                margin: 10px 0;
+                overflow: hidden;
+                transition: transform 0.3s, box-shadow 0.3s;
+            }
+            
+            .visualization-card:hover {
+                transform: translateY(-5px);
+                box-shadow: 0 6px 16px rgba(0,0,0,0.15);
+            }
+            
+            .visualization-card img {
+                width: 100%;
                 max-height: 300px;
                 object-fit: contain;
             }
             
-            .gallery-caption {
-                padding: 10px;
-                background-color: #f8f9fa;
-                text-align: center;
-                font-weight: bold;
+            .visualization-card .card-content {
+                padding: 20px;
+                width: 100%;
             }
             
-            @media (max-width: 768px) {
-                .gallery-item {
-                    flex: 0 0 calc(50% - 20px);
-                }
-            }
-            
-            @media (max-width: 480px) {
-                .gallery-item {
-                    flex: 0 0 100%;
-                }
+            .visualization-card h4 {
+                margin-top: 0;
+                color: #2c3e50;
+                border-bottom: 2px solid #f1f1f1;
+                padding-bottom: 10px;
             }
         </style>
         """
+    
+    def copy_image_to_assets(self, source_path, report_dir):
+        """
+        Copy an image to the assets directory of a report.
+        
+        Args:
+            source_path: Path to the source image
+            report_dir: Directory of the report
+            
+        Returns:
+            str: Relative path to the copied image for use in HTML
+        """
+        # Create assets directory if it doesn't exist
+        assets_dir = os.path.join(report_dir, "assets")
+        os.makedirs(assets_dir, exist_ok=True)
+        
+        # Extract the filename from the source path
+        source_path = Path(source_path)
+        filename = source_path.name
+        
+        # Define the destination path
+        dest_path = os.path.join(assets_dir, filename)
+        
+        # Copy the file
+        try:
+            shutil.copy2(source_path, dest_path)
+            logger.info(f"Copied image: {source_path} -> {dest_path}")
+        except Exception as e:
+            logger.error(f"Error copying image {source_path} to {dest_path}: {e}")
+        
+        # Return the relative path for HTML
+        return f"assets/{filename}"
+    
+    def copy_to_assets(self, source_path, report_dir):
+        """
+        Copy a file to the assets directory of a report.
+        
+        Args:
+            source_path: Path to the source file
+            report_dir: Directory of the report
+            
+        Returns:
+            str: Relative path to the copied file for use in HTML
+        """
+        # Create assets directory if it doesn't exist
+        assets_dir = os.path.join(report_dir, "assets")
+        os.makedirs(assets_dir, exist_ok=True)
+        
+        # Extract the filename from the source path
+        source_path = Path(source_path)
+        filename = source_path.name
+        
+        # Define the destination path
+        dest_path = os.path.join(assets_dir, filename)
+        
+        # Copy the file
+        try:
+            shutil.copy2(source_path, dest_path)
+            logger.info(f"Copied file: {source_path} -> {dest_path}")
+        except Exception as e:
+            logger.error(f"Error copying file {source_path} to {dest_path}: {e}")
+        
+        # Return the relative path for HTML
+        return f"assets/{filename}"
     
     def find_available_combinations(self):
         """Find all available segmentation type and alpha combinations in the results directories."""
@@ -357,40 +504,19 @@ class SynapseReportGenerator:
                         has_umap = True
             
             # Presynapse information
-            has_presynapse_id = 'presynapse_id' in features_df.columns
+            has_presynapse_id = False
             num_presynapses = 0
             multiple_synapse_presynapses = {}
             
-            if has_presynapse_id:
-                # Count presynapses and identify those with multiple synapses
-                presynapse_ids = features_df[features_df['presynapse_id'] > 0]['presynapse_id'].unique()
-                num_presynapses = len(presynapse_ids)
+            # Analyze presynapse information if available
+            if 'presynapse_id' in features_df.columns:
+                has_presynapse_id = True
+                presynapse_ids = features_df['presynapse_id'].dropna().unique()
+                num_presynapses = len(presynapse_ids[presynapse_ids > 0])
                 
                 if num_presynapses > 0:
                     presynapse_counts = features_df[features_df['presynapse_id'] > 0].groupby('presynapse_id').size()
-                    multiple_synapse_counts = presynapse_counts[presynapse_counts > 1]
-                    multiple_synapse_presynapses = multiple_synapse_counts.to_dict()
-            
-            # If no presynapse_id in main file, check if there's a presynapse analysis directory
-            if not has_presynapse_id:
-                presynapse_dir = self.clustering_output_dir / "presynapse_analysis" / f"seg{seg_type}_alpha{alpha_str}"
-                if presynapse_dir.exists():
-                    # Look for updated features file with presynapse IDs
-                    updated_features_file = presynapse_dir / f"updated_features_seg{seg_type}_alpha{alpha_str}.csv"
-                    if updated_features_file.exists():
-                        try:
-                            presynapse_df = pd.read_csv(updated_features_file)
-                            if 'presynapse_id' in presynapse_df.columns:
-                                has_presynapse_id = True
-                                presynapse_ids = presynapse_df[presynapse_df['presynapse_id'] > 0]['presynapse_id'].unique()
-                                num_presynapses = len(presynapse_ids)
-                                
-                                if num_presynapses > 0:
-                                    presynapse_counts = presynapse_df[presynapse_df['presynapse_id'] > 0].groupby('presynapse_id').size()
-                                    multiple_synapse_counts = presynapse_counts[presynapse_counts > 1]
-                                    multiple_synapse_presynapses = multiple_synapse_counts.to_dict()
-                        except Exception as e:
-                            logger.error(f"Error reading updated features file: {e}")
+                    multiple_synapse_presynapses = presynapse_counts[presynapse_counts > 1].to_dict()
             
             # Collect all results
             results = {
@@ -434,6 +560,84 @@ class SynapseReportGenerator:
                 'num_bboxes': 0
             }
 
+    def find_cluster_samples(self, seg_type, alpha):
+        """
+        Find cluster sample images for a specific segmentation type and alpha value.
+        Performs a comprehensive search across multiple potential directories.
+        
+        Args:
+            seg_type: Segmentation type
+            alpha: Alpha value
+            
+        Returns:
+            list: List of paths to cluster sample images
+        """
+        alpha_str = str(alpha).replace('.', '_')
+        cluster_samples = []
+        
+        # Search patterns to try in different directories
+        search_patterns = [
+            "cluster_*_samples.png", 
+            "*cluster*samples*.png",
+            "*cluster*slice*.png"
+        ]
+        
+        # Directories to search in
+        search_dirs = [
+            # Main CSV output directory for this segmentation/alpha
+            self.csv_output_dir / f"seg{seg_type}_alpha{alpha_str}",
+            
+            # Clustering output directory
+            self.clustering_output_dir / f"seg{seg_type}_alpha{alpha_str}",
+            
+            # Combined analysis directory
+            self.csv_output_dir / "combined_analysis",
+            
+            # Root output directory
+            self.csv_output_dir,
+            
+            # Root clustering directory
+            self.clustering_output_dir
+        ]
+        
+        # If presynapse analysis exists for this combination, add it to search dirs
+        if (seg_type, alpha) in self.presynapse_files:
+            presynapse_dir = self.presynapse_files[(seg_type, alpha)]
+            search_dirs.append(presynapse_dir)
+            
+            # Also search in potential subdirectories
+            for subdir in ["cluster_visualizations", "visualizations", "clustering", "analysis"]:
+                search_dirs.append(presynapse_dir / subdir)
+        
+        # Search in all directories with all patterns
+        for search_dir in search_dirs:
+            if search_dir.exists() and search_dir.is_dir():
+                for pattern in search_patterns:
+                    found_samples = list(search_dir.glob(pattern))
+                    if found_samples:
+                        logger.info(f"Found {len(found_samples)} cluster samples in {search_dir} with pattern {pattern}")
+                        cluster_samples.extend([str(path) for path in found_samples])
+                
+                # Also search one level deeper
+                for subdir in search_dir.glob("*/"):
+                    if subdir.is_dir():
+                        for pattern in search_patterns:
+                            found_samples = list(subdir.glob(pattern))
+                            if found_samples:
+                                logger.info(f"Found {len(found_samples)} cluster samples in {subdir} with pattern {pattern}")
+                                cluster_samples.extend([str(path) for path in found_samples])
+        
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_samples = []
+        for sample in cluster_samples:
+            if sample not in seen:
+                seen.add(sample)
+                unique_samples.append(sample)
+        
+        logger.info(f"Found {len(unique_samples)} unique cluster sample images for seg_type={seg_type}, alpha={alpha}")
+        return unique_samples
+
     def find_visualizations(self, seg_type, alpha):
         """
         Find visualizations related to a specific segmentation type and alpha value.
@@ -449,6 +653,7 @@ class SynapseReportGenerator:
         
         # Common visualization paths
         visualizations = {}
+        cluster_samples = []
         
         # Combined analysis visualizations
         combined_dir = self.csv_output_dir / "combined_analysis"
@@ -465,23 +670,72 @@ class SynapseReportGenerator:
             tsne_3d = combined_dir / f"tsne_3d.png"
             if tsne_3d.exists():
                 visualizations['tsne_3d'] = str(tsne_3d)
+                
+            # Look for cluster samples in combined_analysis too
+            combined_cluster_samples = list(combined_dir.glob("cluster_*_samples.png"))
+            if combined_cluster_samples:
+                cluster_samples.extend([str(path) for path in combined_cluster_samples])
         
         # Segmentation-specific visualizations
         seg_dir = self.csv_output_dir / f"seg{seg_type}_alpha{alpha_str}"
         if seg_dir.exists():
-            # Find cluster sample visualizations
-            cluster_samples = list(seg_dir.glob("cluster_*_samples.png"))
-            if cluster_samples:
-                visualizations['cluster_samples'] = [str(path) for path in cluster_samples]
+            # Find cluster sample visualizations with multiple patterns
+            for pattern in ["cluster_*_samples.png", "*cluster*samples*.png"]:
+                found_samples = list(seg_dir.glob(pattern))
+                if found_samples:
+                    cluster_samples.extend([str(path) for path in found_samples])
+        
+        # Also check in clustering_output_dir
+        cluster_output_dir = self.clustering_output_dir / f"seg{seg_type}_alpha{alpha_str}"
+        if cluster_output_dir.exists():
+            # Check for additional cluster visualizations with multiple patterns
+            for pattern in ["cluster_*_samples.png", "*cluster*samples*.png"]:
+                found_samples = list(cluster_output_dir.glob(pattern))
+                if found_samples:
+                    cluster_samples.extend([str(path) for path in found_samples])
         
         # Presynapse analysis visualizations
         if (seg_type, alpha) in self.presynapse_files:
             presynapse_dir = self.presynapse_files[(seg_type, alpha)]
             
-            # Connected UMAP
-            connected_umap = presynapse_dir / "cluster_visualizations" / "connected_umap_visualization.png"
-            if connected_umap.exists():
-                visualizations['connected_umap'] = str(connected_umap)
+            # Connected UMAP - try multiple potential locations
+            for umap_path in [
+                presynapse_dir / "cluster_visualizations" / "connected_umap_visualization.png",
+                presynapse_dir / "connected_umap_visualization.png",
+                presynapse_dir / "umap_visualization.png"
+            ]:
+                if umap_path.exists():
+                    visualizations['connected_umap'] = str(umap_path)
+                    break
+            
+            # UMAP colored by bounding box - try multiple potential locations
+            for umap_bbox_path in [
+                presynapse_dir / "cluster_visualizations" / "umap_bbox_colored.png",
+                presynapse_dir / "umap_bbox_colored.png",
+                presynapse_dir / "umap_bbox.png"
+            ]:
+                if umap_bbox_path.exists():
+                    visualizations['umap_bbox_colored'] = str(umap_bbox_path)
+                    break
+            
+            # UMAP colored by cluster - try multiple potential locations
+            for umap_cluster_path in [
+                presynapse_dir / "cluster_visualizations" / "umap_cluster_colored.png",
+                presynapse_dir / "umap_cluster_colored.png",
+                presynapse_dir / "umap_cluster.png"
+            ]:
+                if umap_cluster_path.exists():
+                    visualizations['umap_cluster_colored'] = str(umap_cluster_path)
+                    break
+            
+            # Interactive UMAP - try multiple potential locations
+            for interactive_umap_path in [
+                presynapse_dir / "cluster_visualizations" / "connected_umap_interactive.html",
+                presynapse_dir / "connected_umap_interactive.html"
+            ]:
+                if interactive_umap_path.exists():
+                    visualizations['interactive_umap'] = str(interactive_umap_path)
+                    break
             
             # Distance comparison visualizations
             distance_comparison_dir = presynapse_dir / "distance_comparison"
@@ -494,43 +748,47 @@ class SynapseReportGenerator:
             presynapse_report = presynapse_dir / "presynapse_analysis_report.html"
             if presynapse_report.exists():
                 visualizations['presynapse_report'] = str(presynapse_report)
+            
+            # Check for cluster samples in presynapse directory too with multiple patterns
+            for pattern in ["cluster_*_samples.png", "*cluster*samples*.png"]:
+                found_samples = list(presynapse_dir.glob(pattern))
+                if found_samples:
+                    cluster_samples.extend([str(path) for path in found_samples])
+            
+            # Also check in potential subdirectories of presynapse_dir
+            for subdir_name in ["cluster_visualizations", "visualizations", "clustering"]:
+                subdir = presynapse_dir / subdir_name
+                if subdir.exists() and subdir.is_dir():
+                    for pattern in ["cluster_*_samples.png", "*cluster*samples*.png"]:
+                        found_samples = list(subdir.glob(pattern))
+                        if found_samples:
+                            logger.info(f"Found {len(found_samples)} cluster samples in {subdir}")
+                            cluster_samples.extend([str(path) for path in found_samples])
+            
+            # Also check in all subdirectories
+            for subdir in presynapse_dir.glob("**/"):
+                if subdir.is_dir() and subdir != presynapse_dir:
+                    for pattern in ["cluster_*_samples.png", "*cluster*samples*.png"]:
+                        found_samples = list(subdir.glob(pattern))
+                        if found_samples:
+                            logger.info(f"Found {len(found_samples)} cluster samples in {subdir}")
+                            cluster_samples.extend([str(path) for path in found_samples])
+        
+        # Remove duplicate cluster samples
+        if cluster_samples:
+            unique_samples = list(dict.fromkeys(cluster_samples))
+            logger.info(f"Found {len(unique_samples)} unique cluster sample images")
+            visualizations['cluster_samples'] = unique_samples
+        
+        # Log what we found
+        logger.info(f"Found {len(visualizations)} visualization types for seg_type={seg_type}, alpha={alpha}")
+        for viz_type, paths in visualizations.items():
+            if isinstance(paths, list):
+                logger.info(f"  - {viz_type}: {len(paths)} files")
+            else:
+                logger.info(f"  - {viz_type}")
         
         return visualizations
-    
-    def copy_image_to_assets(self, image_path, report_dir):
-        """
-        Copy an image file to the assets directory and return its relative path.
-        
-        Args:
-            image_path: Original path to the image file
-            report_dir: Report directory where assets are stored
-            
-        Returns:
-            str: Relative path to the copied image file
-        """
-        if not image_path or not os.path.exists(image_path):
-            return "#"  # Return a placeholder for missing images
-        
-        # Create assets directory if it doesn't exist
-        assets_dir = os.path.join(report_dir, "assets")
-        os.makedirs(assets_dir, exist_ok=True)
-        
-        # Create a filename for the copied image
-        original_filename = os.path.basename(image_path)
-        # Include a directory prefix to avoid name collisions
-        parent_dir = os.path.basename(os.path.dirname(image_path))
-        asset_filename = f"{parent_dir}_{original_filename}"
-        asset_path = os.path.join(assets_dir, asset_filename)
-        
-        # Copy the file
-        try:
-            shutil.copy2(image_path, asset_path)
-            logger.info(f"Copied {image_path} to {asset_path}")
-            # Return relative path from the report HTML file to the asset
-            return os.path.join("assets", asset_filename)
-        except Exception as e:
-            logger.error(f"Error copying image {image_path}: {e}")
-            return "#"  # Return a placeholder for missing images
 
     def generate_combination_report(self, seg_type, alpha, report_dir):
         """
@@ -539,165 +797,203 @@ class SynapseReportGenerator:
         Args:
             seg_type: Segmentation type
             alpha: Alpha value
-            report_dir: Directory where the report is being generated
+            report_dir: Directory to save the report
             
         Returns:
-            str: HTML report content
+            tuple: (report_filename, all_html_content)
         """
-        combo = (seg_type, alpha)
+        # Analyze feature data for this combination
+        results = self.analyze_feature_data(seg_type, alpha)
+        
+        # Get the segmentation directory
         alpha_str = str(alpha).replace('.', '_')
+        seg_dir = self.csv_output_dir / f"seg{seg_type}_alpha{alpha_str}"
         
-        # Get feature data analysis
-        feature_analysis = self.analyze_feature_data(seg_type, alpha)
+        # Find available visualizations
+        if (seg_type, alpha) not in self.visualizations:
+            self.visualizations[(seg_type, alpha)] = self.find_visualizations(seg_type, alpha)
+        viz = self.visualizations[(seg_type, alpha)]
         
-        # Find visualizations
-        viz = self.find_visualizations(seg_type, alpha)
+        # Generate HTML content
+        title = f"Synapse Analysis Results - Segmentation Type {seg_type}, Alpha {alpha}"
         
-        # Get segmentation type description
-        seg_type_descriptions = {
-            0: "Raw data",
-            1: "Presynapse",
-            2: "Postsynapse",
-            3: "Both sides",
-            4: "Vesicles + Cleft (closest only)",
-            5: "(closest vesicles/cleft + sides)",
-            6: "Vesicle cloud (closest)",
-            7: "Cleft (closest)",
-            8: "Mitochondria (closest)",
-            9: "Vesicle + Cleft",
-            10: "Cleft + Pre"
-        }
-        seg_description = seg_type_descriptions.get(seg_type, f"Unknown type ({seg_type})")
-        
-        # Create report HTML
-        html = f"""
-        <div class="card">
-            <div class="card-header">
-                <h2>Segmentation Type {seg_type} ({seg_description}) with Alpha {alpha}</h2>
-            </div>
+        html = f'''
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>{title}</title>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            {self.css_styles}
+        </head>
+        <body>
+            <h1>{title}</h1>
+            <p>Generated on {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</p>
             
             <div class="summary-box">
-                <h3>Summary</h3>
-                <p>This report analyzes the results for segmentation type {seg_type} ({seg_description}) with alpha value {alpha}.</p>
-                
+                <h2>Summary</h2>
                 <table>
                     <tr>
                         <th>Metric</th>
                         <th>Value</th>
                     </tr>
                     <tr>
-                        <td>Number of Synapses</td>
-                        <td>{feature_analysis.get('num_samples', 'N/A')}</td>
+                        <td>Total Synapses</td>
+                        <td>{results['num_samples']}</td>
                     </tr>
                     <tr>
                         <td>Number of Features</td>
-                        <td>{feature_analysis.get('num_features', 'N/A')}</td>
+                        <td>{results['num_features']}</td>
                     </tr>
+        '''
+        
+        # Add number of bounding boxes if available
+        if 'bbox_counts' in results and results['bbox_counts']:
+            html += f'''
                     <tr>
                         <td>Number of Bounding Boxes</td>
-                        <td>{feature_analysis.get('num_bboxes', 'N/A')}</td>
+                        <td>{len(results['bbox_counts'])}</td>
                     </tr>
-                    <tr>
-                        <td>Clustering Available</td>
-                        <td>{"Yes" if feature_analysis.get('has_clusters', False) else "No"}</td>
-                    </tr>
+            '''
+        
+        # Add clustering information if available
+        if results['has_clusters']:
+            html += f'''
                     <tr>
                         <td>Number of Clusters</td>
-                        <td>{feature_analysis.get('num_clusters', 'N/A')}</td>
+                        <td>{results['num_clusters']}</td>
                     </tr>
+            '''
+        
+        # Add UMAP information if available
+        if results['has_umap']:
+            html += f'''
                     <tr>
-                        <td>UMAP Available</td>
-                        <td>{"Yes" if feature_analysis.get('has_umap', False) else "No"}</td>
+                        <td>UMAP Visualization</td>
+                        <td>Available</td>
                     </tr>
+            '''
+        
+        # Add presynapse information if available
+        if results['has_presynapse_id']:
+            html += f'''
                     <tr>
-                        <td>Presynapse Analysis Available</td>
-                        <td>{"Yes" if feature_analysis.get('has_presynapse_id', False) else "No"}</td>
+                        <td>Presynapse Analysis</td>
+                        <td>Available</td>
                     </tr>
                     <tr>
                         <td>Number of Presynapses</td>
-                        <td>{feature_analysis.get('num_presynapses', 'N/A')}</td>
+                        <td>{results['num_presynapses']}</td>
                     </tr>
+                    <tr>
+                        <td>Presynapses with Multiple Synapses</td>
+                        <td>{len(results['multiple_synapse_presynapses'])}</td>
+                    </tr>
+            '''
+        
+        html += '''
                 </table>
             </div>
-        """
+        '''
         
-        # Add bbox distribution if available
-        if 'bbox_counts' in feature_analysis:
-            html += """
-            <h3>Bounding Box Distribution</h3>
-            <table>
-                <tr>
-                    <th>Bounding Box</th>
-                    <th>Count</th>
-                </tr>
-            """
+        # Add bounding box distribution if available
+        if 'bbox_counts' in results and results['bbox_counts']:
+            html += '''
+            <div class="summary-box">
+                <h2>Bounding Box Distribution</h2>
+                <table>
+                    <tr>
+                        <th>Bounding Box Name</th>
+                        <th>Count</th>
+                        <th>Percentage</th>
+                    </tr>
+            '''
             
-            for bbox, count in sorted(feature_analysis['bbox_counts'].items()):
-                html += f"""
+            total_count = sum(results['bbox_counts'].values())
+            for bbox, count in sorted(results['bbox_counts'].items(), key=lambda x: x[1], reverse=True):
+                percentage = count / total_count * 100
+                html += f'''
                 <tr>
                     <td>{bbox}</td>
                     <td>{count}</td>
+                    <td>{percentage:.1f}%</td>
                 </tr>
-                """
+                '''
             
-            html += "</table>"
+            html += '''
+                </table>
+            </div>
+            '''
         
         # Add cluster distribution if available
-        if 'cluster_counts' in feature_analysis:
-            html += """
-            <h3>Cluster Distribution</h3>
-            <table>
-                <tr>
-                    <th>Cluster</th>
-                    <th>Count</th>
-                </tr>
-            """
+        if results['has_clusters'] and 'cluster_counts' in results and results['cluster_counts']:
+            html += '''
+            <div class="summary-box">
+                <h2>Cluster Distribution</h2>
+                <table>
+                    <tr>
+                        <th>Cluster ID</th>
+                        <th>Count</th>
+                        <th>Percentage</th>
+                    </tr>
+            '''
             
-            for cluster, count in sorted(feature_analysis['cluster_counts'].items()):
-                html += f"""
+            total_count = sum(results['cluster_counts'].values())
+            for cluster, count in sorted(results['cluster_counts'].items(), key=lambda x: int(x[0])):
+                percentage = count / total_count * 100
+                html += f'''
                 <tr>
                     <td>{cluster}</td>
                     <td>{count}</td>
+                    <td>{percentage:.1f}%</td>
                 </tr>
-                """
+                '''
             
-            html += "</table>"
+            html += '''
+                </table>
+            </div>
+            '''
         
-        # Add multiple-synapse presynapses if available
-        if 'multiple_synapse_presynapses' in feature_analysis:
-            html += """
-            <h3>Presynapses with Multiple Synapses</h3>
-            <table>
-                <tr>
-                    <th>Presynapse ID</th>
-                    <th>Number of Synapses</th>
-                </tr>
-            """
+        # Add presynapse distribution if available
+        if results['has_presynapse_id'] and results['multiple_synapse_presynapses']:
+            html += '''
+            <div class="summary-box">
+                <h2>Presynapses with Multiple Synapses</h2>
+                <table>
+                    <tr>
+                        <th>Presynapse ID</th>
+                        <th>Number of Synapses</th>
+                    </tr>
+            '''
             
-            for pre_id, count in sorted(feature_analysis['multiple_synapse_presynapses'].items()):
-                html += f"""
+            for pre_id, count in sorted(results['multiple_synapse_presynapses'].items(), key=lambda x: x[1], reverse=True):
+                html += f'''
                 <tr>
                     <td>{pre_id}</td>
                     <td>{count}</td>
                 </tr>
-                """
+                '''
             
-            html += "</table>"
-        
-        # Add visualizations
-        html += "<h3>Visualizations</h3>"
+            html += '''
+                </table>
+            </div>
+            '''
         
         # Add t-SNE visualizations if available
         if 'tsne_2d_bbox' in viz or 'tsne_2d_cluster' in viz or 'tsne_3d' in viz:
-            html += "<h4>t-SNE Visualizations</h4>"
-            html += '<div class="gallery">'
+            html += '''
+            <div class="summary-box">
+                <h2>t-SNE Visualizations</h2>
+                <p>t-SNE (t-distributed Stochastic Neighbor Embedding) is a dimensionality reduction technique that helps visualize high-dimensional data in 2D or 3D space.</p>
+                <div class="gallery">
+            '''
             
             if 'tsne_2d_bbox' in viz:
                 asset_path = self.copy_image_to_assets(viz['tsne_2d_bbox'], report_dir)
                 html += f'''
                 <div class="gallery-item">
-                    <img src="{asset_path}" alt="t-SNE 2D by Bounding Box">
-                    <div class="gallery-caption">t-SNE 2D colored by Bounding Box</div>
+                    <img src="{asset_path}" alt="t-SNE 2D colored by bounding box">
+                    <div class="gallery-caption">t-SNE 2D Colored by Bounding Box</div>
                 </div>
                 '''
             
@@ -705,8 +1001,8 @@ class SynapseReportGenerator:
                 asset_path = self.copy_image_to_assets(viz['tsne_2d_cluster'], report_dir)
                 html += f'''
                 <div class="gallery-item">
-                    <img src="{asset_path}" alt="t-SNE 2D by Cluster">
-                    <div class="gallery-caption">t-SNE 2D colored by Cluster</div>
+                    <img src="{asset_path}" alt="t-SNE 2D colored by cluster">
+                    <div class="gallery-caption">t-SNE 2D Colored by Cluster</div>
                 </div>
                 '''
             
@@ -719,23 +1015,75 @@ class SynapseReportGenerator:
                 </div>
                 '''
             
-            html += '</div>'
-        
-        # Add connected UMAP if available
-        if 'connected_umap' in viz:
-            asset_path = self.copy_image_to_assets(viz['connected_umap'], report_dir)
-            html += "<h4>Connected UMAP Visualization</h4>"
-            html += f'''
-            <div class="gallery-item">
-                <img src="{asset_path}" alt="Connected UMAP">
-                <div class="gallery-caption">UMAP visualization with synapses from the same presynapse connected</div>
+            html += '''
+                </div>
             </div>
             '''
         
+        # Add UMAP visualizations if available
+        if 'connected_umap' in viz or 'umap_bbox_colored' in viz or 'umap_cluster_colored' in viz:
+            html += '''
+            <div class="summary-box">
+                <h2>UMAP Visualizations</h2>
+            '''
+            
+            html += '<p>UMAP (Uniform Manifold Approximation and Projection) is a dimensionality reduction technique similar to t-SNE that helps visualize high-dimensional data in 2D space.</p>'
+            
+            # Add a dedicated section for the bbox-colored UMAP if available
+            if 'umap_bbox_colored' in viz:
+                asset_path = self.copy_image_to_assets(viz['umap_bbox_colored'], report_dir)
+                html += f'''
+                <h4>UMAP Colored by Bounding Box</h4>
+                <div class="visualization-large">
+                    <img src="{asset_path}" alt="UMAP colored by bounding box">
+                    <div class="caption">UMAP visualization with points colored by their source bounding box. This helps identify patterns and groupings based on the anatomical region.</div>
+                </div>
+                '''
+            
+            # Add a dedicated section for the cluster-colored UMAP if available
+            if 'umap_cluster_colored' in viz:
+                asset_path = self.copy_image_to_assets(viz['umap_cluster_colored'], report_dir)
+                html += f'''
+                <h4>UMAP Colored by Cluster</h4>
+                <div class="visualization-large">
+                    <img src="{asset_path}" alt="UMAP colored by cluster">
+                    <div class="caption">UMAP visualization with points colored by their assigned cluster. This reveals the structural relationships between different synapse types.</div>
+                </div>
+                '''
+            
+            # Add the standard connected UMAP
+            if 'connected_umap' in viz:
+                asset_path = self.copy_image_to_assets(viz['connected_umap'], report_dir)
+                html += f'''
+                <h4>Connected UMAP Visualization</h4>
+                <div class="visualization-large">
+                    <img src="{asset_path}" alt="Connected UMAP">
+                    <div class="caption">UMAP visualization with synapses from the same presynapse connected by lines. This shows how synapses from the same presynaptic neuron relate to each other.</div>
+                </div>
+                '''
+            
+            # Add link to interactive UMAP if available
+            if 'interactive_umap' in viz:
+                interactive_path = self.copy_to_assets(viz['interactive_umap'], report_dir)
+                html += f'''
+                <div class="interactive-link">
+                    <a href="{interactive_path}" target="_blank" class="button">Open Interactive UMAP Visualization</a>
+                    <p>Click to explore an interactive version with hover information and 3D rotation capabilities.</p>
+                </div>
+                '''
+            
+            html += '''
+            </div>
+            '''
+                
         # Add cluster sample visualizations if available
         if 'cluster_samples' in viz and viz['cluster_samples']:
-            html += "<h4>Cluster Sample Visualizations</h4>"
-            html += '<div class="gallery">'
+            html += '''
+            <div class="summary-box">
+                <h2>Cluster Analysis Slices</h2>
+                <p>These visualizations show representative center slices from each identified cluster, helping to understand the morphological characteristics that define each group. Each cluster typically displays 4 representative synapse examples.</p>
+                <div class="gallery">
+            '''
             
             for viz_path in viz['cluster_samples']:
                 viz_name = os.path.basename(viz_path).replace('.png', '')
@@ -747,12 +1095,66 @@ class SynapseReportGenerator:
                 </div>
                 '''
             
-            html += '</div>'
+            html += '''
+                </div>
+            </div>
+            '''
+        else:
+            # Try harder to find cluster sample visualizations
+            logger.info("No cluster samples found in visualizations dictionary. Trying direct search...")
+            
+            # Search patterns to try
+            patterns = ["cluster_*_samples.png", "*cluster*samples*.png"]
+            found_samples = []
+            
+            # Search in multiple directories
+            search_dirs = [
+                seg_dir,
+                self.clustering_output_dir / f"seg{seg_type}_alpha{alpha_str}",
+                self.csv_output_dir / "combined_analysis"
+            ]
+            
+            if (seg_type, alpha) in self.presynapse_files:
+                search_dirs.append(self.presynapse_files[(seg_type, alpha)])
+            
+            for search_dir in search_dirs:
+                if search_dir.exists():
+                    for pattern in patterns:
+                        samples = list(search_dir.glob(pattern))
+                        if samples:
+                            found_samples.extend(samples)
+                            logger.info(f"Found {len(samples)} samples in {search_dir} with pattern {pattern}")
+            
+            if found_samples:
+                html += '''
+                <div class="summary-box">
+                    <h2>Cluster Analysis Slices</h2>
+                    <p>These visualizations show representative center slices from each identified cluster, helping to understand the morphological characteristics that define each group. Each cluster typically displays 4 representative synapse examples.</p>
+                    <div class="gallery">
+                '''
+                
+                for sample_path in found_samples:
+                    sample_name = os.path.basename(str(sample_path)).replace('.png', '')
+                    asset_path = self.copy_image_to_assets(str(sample_path), report_dir)
+                    html += f'''
+                    <div class="gallery-item">
+                        <img src="{asset_path}" alt="{sample_name}">
+                        <div class="gallery-caption">{sample_name.replace('_', ' ').title()}</div>
+                    </div>
+                    '''
+                
+                html += '''
+                    </div>
+                </div>
+                '''
         
         # Add distance comparison visualizations if available
         if 'distance_comparison' in viz and viz['distance_comparison']:
-            html += "<h4>Distance Comparison Visualizations</h4>"
-            html += '<div class="gallery">'
+            html += '''
+            <div class="summary-box">
+                <h2>Distance Comparison Visualizations</h2>
+                <div class="gallery">
+            '''
             
             for viz_path in viz['distance_comparison']:
                 viz_name = os.path.basename(viz_path).replace('distance_comparison_', '').replace('.png', '')
@@ -764,341 +1166,490 @@ class SynapseReportGenerator:
                 </div>
                 '''
             
-            html += '</div>'
-        
-        # Link to presynapse report if available
-        if 'presynapse_report' in viz:
-            # For HTML files, we'll copy them and provide a direct link
-            asset_path = self.copy_image_to_assets(viz['presynapse_report'], report_dir).replace('.png', '.html')
-            report_filename = os.path.basename(viz['presynapse_report'])
-            
-            # Copy the HTML file directly (not as an image)
-            try:
-                shutil.copy2(viz['presynapse_report'], os.path.join(report_dir, "assets", report_filename))
-                asset_path = os.path.join("assets", report_filename)
-            except Exception as e:
-                logger.error(f"Error copying HTML report {viz['presynapse_report']}: {e}")
-                asset_path = "#"
-            
-            html += f'''
-            <h4>Presynapse Analysis</h4>
-            <p>
-                <a href="{asset_path}" target="_blank">
-                    Detailed Presynapse Analysis Report
-                </a>
-            </p>
+            html += '''
+                </div>
+            </div>
             '''
         
-        # Close the card div
-        html += "</div>"
+        # Add link to presynapse analysis report if available
+        if 'presynapse_report' in viz:
+            report_path = self.copy_to_assets(viz['presynapse_report'], report_dir)
+            html += f'''
+            <div class="summary-box">
+                <h2>Presynapse Analysis</h2>
+                <p>A detailed analysis of presynapses is available.</p>
+                <div class="interactive-link">
+                    <a href="{report_path}" target="_blank" class="button">Open Presynapse Analysis Report</a>
+                </div>
+            </div>
+            '''
         
-        return html
-    
+        html += '''
+        </body>
+        </html>
+        '''
+        
+        # Write HTML content to file
+        report_filename = f"report_seg{seg_type}_alpha{alpha_str}.html"
+        report_path = os.path.join(report_dir, report_filename)
+        with open(report_path, 'w') as f:
+            f.write(html)
+        
+        return report_filename, html
+
     def generate_complete_report(self):
         """
-        Generate a complete report for all segmentation type and alpha combinations.
+        Generate a complete report for all segmentation types and alpha combinations.
         
         Returns:
-            str: Path to the generated report
+            str: Path to the index.html file of the complete report
         """
-        # Find all available combinations
-        self.find_available_combinations()
-        
+        # Find all available combinations if not already done
         if not self.seg_alpha_combinations:
-            logger.warning("No segmentation type and alpha combinations found")
+            self.find_available_combinations()
+            
+        if not self.seg_alpha_combinations:
+            logger.warning("No segmentation type and alpha combinations found.")
             return None
-        
-        # Create a directory for this report
+            
+        # Create a directory for the report
         report_dir = self.report_output_dir / f"report_{self.timestamp}"
         os.makedirs(report_dir, exist_ok=True)
         
-        # Create assets directory for copied images
+        # Create assets directory
         assets_dir = os.path.join(report_dir, "assets")
         os.makedirs(assets_dir, exist_ok=True)
         
-        # Create the HTML report
-        html = f"""
+        # Generate combination reports
+        combination_reports = {}
+        
+        for seg_type, alpha in self.seg_alpha_combinations:
+            try:
+                filename, html = self.generate_combination_report(seg_type, alpha, report_dir)
+                combination_reports[(seg_type, alpha)] = filename
+                logger.info(f"Generated report for seg_type={seg_type}, alpha={alpha}")
+            except Exception as e:
+                logger.error(f"Error generating report for seg_type={seg_type}, alpha={alpha}: {e}")
+                import traceback
+                traceback.print_exc()
+        
+        # Generate index.html with links to individual reports
+        index_html = f"""
         <!DOCTYPE html>
         <html>
         <head>
-            <title>Synapse Analysis Report - {self.timestamp}</title>
+            <title>Synapse Analysis Complete Report</title>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             {self.css_styles}
         </head>
         <body>
-            <h1>Synapse Analysis Comprehensive Report</h1>
+            <h1>Synapse Analysis Complete Report</h1>
             <p>Generated on {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</p>
             
             <div class="summary-box">
-                <h2>Analysis Summary</h2>
-                <p>This report summarizes the results of synapse analysis for {len(self.seg_alpha_combinations)} segmentation type and alpha combinations.</p>
+                <h2>Available Reports</h2>
+                <p>Click on a segmentation type and alpha combination to view the detailed report.</p>
                 
-                <table>
-                    <tr>
-                        <th>Segmentation Type</th>
-                        <th>Alpha Value</th>
-                        <th>Number of Synapses</th>
-                        <th>Presynapse Analysis</th>
-                    </tr>
+                <div class="tabs">
         """
         
-        # Add a row for each combination
-        for seg_type, alpha in sorted(self.seg_alpha_combinations):
-            feature_analysis = self.analyze_feature_data(seg_type, alpha)
-            has_presynapse = (seg_type, alpha) in self.presynapse_files
+        # Organize by segmentation type
+        seg_types = sorted(set([st for st, _ in self.seg_alpha_combinations]))
+        
+        # Add tabs for each segmentation type
+        tab_ids = []
+        for seg_type in seg_types:
+            tab_id = f"tab-seg{seg_type}"
+            tab_ids.append(tab_id)
             
-            html += f"""
-                <tr>
-                    <td>{seg_type}</td>
-                    <td>{alpha}</td>
-                    <td>{feature_analysis.get('num_samples', 'N/A')}</td>
-                    <td>{"Available" if has_presynapse else "Not Available"}</td>
-                </tr>
+            index_html += f"""
+                    <button class="tablink" onclick="openTab('{tab_id}')" id="{tab_id}-btn">Segmentation Type {seg_type}</button>
             """
         
-        html += """
-                </table>
-            </div>
-        """
-        
-        # Add a tab for each combination
-        html += """
-            <div class="nav-tabs">
-        """
-        
-        for i, (seg_type, alpha) in enumerate(sorted(self.seg_alpha_combinations)):
-            active = ' class="active"' if i == 0 else ''
-            html += f"""
-                <li><a href="#tab-{seg_type}-{alpha}"{active}>Seg{seg_type}-Alpha{alpha}</a></li>
-            """
-        
-        html += """
-            </div>
-            
-            <div class="tab-content">
+        index_html += """
+                </div>
         """
         
         # Add content for each tab
-        for i, (seg_type, alpha) in enumerate(sorted(self.seg_alpha_combinations)):
-            style = '' if i == 0 else ' style="display: none;"'
-            html += f"""
-                <div id="tab-{seg_type}-{alpha}"{style}>
-                    {self.generate_combination_report(seg_type, alpha, report_dir)}
+        for i, seg_type in enumerate(seg_types):
+            tab_id = tab_ids[i]
+            is_first = i == 0
+            
+            index_html += f"""
+                <div id="{tab_id}" class="tabcontent" style="display: {'block' if is_first else 'none'}">
+                    <h3>Segmentation Type {seg_type}</h3>
+                    <table>
+                        <tr>
+                            <th>Alpha Value</th>
+                            <th>Report Link</th>
+                        </tr>
+            """
+            
+            # Add rows for each alpha value for this segmentation type
+            alphas = sorted([a for st, a in self.seg_alpha_combinations if st == seg_type])
+            
+            for alpha in alphas:
+                if (seg_type, alpha) in combination_reports:
+                    report_filename = combination_reports[(seg_type, alpha)]
+                    index_html += f"""
+                        <tr>
+                            <td>{alpha}</td>
+                            <td><a href="{report_filename}">View Report</a></td>
+                        </tr>
+                    """
+            
+            index_html += """
+                    </table>
                 </div>
             """
         
-        html += """
+        # Add JavaScript for tab functionality
+        index_html += """
             </div>
             
             <script>
-                // Simple tab navigation
-                document.addEventListener('DOMContentLoaded', function() {
-                    const tabs = document.querySelectorAll('.nav-tabs a');
-                    const tabContents = document.querySelectorAll('.tab-content > div');
-                    
-                    tabs.forEach(tab => {
-                        tab.addEventListener('click', function(e) {
-                            e.preventDefault();
-                            
-                            // Deactivate all tabs
-                            tabs.forEach(t => t.classList.remove('active'));
-                            
-                            // Hide all tab contents
-                            tabContents.forEach(content => {
-                                content.style.display = 'none';
-                            });
-                            
-                            // Activate clicked tab
-                            this.classList.add('active');
-                            
-                            // Show corresponding content
-                            const tabId = this.getAttribute('href');
-                            document.querySelector(tabId).style.display = 'block';
-                        });
-                    });
-                });
+            function openTab(tabId) {
+                // Hide all tab content
+                var tabcontent = document.getElementsByClassName("tabcontent");
+                for (var i = 0; i < tabcontent.length; i++) {
+                    tabcontent[i].style.display = "none";
+                }
+                
+                // Remove active class from all tablinks
+                var tablinks = document.getElementsByClassName("tablink");
+                for (var i = 0; i < tablinks.length; i++) {
+                    tablinks[i].classList.remove("active");
+                }
+                
+                // Show the specific tab and add active class to the button
+                document.getElementById(tabId).style.display = "block";
+                document.getElementById(tabId + "-btn").classList.add("active");
+            }
+            
+            // Set the first tab as active by default
+            document.getElementById("tab-seg""" + str(seg_types[0]) + """-btn").classList.add("active");
             </script>
+            
         </body>
         </html>
         """
         
-        # Write the report to file
-        report_path = report_dir / "index.html"
-        with open(report_path, 'w') as f:
-            f.write(html)
+        # Write the index.html file
+        index_path = os.path.join(report_dir, "index.html")
+        with open(index_path, 'w') as f:
+            f.write(index_html)
         
-        logger.info(f"Report generated at {report_path}")
-        return str(report_path)
+        logger.info(f"Complete report generated at {report_dir}")
+        
+        return index_path
 
     def generate_presynapse_summary(self):
         """
-        Generate a summary report specifically focused on presynapse analysis across all segmentation types.
+        Generate a summary report for all presynapse analysis results.
         
         Returns:
-            str: Path to the generated report
+            str: Path to the generated summary report
         """
-        # Find all available combinations
-        self.find_available_combinations()
-        
+        # Find all available combinations if not already done
         if not self.seg_alpha_combinations:
-            logger.warning("No segmentation type and alpha combinations found")
-            return None
+            self.find_available_combinations()
+            
+        # Create a directory for the summary report
+        summary_dir = self.report_output_dir / f"presynapse_summary_{self.timestamp}"
+        os.makedirs(summary_dir, exist_ok=True)
         
-        # Create a directory for this report
-        report_dir = self.report_output_dir / f"presynapse_summary_{self.timestamp}"
-        os.makedirs(report_dir, exist_ok=True)
-        
-        # Create assets directory for copied images
-        assets_dir = os.path.join(report_dir, "assets")
+        # Create assets directory
+        assets_dir = os.path.join(summary_dir, "assets")
         os.makedirs(assets_dir, exist_ok=True)
         
-        # Collect presynapse data across all segmentation types
-        presynapse_data = {}
+        # Load visualizations if not already loaded
         for seg_type, alpha in self.seg_alpha_combinations:
-            combo = (seg_type, alpha)
-            if combo in self.presynapse_files:
-                # Find the updated features file with presynapse IDs
-                presynapse_dir = self.presynapse_files[combo]
-                alpha_str = str(alpha).replace('.', '_')
-                features_file = presynapse_dir / f"updated_features_seg{seg_type}_alpha{alpha_str}.csv"
-                
-                if features_file.exists():
-                    try:
-                        df = pd.read_csv(features_file)
-                        if 'presynapse_id' in df.columns:
-                            # Count synapses per presynapse ID
-                            presynapse_counts = df[df['presynapse_id'] > 0].groupby('presynapse_id').size()
-                            multiple_synapse_presynapses = presynapse_counts[presynapse_counts > 1]
-                            
-                            presynapse_data[combo] = {
-                                'total_presynapses': len(df[df['presynapse_id'] > 0]['presynapse_id'].unique()),
-                                'multiple_synapse_presynapses': len(multiple_synapse_presynapses),
-                                'max_synapses_per_presynapse': presynapse_counts.max() if not presynapse_counts.empty else 0,
-                                'presynapse_counts': presynapse_counts.to_dict()
-                            }
-                    except Exception as e:
-                        logger.error(f"Error analyzing presynapse data for seg_type={seg_type}, alpha={alpha}: {e}")
+            if (seg_type, alpha) not in self.visualizations:
+                self.visualizations[(seg_type, alpha)] = self.find_visualizations(seg_type, alpha)
         
-        # Create the HTML report
-        html = f"""
+        # Collect presynapse information
+        presynapses_by_combo = {}
+        
+        # For each combination, look for presynapse analysis results
+        for seg_type, alpha in self.seg_alpha_combinations:
+            if (seg_type, alpha) in self.presynapse_files:
+                # Get the directory for this combination
+                presynapse_dir = self.presynapse_files[(seg_type, alpha)]
+                
+                # Convert alpha to string format for filenames
+                alpha_str = str(alpha).replace('.', '_')
+                
+                # Find the updated features file that contains presynapse IDs
+                updated_features_file = presynapse_dir / f"updated_features_seg{seg_type}_alpha{alpha_str}.csv"
+                # If not found, try alternative naming pattern
+                if not updated_features_file.exists():
+                    updated_features_file = list(presynapse_dir.glob("updated_features*.csv"))
+                    if not updated_features_file:
+                        logger.warning(f"No updated features file found for seg_type={seg_type}, alpha={alpha}")
+                        continue
+                    updated_features_file = updated_features_file[0]
+                
+                try:
+                    # Load the features file
+                    features_df = pd.read_csv(updated_features_file)
+                    
+                    if 'presynapse_id' not in features_df.columns:
+                        continue
+                    
+                    # Count presynapses with multiple synapses
+                    presynapse_counts = features_df[features_df['presynapse_id'] > 0].groupby('presynapse_id').size()
+                    multiple_synapse_counts = presynapse_counts[presynapse_counts > 1]
+                    
+                    # Get cluster information if available
+                    pre_groups = {}
+                    if 'cluster' in features_df.columns:
+                        for pre_id, pre_df in features_df[features_df['presynapse_id'] > 0].groupby('presynapse_id'):
+                            # Only include presynapses with multiple synapses
+                            if len(pre_df) > 1:
+                                clusters = pre_df['cluster'].value_counts()
+                                dominant_cluster = clusters.idxmax() if not clusters.empty else None
+                                
+                                pre_groups[pre_id] = {
+                                    'count': len(pre_df),
+                                    'clusters': clusters.to_dict(),
+                                    'dominant_cluster': dominant_cluster,
+                                    'dominant_percentage': (clusters.max() / len(pre_df) * 100) if not clusters.empty else 0
+                                }
+                    
+                    presynapses_by_combo[(seg_type, alpha)] = pre_groups
+                    
+                except Exception as e:
+                    logger.error(f"Error analyzing presynapse data for seg_type={seg_type}, alpha={alpha}: {e}")
+        
+        # Generate HTML content
+        html_content = f"""
         <!DOCTYPE html>
         <html>
         <head>
-            <title>Presynapse Analysis Summary - {self.timestamp}</title>
+            <title>Presynapse Analysis Summary</title>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             {self.css_styles}
         </head>
         <body>
-            <h1>Presynapse Analysis Summary Report</h1>
+            <h1>Presynapse Analysis Summary</h1>
             <p>Generated on {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</p>
             
             <div class="summary-box">
-                <h2>Presynapse Analysis Summary</h2>
-                <p>This report summarizes presynapse analysis results across all segmentation types and alpha values.</p>
+                <h2>Overview</h2>
+                <p>This report summarizes the results of presynapse analysis across all segmentation and alpha combinations.</p>
                 
                 <table>
                     <tr>
                         <th>Segmentation Type</th>
                         <th>Alpha Value</th>
-                        <th>Total Presynapses</th>
                         <th>Presynapses with Multiple Synapses</th>
-                        <th>Max Synapses per Presynapse</th>
                     </tr>
         """
         
-        # Add a row for each combination with presynapse data
-        for (seg_type, alpha), data in sorted(presynapse_data.items()):
-            html += f"""
+        # Add a row for each combination
+        for (seg_type, alpha), pre_groups in sorted(presynapses_by_combo.items()):
+            html_content += f"""
                 <tr>
                     <td>{seg_type}</td>
                     <td>{alpha}</td>
-                    <td>{data['total_presynapses']}</td>
-                    <td>{data['multiple_synapse_presynapses']}</td>
-                    <td>{data['max_synapses_per_presynapse']}</td>
+                    <td>{len(pre_groups)}</td>
                 </tr>
             """
         
-        html += """
+        html_content += """
                 </table>
             </div>
-            
-            <h2>Presynapse Details by Segmentation Type</h2>
         """
         
-        # Add detailed sections for each combo with presynapse data
-        for (seg_type, alpha), data in sorted(presynapse_data.items()):
-            html += f"""
-            <div class="card">
-                <div class="card-header">
-                    <h3>Segmentation Type {seg_type} with Alpha {alpha}</h3>
-                </div>
+        # Add sections for each combination
+        for (seg_type, alpha), pre_groups in sorted(presynapses_by_combo.items()):
+            alpha_str = str(alpha).replace('.', '_')
+            
+            html_content += f"""
+            <div class="summary-box">
+                <h2>Segmentation Type {seg_type}, Alpha {alpha}</h2>
                 
-                <h4>Presynapses with Multiple Synapses</h4>
+                <h3>Presynapses with Multiple Synapses</h3>
                 <table>
                     <tr>
                         <th>Presynapse ID</th>
                         <th>Number of Synapses</th>
+            """
+            
+            # Add cluster columns if available
+            has_clusters = any('dominant_cluster' in info and info['dominant_cluster'] is not None for info in pre_groups.values())
+            if has_clusters:
+                html_content += """
+                        <th>Dominant Cluster</th>
+                        <th>Dominant Cluster %</th>
+                """
+            
+            html_content += """
                     </tr>
             """
             
-            # Add rows for presynapses with multiple synapses
-            for pre_id, count in sorted(data['presynapse_counts'].items()):
-                if count > 1:
-                    html += f"""
+            # Add a row for each presynapse
+            for pre_id, info in sorted(pre_groups.items()):
+                html_content += f"""
                     <tr>
                         <td>{pre_id}</td>
-                        <td>{count}</td>
-                    </tr>
+                        <td>{info['count']}</td>
+                """
+                
+                # Add cluster information if available
+                if has_clusters:
+                    dominant_cluster = info.get('dominant_cluster', 'N/A')
+                    dominant_percentage = info.get('dominant_percentage', 0)
+                    
+                    html_content += f"""
+                        <td>{dominant_cluster}</td>
+                        <td>{dominant_percentage:.1f}%</td>
                     """
+                
+                html_content += """
+                    </tr>
+                """
             
-            html += """
+            html_content += """
                 </table>
                 
                 <!-- Include visualizations if available -->
             """
             
-            # Add connected UMAP visualization if available
-            viz = self.visualizations.get((seg_type, alpha), {})
-            if 'connected_umap' in viz:
-                asset_path = self.copy_image_to_assets(viz['connected_umap'], report_dir)
-                html += f"""
-                <h4>Connected UMAP Visualization</h4>
-                <img src="{asset_path}" alt="Connected UMAP" style="max-width: 100%;">
-                """
+            # Get visualizations for this combo
+            viz_dict = self.visualizations.get((seg_type, alpha), {})
             
-            html += """
+            # Add UMAP visualizations with a focus on bbox and cluster coloring
+            umap_visualizations = []
+            
+            # UMAP visualization by bounding box
+            if 'umap_bbox_colored' in viz_dict:
+                dest_path = self.copy_image_to_assets(viz_dict['umap_bbox_colored'], summary_dir)
+                umap_visualizations.append({
+                    'path': dest_path,
+                    'title': 'UMAP Colored by Bounding Box',
+                    'description': 'This visualization shows synapses colored by their source bounding box, helping identify patterns based on anatomical regions.'
+                })
+            
+            # UMAP visualization by cluster
+            if 'umap_cluster_colored' in viz_dict:
+                dest_path = self.copy_image_to_assets(viz_dict['umap_cluster_colored'], summary_dir)
+                umap_visualizations.append({
+                    'path': dest_path,
+                    'title': 'UMAP Colored by Cluster',
+                    'description': 'This visualization shows synapses colored by their assigned cluster, revealing structural relationships between different synapse types.'
+                })
+            
+            # Connected UMAP visualization
+            if 'connected_umap' in viz_dict:
+                dest_path = self.copy_image_to_assets(viz_dict['connected_umap'], summary_dir)
+                umap_visualizations.append({
+                    'path': dest_path,
+                    'title': 'Connected UMAP Visualization',
+                    'description': 'This visualization shows synapses from the same presynapse connected by lines.'
+                })
+            
+            # Add all UMAP visualizations to the HTML in a card format
+            if umap_visualizations:
+                html_content += """
+                <div class="umap-section">
+                    <h3>UMAP Visualizations</h3>
+                    <div class="visualization-cards">
+                """
+                
+                for viz in umap_visualizations:
+                    html_content += f"""
+                        <div class="visualization-card">
+                            <img src="{viz['path']}" alt="{viz['title']}">
+                            <div class="card-content">
+                                <h4>{viz['title']}</h4>
+                                <p>{viz['description']}</p>
+                            </div>
+                        </div>
+                    """
+                
+                html_content += """
+                    </div>
+                </div>
+                """
+                
+                # Add link to interactive UMAP if available
+                if 'interactive_umap' in viz_dict:
+                    dest_path = self.copy_to_assets(viz_dict['interactive_umap'], summary_dir)
+                    html_content += f"""
+                    <div class="interactive-link">
+                        <a href="{dest_path}" target="_blank" class="button">Open Interactive UMAP Visualization</a>
+                        <p>Click to explore an interactive version with hover information.</p>
+                    </div>
+                    """
+            else:
+                # Try to manually find and add the connected UMAP visualization directly from the directory
+                presynapse_dir = self.presynapse_files[(seg_type, alpha)]
+                connected_umap = presynapse_dir / "cluster_visualizations" / "connected_umap_visualization.png"
+                if connected_umap.exists():
+                    logger.info(f"Found connected UMAP at {connected_umap}")
+                    dest_path = self.copy_image_to_assets(str(connected_umap), summary_dir)
+                    html_content += f"""
+                    <h4>Connected UMAP Visualization</h4>
+                    <img src="{dest_path}" alt="Connected UMAP" style="max-width: 100%;">
+                    """
+                else:
+                    # Try alternative path patterns
+                    logger.info("Looking for UMAP with alternative patterns")
+                    potential_paths = [
+                        presynapse_dir / "connected_umap_visualization.png",
+                        presynapse_dir / "umap_visualization.png",
+                        list(presynapse_dir.glob("*umap*.png")),
+                    ]
+                    
+                    for path in potential_paths:
+                        if isinstance(path, list) and path:
+                            path = path[0]
+                        if isinstance(path, Path) and path.exists():
+                            logger.info(f"Found UMAP at {path}")
+                            dest_path = self.copy_image_to_assets(str(path), summary_dir)
+                            html_content += f"""
+                            <h4>UMAP Visualization</h4>
+                            <img src="{dest_path}" alt="UMAP" style="max-width: 100%;">
+                            """
+                            break
+            
+            # Add cluster sample visualizations if available
+            if 'cluster_samples' in viz_dict and viz_dict['cluster_samples']:
+                html_content += """
+                <h3>Cluster Analysis Slices</h3>
+                <p>Representative center slices from each identified cluster:</p>
+                <div class="gallery">
+                """
+                
+                for viz_path in viz_dict['cluster_samples']:
+                    viz_name = os.path.basename(viz_path).replace('.png', '')
+                    dest_path = self.copy_image_to_assets(viz_path, summary_dir)
+                    html_content += f"""
+                    <div class="gallery-item">
+                        <img src="{dest_path}" alt="{viz_name}">
+                        <div class="gallery-caption">{viz_name.replace('_', ' ').title()}</div>
+                    </div>
+                    """
+                
+                html_content += "</div>"
+            
+            html_content += """
             </div>
             """
         
-        html += """
+        html_content += """
         </body>
         </html>
         """
         
-        # Write the report to file
-        report_path = report_dir / "presynapse_summary.html"
-        with open(report_path, 'w') as f:
-            f.write(html)
+        # Write HTML content to file
+        html_file = os.path.join(summary_dir, "presynapse_summary.html")
+        with open(html_file, 'w') as f:
+            f.write(html_content)
         
-        logger.info(f"Presynapse summary report generated at {report_path}")
-        return str(report_path)
-
-
-if __name__ == "__main__":
-    # Create the report generator
-    report_generator = SynapseReportGenerator()
-    
-    # Generate the complete report
-    report_path = report_generator.generate_complete_report()
-    
-    # Generate the presynapse summary
-    presynapse_summary_path = report_generator.generate_presynapse_summary()
-    
-    if report_path:
-        print(f"Report generated at: {report_path}")
-        print(f"Open the report in your browser to view the results.")
-    
-    if presynapse_summary_path:
-        print(f"Presynapse summary report generated at: {presynapse_summary_path}") 
+        logger.info(f"Presynapse summary report saved to {html_file}")
+        
+        return html_file

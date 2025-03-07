@@ -8,15 +8,12 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 import plotly.express as px
 
-# Function to load features and perform clustering
 def load_and_cluster_features(csv_filepath, n_clusters=5):
     features_df = pd.read_csv(csv_filepath)
 
-    # Extract feature columns (assuming features start with 'feat_')
     feature_cols = [col for col in features_df.columns if col.startswith('feat_')]
     features = features_df[feature_cols].values
 
-    # Perform KMeans clustering
     kmeans = KMeans(n_clusters=n_clusters, random_state=42)
     features_df['cluster'] = kmeans.fit_predict(features)
 
@@ -25,90 +22,96 @@ def load_and_cluster_features(csv_filepath, n_clusters=5):
 def find_random_samples_in_clusters(features_df, feature_cols, n_samples=4):
     random_samples_per_cluster = {}
 
-    # For each cluster, randomly select n_samples
     for cluster_id in np.unique(features_df['cluster']):
         cluster_samples = features_df[features_df['cluster'] == cluster_id]
 
-        # Randomly select n_samples from the cluster
         if len(cluster_samples) >= n_samples:
             random_indices = np.random.choice(cluster_samples.index, n_samples, replace=False)
             random_samples = cluster_samples.loc[random_indices]
         else:
-            # If there are fewer samples than n_samples, select all available samples
             random_samples = cluster_samples
 
-        # Store the randomly selected samples for each cluster
         random_samples_per_cluster[cluster_id] = random_samples
 
     return random_samples_per_cluster
 
-# Function to get the center slice of a 3D synapse sample
 def get_center_slice(sample):
-    """
-    Extract the center slice from a 3D sample.
-    Assumes the sample is a 3D numpy array.
-    """
-    # Get the center slice (middle slice in z-direction)
     center_slice = sample[sample.shape[0] // 2, :, :]
     return center_slice
 
-# Function to plot 4 similar samples in a grid for each synapse
+def visualize_slice(ax, slice_data, title=None, consistent_gray=True):
+    """
+    Consistently visualize a 2D slice with controlled normalization.
+    
+    Args:
+        ax (matplotlib.axes.Axes): The axis to plot on
+        slice_data (numpy.ndarray): 2D slice data
+        title (str, optional): Title for the plot
+        consistent_gray (bool): Whether to enforce consistent gray levels
+        
+    Returns:
+        matplotlib.image.AxesImage: The displayed image
+    """
+    # Ensure the slice is 2D
+    if len(slice_data.shape) > 2:
+        slice_data = slice_data.squeeze()
+    
+    # Use fixed vmin and vmax to prevent matplotlib's auto-scaling
+    # which can change the appearance of gray overlays
+    if consistent_gray:
+        im = ax.imshow(slice_data, cmap='gray', vmin=0, vmax=1)
+    else:
+        # Fall back to matplotlib's auto-scaling for special cases
+        im = ax.imshow(slice_data, cmap='gray')
+    
+    ax.axis('off')
+    if title:
+        ax.set_title(title)
+    
+    return im
+
 def plot_synapse_samples(dataset, closest_samples_indices, title='Synapse Samples'):
-    """
-    Plots 4 sample images of synapses in a grid layout.
-    `dataset` is the dataset containing synapse 3D data.
-    `closest_samples_indices` is a list of indices for the samples to plot.
-    """
-    fig, axes = plt.subplots(1, 4, figsize=(15, 5))  # 1 row, 4 columns
+    fig, axes = plt.subplots(1, 4, figsize=(15, 5))
 
     for i, sample_idx in enumerate(closest_samples_indices):
-        # Retrieve the synapse data (3D volume) from the dataset
-        pixel_values, syn_info, bbox_name = dataset[sample_idx]  # Assuming dataset[index] gives 3D data
-
-        # Get the center slice of the sample
+        pixel_values, syn_info, bbox_name = dataset[sample_idx]
         center_slice = get_center_slice(pixel_values)
-        center_slice = center_slice.squeeze()
-        # Plot the slice
-        axes[i].imshow(center_slice, cmap='gray')
-        axes[i].axis('off')
-        axes[i].set_title(f'Sample {i+1}\n({syn_info["bbox_name"]})')
+        
+        # Use the consistent visualization function
+        visualize_slice(
+            axes[i], 
+            center_slice, 
+            title=f'Sample {i+1}\n({syn_info["bbox_name"]})'
+        )
 
     plt.suptitle(title)
     plt.tight_layout()
     plt.show()
 
-# Function to find 4 closest samples from each cluster
 def find_closest_samples_in_clusters(features_df, feature_cols, n_samples=4):
     closest_samples_per_cluster = {}
 
-    # For each cluster, find the closest 4 samples based on feature similarity
     for cluster_id in np.unique(features_df['cluster']):
         cluster_samples = features_df[features_df['cluster'] == cluster_id]
         cluster_features = cluster_samples[feature_cols].values
 
-        # Compute pairwise distances and select the closest pairs
         distances = pairwise_distances_argmin_min(cluster_features, cluster_features)
 
-        # Select the closest samples (4 closest samples)
         closest_samples = []
         for i, sample_idx in enumerate(distances[0][:n_samples]):
             closest_samples.append(cluster_samples.iloc[sample_idx])
 
-        # Store the closest samples for each cluster
         closest_samples_per_cluster[cluster_id] = closest_samples
 
     return closest_samples_per_cluster
 
-# Function to reduce features to 2D or 3D using t-SNE
 def apply_tsne(features_df, feature_cols, n_components=2):
     features = features_df[feature_cols].values
     tsne = TSNE(n_components=n_components, random_state=42)
     tsne_results = tsne.fit_transform(features)
     return tsne_results
 
-# Function to plot 2D and 3D t-SNE with plotly
 def plot_tsne(features_df, tsne_results_2d, tsne_results_3d, kmeans, color_mapping):
-    # 2D Plot colored by `bbox_name`
     fig_2d = px.scatter(
         features_df,
         x=tsne_results_2d[:, 0],
@@ -118,26 +121,23 @@ def plot_tsne(features_df, tsne_results_2d, tsne_results_3d, kmeans, color_mappi
         labels={'x': 't-SNE 1', 'y': 't-SNE 2'},
         title='2D t-SNE colored by bbox_name'
     )
-    fig_2d.update_traces(marker=dict(size=4))  # Set the size of points to 2
+    fig_2d.update_traces(marker=dict(size=4))
 
     fig_2d.show()
 
-    # 2D Plot colored by `cluster`
     fig_2d_cluster = px.scatter(
         features_df,
         x=tsne_results_2d[:, 0],
         y=tsne_results_2d[:, 1],
-        color=kmeans.labels_.astype(str),  # Color by cluster number
+        color=kmeans.labels_.astype(str),
         labels={'x': 't-SNE 1', 'y': 't-SNE 2'},
         title='2D t-SNE colored by cluster'
     )
-    fig_2d_cluster.update_traces(marker=dict(size=4))  # Set the size of points to 2
+    fig_2d_cluster.update_traces(marker=dict(size=4))
 
     fig_2d_cluster.show()
 
-# Function to save t-SNE plots using matplotlib
 def save_tsne_plots(features_df, tsne_results_2d, tsne_results_3d, kmeans, color_mapping, output_dir):
-    # 2D Plot colored by bbox_name - Matplotlib version
     plt.figure(figsize=(12, 10))
     bbox_groups = features_df.groupby('bbox_name')
     for bbox_name, group in bbox_groups:
@@ -159,7 +159,6 @@ def save_tsne_plots(features_df, tsne_results_2d, tsne_results_3d, kmeans, color
     plt.savefig(os.path.join(output_dir, "tsne_2d_bbox.png"), dpi=300)
     plt.close()
 
-    # 2D Plot colored by cluster - Matplotlib version
     plt.figure(figsize=(12, 10))
     for cluster_id in range(kmeans.n_clusters):
         indices = np.where(kmeans.labels_ == cluster_id)[0]
@@ -178,7 +177,6 @@ def save_tsne_plots(features_df, tsne_results_2d, tsne_results_3d, kmeans, color
     plt.savefig(os.path.join(output_dir, "tsne_2d_cluster.png"), dpi=300)
     plt.close()
 
-    # 3D Plot - Save as static image instead of HTML
     if tsne_results_3d is not None:
         fig = plt.figure(figsize=(12, 10))
         ax = fig.add_subplot(111, projection='3d')
@@ -203,34 +201,23 @@ def save_tsne_plots(features_df, tsne_results_2d, tsne_results_3d, kmeans, color
         plt.savefig(os.path.join(output_dir, "tsne_3d.png"), dpi=300)
         plt.close()
 
-# Function to save cluster samples as images
 def save_cluster_samples(dataset, closest_samples_per_cluster, output_dir):
-    """
-    Save visualizations of sample synapses from each cluster.
-    
-    Args:
-        dataset: Dataset containing synapse volume data
-        closest_samples_per_cluster: Dictionary mapping cluster IDs to DataFrames of sample synapses
-        output_dir: Directory to save the visualizations
-    """
     for cluster_id, samples in closest_samples_per_cluster.items():
         fig, axes = plt.subplots(1, 4, figsize=(15, 5))
         
         for i, (idx, _) in enumerate(samples.iterrows()):
             try:
-                # Get the data for this sample from the dataset
                 pixel_values, syn_info, bbox_name = dataset[idx]
+                center_slice = pixel_values[pixel_values.shape[0] // 2, :, :]
                 
-                # Get the center slice of the volume
-                center_slice = pixel_values[pixel_values.shape[0] // 2, :, :].squeeze()
-                
-                # Plot the center slice
-                axes[i].imshow(center_slice, cmap='gray')
-                axes[i].axis('off')
-                axes[i].set_title(f'Sample {i+1}\n({syn_info["bbox_name"]})')
+                # Use the consistent visualization function
+                visualize_slice(
+                    axes[i], 
+                    center_slice, 
+                    title=f'Sample {i+1}\n({syn_info["bbox_name"]})'
+                )
             except Exception as e:
                 print(f"Error processing sample at index {idx}: {e}")
-                # If there's an error, just show a blank image
                 axes[i].axis('off')
                 axes[i].set_title(f'Sample {i+1}\n(Error)')
                 

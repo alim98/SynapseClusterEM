@@ -249,6 +249,25 @@ def create_connected_umap(features_df, presynapse_groups, output_dir):
             print("No feature columns found, cannot compute UMAP")
             return None
     
+    # Create standard connected UMAP visualization (improved version)
+    create_standard_connected_umap(features_df, presynapse_groups, output_dir)
+    
+    # Create a dedicated bbox-colored UMAP visualization
+    create_bbox_colored_umap(features_df, output_dir)
+    
+    # Create a dedicated cluster-colored UMAP visualization (if cluster info available)
+    if 'cluster' in features_df.columns:
+        create_cluster_colored_umap(features_df, output_dir)
+    
+    # Create an interactive version with all information
+    create_interactive_umap(features_df, presynapse_groups, output_dir)
+    
+    # Return the path to the main visualization
+    return os.path.join(output_dir, "connected_umap_visualization.png")
+
+
+def create_standard_connected_umap(features_df, presynapse_groups, output_dir):
+    """Create the standard connected UMAP visualization with presynapse connections"""
     presynapse_ids = list(presynapse_groups.keys())
     import matplotlib.colors as mcolors
     import matplotlib.cm as cm
@@ -354,9 +373,128 @@ def create_connected_umap(features_df, presynapse_groups, output_dir):
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
     plt.close()
     
-    print(f"Connected UMAP visualization saved to {output_path}")
+    print(f"Standard connected UMAP visualization saved to {output_path}")
+
+
+def create_bbox_colored_umap(features_df, output_dir):
+    """Create a UMAP visualization specifically colored by bounding box"""
+    if 'bbox_name' not in features_df.columns:
+        print("No bbox_name column in features data, skipping bbox-colored UMAP")
+        return
     
+    plt.figure(figsize=(14, 12))
+    
+    # Define a consistent color map for bounding boxes
+    bbox_colors = {
+        'bbox1': '#FF0000', 'bbox2': '#00FFFF', 'bbox3': '#FFA500',
+        'bbox4': '#800080', 'bbox5': '#808080', 'bbox6': '#0000FF', 'bbox7': '#000000'
+    }
+    
+    # Get all unique bounding boxes
+    unique_bboxes = features_df['bbox_name'].unique()
+    
+    # Plot points for each bounding box with its own color
+    for bbox in unique_bboxes:
+        bbox_df = features_df[features_df['bbox_name'] == bbox]
+        color = bbox_colors.get(bbox, 'gray')  # Use defined color or default to gray
+        
+        plt.scatter(
+            bbox_df['umap_x'],
+            bbox_df['umap_y'],
+            c=color,
+            s=80,
+            alpha=0.8,
+            edgecolors='black',
+            label=f'{bbox} ({len(bbox_df)} synapses)'
+        )
+    
+    plt.title('UMAP Visualization Colored by Bounding Box')
+    plt.xlabel('UMAP Dimension 1', fontsize=12)
+    plt.ylabel('UMAP Dimension 2', fontsize=12)
+    
+    # Add legend
+    if len(unique_bboxes) <= 10:
+        plt.legend(loc='upper right', bbox_to_anchor=(1.15, 1), fontsize=10)
+    
+    plt.tight_layout()
+    
+    output_path = os.path.join(output_dir, "umap_bbox_colored.png")
+    plt.savefig(output_path, dpi=300, bbox_inches='tight')
+    plt.close()
+    
+    print(f"Bounding box colored UMAP visualization saved to {output_path}")
+
+
+def create_cluster_colored_umap(features_df, output_dir):
+    """Create a UMAP visualization specifically colored by cluster"""
+    plt.figure(figsize=(14, 12))
+    
+    # Get all unique clusters
+    unique_clusters = features_df['cluster'].unique()
+    
+    # Create a scatter plot with points colored by cluster
+    scatter = plt.scatter(
+        features_df['umap_x'],
+        features_df['umap_y'],
+        c=features_df['cluster'],
+        cmap='viridis',
+        s=80,
+        alpha=0.8,
+        edgecolors='black'
+    )
+    
+    # Add annotations for cluster centers
+    for cluster_id in unique_clusters:
+        cluster_points = features_df[features_df['cluster'] == cluster_id]
+        
+        centroid_x = cluster_points['umap_x'].mean()
+        centroid_y = cluster_points['umap_y'].mean()
+        
+        plt.text(
+            centroid_x, 
+            centroid_y, 
+            f'Cluster {cluster_id}', 
+            fontsize=12, 
+            weight='bold',
+            ha='center',
+            va='center',
+            bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="gray", alpha=0.7)
+        )
+    
+    plt.title('UMAP Visualization Colored by Cluster')
+    plt.xlabel('UMAP Dimension 1', fontsize=12)
+    plt.ylabel('UMAP Dimension 2', fontsize=12)
+    
+    # Add colorbar
+    cbar = plt.colorbar(scatter)
+    cbar.set_label('Cluster ID', fontsize=12)
+    
+    plt.tight_layout()
+    
+    output_path = os.path.join(output_dir, "umap_cluster_colored.png")
+    plt.savefig(output_path, dpi=300, bbox_inches='tight')
+    plt.close()
+    
+    print(f"Cluster colored UMAP visualization saved to {output_path}")
+
+
+def create_interactive_umap(features_df, presynapse_groups, output_dir):
+    """Create an interactive UMAP visualization with all information"""
     try:
+        import matplotlib.colors as mcolors
+        import matplotlib.cm as cm
+        import plotly.graph_objects as go
+        
+        presynapse_ids = list(presynapse_groups.keys())
+        n_colors = len(presynapse_ids)
+        if n_colors <= 10:
+            colormap = plt.cm.get_cmap('tab10', n_colors)
+        else:
+            colormap = plt.cm.get_cmap('viridis', n_colors)
+        
+        color_dict = {pre_id: mcolors.rgb2hex(colormap(i)) 
+                     for i, pre_id in enumerate(presynapse_ids)}
+        
         plot_df = features_df.copy()
         plot_df['presynapse_id'] = -1
         
@@ -430,8 +568,8 @@ def create_connected_umap(features_df, presynapse_groups, output_dir):
             xaxis_title='UMAP Dimension 1',
             yaxis_title='UMAP Dimension 2',
             hovermode='closest',
-            width=1000,
-            height=800
+            width=1200,
+            height=900
         )
         
         html_path = os.path.join(output_dir, "connected_umap_interactive.html")
@@ -440,8 +578,6 @@ def create_connected_umap(features_df, presynapse_groups, output_dir):
     
     except Exception as e:
         print(f"Error creating interactive UMAP visualization: {e}")
-    
-    return output_path
 
 
 def create_cluster_visualizations(output_dir, cluster_info, features_df):

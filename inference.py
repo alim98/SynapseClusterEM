@@ -323,6 +323,9 @@ def run_full_analysis(config, vol_data_dict, syn_df, processor, model):
                     features_df['seg_type'] = seg_type
                     features_df['alpha'] = alpha
                     
+                    # Convert alpha to string format for filenames
+                    alpha_str = str(alpha).replace('.', '_')
+                    
                     # Save sample visualizations
                     create_sample_visualizations(current_dataset, features_df, seg_type, alpha, output_dir)
                     

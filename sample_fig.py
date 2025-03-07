@@ -272,8 +272,85 @@ def main():
     
     logger.info("Visualization complete")
 
+def visualize_with_consistent_gray():
+    """
+    Demonstration function showing how to visualize slices with consistent gray levels.
+    This prevents matplotlib's automatic normalization from changing the appearance
+    of the gray overlays.
+    """
+    # Initialize and parse configuration
+    config.parse_args()
+    
+    # Initialize data loader
+    data_loader = SynapseDataLoader(
+        raw_base_dir=config.raw_base_dir,
+        seg_base_dir=config.seg_base_dir,
+        add_mask_base_dir=config.add_mask_base_dir,
+        gray_color=config.gray_color  # Explicitly set the gray color
+    )
+    
+    # Pick a sample bbox to visualize
+    bbox_name = "bbox1"
+    
+    # Load volumes
+    raw_vol, seg_vol, add_mask_vol = data_loader.load_volumes(bbox_name)
+    if raw_vol is None:
+        logger.error(f"Could not load volumes for {bbox_name}")
+        return
+    
+    # Pick a central point for visualization
+    center_z = raw_vol.shape[0] // 2
+    center_y = raw_vol.shape[1] // 2
+    center_x = raw_vol.shape[2] // 2
+    
+    central_coord = (center_x, center_y, center_z)
+    
+    # Define arbitrary side points for this example
+    side1_coord = (center_x - 10, center_y - 10, center_z)
+    side2_coord = (center_x + 10, center_y + 10, center_z)
+    
+    # Create output directory
+    output_dir = os.path.join(config.save_gifs_dir, "consistent_gray_example")
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Generate comparison images with different segmentation types
+    for seg_type in [0, 1, 3, 5, 10]:
+        # Create segmented cube
+        cube = data_loader.create_segmented_cube(
+            raw_vol=raw_vol,
+            seg_vol=seg_vol,
+            add_mask_vol=add_mask_vol,
+            central_coord=central_coord,
+            side1_coord=side1_coord,
+            side2_coord=side2_coord,
+            segmentation_type=seg_type,
+            subvolume_size=config.subvol_size,
+            alpha=config.alpha,
+            bbox_name=bbox_name
+        )
+        
+        # Save with consistent gray (fixed vmin/vmax)
+        consistent_path = os.path.join(output_dir, f"seg{seg_type}_consistent.png")
+        data_loader.save_segmented_slice(
+            cube, 
+            consistent_path,
+            consistent_gray=True
+        )
+        
+        # For comparison, save with matplotlib's auto-scaling
+        auto_scale_path = os.path.join(output_dir, f"seg{seg_type}_auto.png")
+        data_loader.save_segmented_slice(
+            cube, 
+            auto_scale_path,
+            consistent_gray=False
+        )
+        
+        logger.info(f"Saved segmentation type {seg_type} comparisons")
+    
+    logger.info(f"All comparison images saved to {output_dir}")
+
 if __name__ == "__main__":
-    try:
-        main()
-    except Exception as e:
-        logger.exception(f"Unhandled exception: {e}")
+    # Run the existing main function or the new comparison function
+    # Uncomment one of these:
+    main()
+    # visualize_with_consistent_gray()

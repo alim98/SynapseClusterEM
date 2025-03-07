@@ -19,7 +19,7 @@ import webbrowser
 import logging
 from datetime import datetime
 from PIL import Image, ImageTk
-
+import torch
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -71,6 +71,7 @@ class SynapseGUI:
         
         # Create tabs
         self.setup_config_tab()
+        self.setup_visualization_tab()  # Add new visualization tab
         self.setup_run_tab()
         self.setup_reports_tab()
         self.setup_about_tab()
@@ -91,15 +92,11 @@ class SynapseGUI:
         header_frame = ttk.Frame(self.main_frame)
         header_frame.pack(fill=tk.X, pady=(0, 10))
         
-        # Try to load the Max Planck Institute logo
-        logo_path = "assets\MPIBRLOGO.png"
+        # Use os.path.join for proper path handling
+        logo_path = os.path.join("assets", "MPIBRLOGO.png")
         
-        # Create directory if it doesn't exist
-        os.makedirs("assets", exist_ok=True)
-        
-        # If logo doesn't exist, create a placeholder with text prompt
+        # Check if logo exists, otherwise use text
         if not os.path.exists(logo_path):
-            # Create label with text
             logo_label = ttk.Label(
                 header_frame, 
                 text="Max Planck Institute for Brain Research",
@@ -317,199 +314,135 @@ class SynapseGUI:
         ttk.Button(button_frame, text="Load Configuration", command=self.load_config).pack(side=tk.LEFT, padx=5)
         ttk.Button(button_frame, text="Reset to Defaults", command=self.load_default_config).pack(side=tk.LEFT, padx=5)
     
-    def setup_run_tab(self):
-        """Set up the run tab for executing the analysis"""
-        run_frame = ttk.Frame(self.notebook, padding="10")
-        self.notebook.add(run_frame, text="Run Analysis")
+    def setup_visualization_tab(self):
+        """Set up the visualization tab for sample figure creation and preview"""
+        try:
+            from synapse import SynapseDataLoader, Synapse3DProcessor, SynapseDataset, config
+            import pandas as pd
+            import torch
+        except ImportError as e:
+            # Handle missing dependencies gracefully
+            visualization_frame = ttk.Frame(self.notebook, padding="10")
+            self.notebook.add(visualization_frame, text="Visualization")
+            error_msg = f"Cannot initialize visualization tab: {str(e)}\n\nPlease ensure all required packages are installed."
+            ttk.Label(
+                visualization_frame, 
+                text=error_msg,
+                foreground="red",
+                wraplength=700
+            ).pack(pady=20)
+            logger.error(f"Failed to initialize visualization tab: {str(e)}")
+            return
         
-        # Create top frame for options
-        options_frame = ttk.LabelFrame(run_frame, text="Analysis Options", padding=10)
-        options_frame.pack(fill=tk.X, pady=5)
+        visualization_frame = ttk.Frame(self.notebook, padding="10")
+        self.notebook.add(visualization_frame, text="Visualization")
         
-        # Checkboxes for different parts of the analysis
-        self.feature_extraction_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(options_frame, text="Feature Extraction", variable=self.feature_extraction_var).grid(row=0, column=0, sticky=tk.W, padx=10)
+        # Create scrollable frame for content
+        canvas = tk.Canvas(visualization_frame)
+        scrollbar = ttk.Scrollbar(visualization_frame, orient="vertical", command=canvas.yview)
+        scrollable_frame = ttk.Frame(canvas)
         
-        self.clustering_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(options_frame, text="Clustering Analysis", variable=self.clustering_var).grid(row=0, column=1, sticky=tk.W, padx=10)
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
         
-        self.presynapse_analysis_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(options_frame, text="Presynapse Analysis", variable=self.presynapse_analysis_var).grid(row=0, column=2, sticky=tk.W, padx=10)
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
         
-        self.report_generation_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(options_frame, text="Report Generation", variable=self.report_generation_var).grid(row=0, column=3, sticky=tk.W, padx=10)
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
         
-        # Create buttons frame
-        button_frame = ttk.Frame(run_frame)
+        # Create section headers and parameter inputs
+        self.create_section_header(scrollable_frame, "Sample Visualization Parameters")
+        
+        # BBox selection
+        bbox_frame = ttk.Frame(scrollable_frame)
+        bbox_frame.pack(fill=tk.X, pady=5)
+        
+        ttk.Label(bbox_frame, text="Select Bounding Box:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=2)
+        self.selected_bbox = tk.StringVar()
+        self.bbox_combo = ttk.Combobox(bbox_frame, textvariable=self.selected_bbox, width=10)
+        self.bbox_combo.grid(row=0, column=1, sticky=tk.W, padx=5, pady=2)
+        
+        # Sample ID selection
+        ttk.Label(bbox_frame, text="Sample ID:").grid(row=0, column=2, sticky=tk.W, padx=5, pady=2)
+        self.sample_id_var = tk.StringVar()
+        self.sample_id_combo = ttk.Combobox(bbox_frame, textvariable=self.sample_id_var, width=25)
+        self.sample_id_combo.grid(row=0, column=3, sticky=tk.W, padx=5, pady=2)
+        
+        # Segmentation parameters
+        seg_frame = ttk.Frame(scrollable_frame)
+        seg_frame.pack(fill=tk.X, pady=5)
+        
+        ttk.Label(seg_frame, text="Segmentation Type:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=2)
+        self.viz_seg_type_var = tk.IntVar(value=5)
+        viz_seg_type_combo = ttk.Combobox(seg_frame, textvariable=self.viz_seg_type_var, width=5)
+        viz_seg_type_combo['values'] = list(range(0, 11))
+        viz_seg_type_combo.grid(row=0, column=1, sticky=tk.W, padx=5, pady=2)
+        # Add trace to reset dataset when parameter changes
+        self.viz_seg_type_var.trace_add("write", lambda *args: self.reset_visualization_dataset())
+        
+        ttk.Label(seg_frame, text="Alpha Value:").grid(row=0, column=2, sticky=tk.W, padx=5, pady=2)
+        self.viz_alpha_var = tk.DoubleVar(value=1.0)
+        ttk.Spinbox(seg_frame, from_=0.0, to=1.0, increment=0.1, textvariable=self.viz_alpha_var, width=5).grid(row=0, column=3, sticky=tk.W, padx=5, pady=2)
+        # Add trace to reset dataset when parameter changes
+        self.viz_alpha_var.trace_add("write", lambda *args: self.reset_visualization_dataset())
+        
+        ttk.Label(seg_frame, text="Gray Color:").grid(row=0, column=4, sticky=tk.W, padx=5, pady=2)
+        self.viz_gray_color_var = tk.DoubleVar(value=0.6)
+        ttk.Spinbox(seg_frame, from_=0.0, to=1.0, increment=0.1, textvariable=self.viz_gray_color_var, width=5).grid(row=0, column=5, sticky=tk.W, padx=5, pady=2)
+        # Add trace to reset dataset when parameter changes
+        self.viz_gray_color_var.trace_add("write", lambda *args: self.reset_visualization_dataset())
+        
+        # Output parameters
+        output_frame = ttk.Frame(scrollable_frame)
+        output_frame.pack(fill=tk.X, pady=5)
+        
+        ttk.Label(output_frame, text="Output Directory:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=2)
+        self.viz_output_dir = tk.StringVar(value="results/gifs")
+        output_entry = ttk.Entry(output_frame, textvariable=self.viz_output_dir, width=40)
+        output_entry.grid(row=0, column=1, sticky=tk.W, padx=5, pady=2)
+        ttk.Button(output_frame, text="Browse...", command=lambda: self.browse_path(self.viz_output_dir)).grid(row=0, column=2, sticky=tk.W, padx=5, pady=2)
+        
+        # Buttons section
+        button_frame = ttk.Frame(scrollable_frame)
         button_frame.pack(fill=tk.X, pady=10)
         
-        self.run_button = ttk.Button(button_frame, text="Run Analysis", command=self.run_analysis)
-        self.run_button.pack(side=tk.LEFT, padx=5)
+        self.load_bboxes_btn = ttk.Button(button_frame, text="Load Bounding Boxes", command=self.load_bbox_data)
+        self.load_bboxes_btn.pack(side=tk.LEFT, padx=5)
         
-        self.stop_button = ttk.Button(button_frame, text="Stop", command=self.stop_analysis, state=tk.DISABLED)
-        self.stop_button.pack(side=tk.LEFT, padx=5)
+        self.load_samples_btn = ttk.Button(button_frame, text="Load Samples", command=self.load_sample_ids, state=tk.DISABLED)
+        self.load_samples_btn.pack(side=tk.LEFT, padx=5)
         
-        # Create a frame for the log display
-        log_frame = ttk.LabelFrame(run_frame, text="Analysis Log", padding=10)
+        self.visualize_btn = ttk.Button(button_frame, text="Create Visualization", command=self.create_visualization, state=tk.DISABLED)
+        self.visualize_btn.pack(side=tk.LEFT, padx=5)
+        
+        self.open_output_btn = ttk.Button(button_frame, text="Open Output Folder", command=self.open_visualization_folder)
+        self.open_output_btn.pack(side=tk.LEFT, padx=5)
+        
+        # Preview section
+        self.preview_frame = ttk.LabelFrame(scrollable_frame, text="Preview", padding=10)
+        self.preview_frame.pack(fill=tk.BOTH, expand=True, pady=10)
+        
+        self.preview_label = ttk.Label(self.preview_frame, text="No visualization generated yet.\nGenerate a visualization to preview it here.")
+        self.preview_label.pack(expand=True, padx=10, pady=10)
+        
+        # Text output for logs
+        log_frame = ttk.LabelFrame(scrollable_frame, text="Visualization Log", padding=10)
         log_frame.pack(fill=tk.BOTH, expand=True, pady=5)
         
-        # Text widget for log output
-        self.log_text = scrolledtext.ScrolledText(log_frame, wrap=tk.WORD, height=20)
-        self.log_text.pack(fill=tk.BOTH, expand=True)
-        self.log_text.config(state=tk.DISABLED)
+        self.viz_log_text = scrolledtext.ScrolledText(log_frame, wrap=tk.WORD, height=10)
+        self.viz_log_text.pack(fill=tk.BOTH, expand=True)
+        self.viz_log_text.config(state=tk.DISABLED)
         
-        # Add custom handler to redirect log output to text widget
-        self.log_handler = TextHandler(self.log_text)
-        self.log_handler.setLevel(logging.INFO)
-        logger.addHandler(self.log_handler)
-    
-    def setup_reports_tab(self):
-        """Set up the reports tab for viewing generated reports"""
-        reports_frame = ttk.Frame(self.notebook, padding="10")
-        self.notebook.add(reports_frame, text="Reports")
-        
-        # Create refresh button
-        refresh_frame = ttk.Frame(reports_frame)
-        refresh_frame.pack(fill=tk.X, pady=5)
-        
-        ttk.Button(refresh_frame, text="Refresh Reports List", command=self.scan_reports).pack(side=tk.LEFT)
-        
-        # Create the reports list frame
-        list_frame = ttk.LabelFrame(reports_frame, text="Available Reports", padding=10)
-        list_frame.pack(fill=tk.BOTH, expand=True, pady=5)
-        
-        # Create a frame with a tree view for reports
-        tree_frame = ttk.Frame(list_frame)
-        tree_frame.pack(fill=tk.BOTH, expand=True)
-        
-        # Create treeview for reports
-        self.reports_tree = ttk.Treeview(tree_frame, columns=("Type", "Date", "Path"), show="headings")
-        self.reports_tree.heading("Type", text="Report Type")
-        self.reports_tree.heading("Date", text="Date")
-        self.reports_tree.heading("Path", text="Path")
-        
-        self.reports_tree.column("Type", width=150)
-        self.reports_tree.column("Date", width=150)
-        self.reports_tree.column("Path", width=400)
-        
-        self.reports_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        
-        # Add scrollbar
-        scrollbar = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=self.reports_tree.yview)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        self.reports_tree.configure(yscrollcommand=scrollbar.set)
-        
-        # Bind double-click to open report
-        self.reports_tree.bind("<Double-1>", self.open_selected_report)
-        
-        # Create buttons for report actions
-        button_frame = ttk.Frame(list_frame)
-        button_frame.pack(fill=tk.X, pady=5)
-        
-        ttk.Button(button_frame, text="Open Report", command=self.open_report).pack(side=tk.LEFT, padx=5)
-        ttk.Button(button_frame, text="Open Report Folder", command=self.open_report_folder).pack(side=tk.LEFT, padx=5)
-        ttk.Button(button_frame, text="Delete Report", command=self.delete_report).pack(side=tk.LEFT, padx=5)
-    
-    def setup_about_tab(self):
-        """Set up the about tab with information about the project and institute"""
-        about_frame = ttk.Frame(self.notebook, padding="20")
-        self.notebook.add(about_frame, text="About")
-        
-        # Project title
-        title_label = ttk.Label(
-            about_frame, 
-            text="SynapseClusterEM",
-            font=("Arial", 18, "bold")
-        )
-        title_label.pack(anchor=tk.W, pady=(0, 5))
-        
-        # Version
-        version_label = ttk.Label(
-            about_frame,
-            text="Version 1.0.0",
-            font=("Arial", 10)
-        )
-        version_label.pack(anchor=tk.W, pady=(0, 20))
-        
-        # Description
-        description = (
-            "SynapseClusterEM is a deep learning framework for analyzing and clustering "
-            "3D synapse structures from electron microscopy (EM) data. The tool uses "
-            "advanced neural networks and unsupervised learning techniques to identify "
-            "structural patterns and classify synapses based on their 3D architecture."
-        )
-        desc_label = ttk.Label(
-            about_frame,
-            text=description,
-            wraplength=700,
-            justify=tk.LEFT
-        )
-        desc_label.pack(anchor=tk.W, pady=(0, 20), fill=tk.X)
-        
-        # Institute information
-        institute_frame = ttk.LabelFrame(about_frame, text="Developed at", padding=10)
-        institute_frame.pack(fill=tk.X, pady=10)
-        
-        institute_name = ttk.Label(
-            institute_frame,
-            text="Max Planck Institute for Brain Research",
-            font=("Arial", 12, "bold")
-        )
-        institute_name.pack(anchor=tk.W)
-        
-        institute_address = ttk.Label(
-            institute_frame,
-            text="Frankfurt am Main, Germany",
-            font=("Arial", 10)
-        )
-        institute_address.pack(anchor=tk.W)
-        
-        institute_website = ttk.Label(
-            institute_frame,
-            text="https://brain.mpg.de/",
-            font=("Arial", 10),
-            foreground="blue",
-            cursor="hand2"
-        )
-        institute_website.pack(anchor=tk.W, pady=(0, 10))
-        institute_website.bind("<Button-1>", lambda e: webbrowser.open_new("https://brain.mpg.de/"))
-        
-        # Developer information
-        developer_frame = ttk.LabelFrame(about_frame, text="Development Team", padding=10)
-        developer_frame.pack(fill=tk.X, pady=10)
-        
-        developer_info = ttk.Label(
-            developer_frame,
-            text="Ali Mikaeili",
-            font=("Arial", 10, "bold")
-        )
-        developer_info.pack(anchor=tk.W)
-        
-        contact_info = ttk.Label(
-            developer_frame,
-            text="Email: Mikaeili.Barzili@gmail.com",
-            font=("Arial", 10)
-        )
-        contact_info.pack(anchor=tk.W)
-        
-        github_link = ttk.Label(
-            developer_frame,
-            text="GitHub: https://github.com/alim98",
-            font=("Arial", 10),
-            foreground="blue",
-            cursor="hand2"
-        )
-        github_link.pack(anchor=tk.W)
-        github_link.bind("<Button-1>", lambda e: webbrowser.open_new("https://github.com/alim98"))
-        
-        # Copyright notice
-        copyright_label = ttk.Label(
-            about_frame,
-            text="© 2025 Max Planck Institute for Brain Research. All rights reserved.",
-            font=("Arial", 9),
-            foreground="gray"
-        )
-        copyright_label.pack(side=tk.BOTTOM, pady=20)
+        # Setup variables for visualization
+        self.vol_data_dict = {}
+        self.syn_df = None
+        self.data_loader = None
+        self.processor = None
+        self.dataset = None
+        self.latest_visualization = None
     
     def create_section_header(self, parent, text):
         """Create a section header"""
@@ -921,6 +854,558 @@ class SynapseGUI:
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to delete report: {str(e)}")
                 logger.error(f"Failed to delete report: {str(e)}")
+    
+    def load_bbox_data(self):
+        """Load bounding box data for visualization"""
+        from synapse import SynapseDataLoader, config
+        import pandas as pd
+        
+        # Update status
+        self.status_var.set("Loading bounding box data...")
+        self.root.update_idletasks()
+        
+        # Get config parameters from the UI
+        raw_base_dir = self.raw_base_dir.get()
+        seg_base_dir = self.seg_base_dir.get()
+        add_mask_base_dir = self.add_mask_base_dir.get()
+        excel_file = self.excel_file.get()
+        
+        # Check if paths exist
+        if not os.path.exists(raw_base_dir) or not os.path.exists(seg_base_dir) or not os.path.exists(add_mask_base_dir):
+            messagebox.showerror("Error", "One or more data directories do not exist. Please check your paths.")
+            self.status_var.set("Error loading bounding box data")
+            return
+        
+        try:
+            self.log_to_viz_console("Loading data loader...")
+            self.data_loader = SynapseDataLoader(
+                raw_base_dir=raw_base_dir,
+                seg_base_dir=seg_base_dir,
+                add_mask_base_dir=add_mask_base_dir,
+                gray_color=self.viz_gray_color_var.get()
+            )
+            
+            # Get potential bboxes from directories
+            possible_bboxes = []
+            for item in os.listdir(raw_base_dir):
+                if os.path.isdir(os.path.join(raw_base_dir, item)) and "bbox" in item.lower():
+                    possible_bboxes.append(item)
+            
+            if not possible_bboxes:
+                messagebox.showerror("Error", "No bounding box directories found in the raw data directory.")
+                self.status_var.set("No bounding boxes found")
+                return
+            
+            # Update the combo box
+            self.bbox_combo['values'] = possible_bboxes
+            self.bbox_combo.current(0)  # Set the first bbox as default
+            
+            # Enable the load samples button
+            self.load_samples_btn.config(state=tk.NORMAL)
+            
+            self.log_to_viz_console(f"Found {len(possible_bboxes)} bounding boxes: {', '.join(possible_bboxes)}")
+            self.status_var.set(f"Loaded {len(possible_bboxes)} bounding boxes")
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"An error occurred while loading bounding box data: {str(e)}")
+            self.status_var.set("Error loading bounding box data")
+            self.log_to_viz_console(f"Error: {str(e)}")
+    
+    def load_sample_ids(self):
+        """Load sample IDs for the selected bounding box"""
+        import pandas as pd
+        from synapse import config
+        
+        # Update status
+        self.status_var.set("Loading sample IDs...")
+        self.root.update_idletasks()
+        
+        bbox_name = self.selected_bbox.get()
+        excel_file = self.excel_file.get()
+        
+        if not bbox_name:
+            messagebox.showerror("Error", "Please select a bounding box first.")
+            return
+        
+        try:
+            # Load the volume data if not already loaded
+            if bbox_name not in self.vol_data_dict:
+                self.log_to_viz_console(f"Loading volumes for {bbox_name}...")
+                raw_vol, seg_vol, add_mask_vol = self.data_loader.load_volumes(bbox_name)
+                
+                if raw_vol is None:
+                    messagebox.showerror("Error", f"Could not load volumes for {bbox_name}.")
+                    self.status_var.set(f"Error loading volumes for {bbox_name}")
+                    return
+                
+                self.vol_data_dict[bbox_name] = (raw_vol, seg_vol, add_mask_vol)
+                self.log_to_viz_console(f"Loaded volumes for {bbox_name} with shape {raw_vol.shape}")
+            
+            # Load the excel file for the bbox
+            excel_path = os.path.join(excel_file, f"{bbox_name}.xlsx")
+            if not os.path.exists(excel_path):
+                messagebox.showerror("Error", f"Excel file for {bbox_name} not found at {excel_path}")
+                self.status_var.set(f"Excel file for {bbox_name} not found")
+                return
+            
+            self.log_to_viz_console(f"Loading Excel data from {excel_path}...")
+            # Load only the relevant bbox data
+            df = pd.read_excel(excel_path)
+            df['bbox_name'] = bbox_name
+            
+            # Store the dataframe
+            self.syn_df = df
+            
+            # Get Var1 values for the sample IDs
+            if 'Var1' in df.columns:
+                sample_ids = df['Var1'].unique().tolist()
+                self.sample_id_combo['values'] = sample_ids
+                if sample_ids:
+                    self.sample_id_combo.current(0)  # Set the first sample as default
+                    self.visualize_btn.config(state=tk.NORMAL)
+                    self.log_to_viz_console(f"Loaded {len(sample_ids)} sample IDs")
+                    self.status_var.set(f"Loaded {len(sample_ids)} sample IDs for {bbox_name}")
+                else:
+                    self.log_to_viz_console("No sample IDs found in the Excel file")
+                    self.status_var.set("No sample IDs found")
+            else:
+                messagebox.showwarning("Warning", "The Excel file does not contain a 'Var1' column for sample IDs.")
+                self.status_var.set("No Var1 column in Excel file")
+        
+        except Exception as e:
+            messagebox.showerror("Error", f"An error occurred while loading sample IDs: {str(e)}")
+            self.status_var.set("Error loading sample IDs")
+            self.log_to_viz_console(f"Error: {str(e)}")
+    
+    def create_visualization(self):
+        """Create a visualization for the selected sample"""
+        from synapse import Synapse3DProcessor, SynapseDataset, config
+        import numpy as np
+        from PIL import Image, ImageTk
+        import matplotlib.pyplot as plt
+        
+        # Try to import visualization utilities
+        try:
+            from synapse.visualization.sample_fig import save_center_slice_image
+        except ImportError:
+            # Fallback implementation if the import fails
+            def save_center_slice_image(volume, output_path, consistent_gray=True):
+                """Local fallback implementation if the import fails"""
+                self.log_to_viz_console("Using fallback save_center_slice_image implementation")
+                
+                # Get center slice
+                if len(volume.shape) == 4:  # (z, c, y, x)
+                    center_slice = volume[volume.shape[0] // 2, 0]
+                else:  # (z, y, x)
+                    center_slice = volume[volume.shape[0] // 2]
+                
+                # Create the output directory if it doesn't exist
+                os.makedirs(os.path.dirname(output_path), exist_ok=True)
+                
+                # Create the figure with controlled normalization
+                fig, ax = plt.subplots(figsize=(8, 8))
+                
+                # Use fixed vmin and vmax to prevent matplotlib's auto-scaling
+                if consistent_gray:
+                    ax.imshow(center_slice, cmap='gray', vmin=0, vmax=1)
+                else:
+                    ax.imshow(center_slice, cmap='gray')
+                
+                ax.axis('off')
+                
+                # Save the figure
+                plt.tight_layout()
+                plt.savefig(output_path, dpi=300, bbox_inches='tight', pad_inches=0.0)
+                plt.close()
+                
+                self.log_to_viz_console(f"Center slice image saved to {output_path}")
+        
+        # Update status
+        self.status_var.set("Creating visualization...")
+        self.root.update_idletasks()
+        
+        bbox_name = self.selected_bbox.get()
+        sample_id = self.sample_id_var.get()
+        segmentation_type = self.viz_seg_type_var.get()
+        alpha = self.viz_alpha_var.get()
+        gray_color = self.viz_gray_color_var.get()
+        output_dir = self.viz_output_dir.get()
+        
+        if not (bbox_name and sample_id):
+            messagebox.showerror("Error", "Please select both a bounding box and a sample ID.")
+            return
+        
+        try:
+            # Ensure the output directory exists
+            os.makedirs(output_dir, exist_ok=True)
+            
+            # Set the gray color for visualization
+            self.data_loader.gray_color = gray_color
+            
+            # Initialize processor if not already done
+            if self.processor is None:
+                self.processor = Synapse3DProcessor(size=config.size)
+                self.log_to_viz_console("Initialized processor")
+            
+            # Create or update dataset with current parameters
+            self.log_to_viz_console(f"Creating dataset with segmentation type {segmentation_type}, alpha {alpha}")
+            
+            try:
+                self.dataset = SynapseDataset(
+                    vol_data_dict=self.vol_data_dict,
+                    synapse_df=self.syn_df,
+                    processor=self.processor,
+                    segmentation_type=segmentation_type,
+                    subvol_size=self.subvol_size_var.get(),
+                    num_frames=self.num_frames_var.get(),
+                    alpha=alpha
+                )
+                self.log_to_viz_console(f"Created dataset with {len(self.dataset)} samples")
+            except Exception as dataset_error:
+                messagebox.showerror("Dataset Error", f"Failed to create dataset: {str(dataset_error)}")
+                self.log_to_viz_console(f"Dataset error: {str(dataset_error)}")
+                self.status_var.set("Error creating dataset")
+                return
+            
+            # Find the sample in the synapse dataframe
+            sample_df = self.syn_df[(self.syn_df['Var1'] == sample_id) & (self.syn_df['bbox_name'] == bbox_name)]
+            
+            if sample_df.empty:
+                messagebox.showerror("Error", f"Sample {sample_id} not found in {bbox_name}.")
+                return
+            
+            # Get the sample data
+            idx = sample_df.index[0]
+            pixel_values, syn_info, _ = self.dataset[idx]
+            
+            # Convert to numpy array for visualization
+            if isinstance(pixel_values, torch.Tensor):
+                frames = pixel_values.squeeze(1).numpy()
+            else:
+                frames = pixel_values.squeeze(1)
+            
+            # Prepare the output path
+            Gif_Name = f"{bbox_name}_{sample_id}_seg{segmentation_type}"
+            output_gif_path = os.path.join(output_dir, f"{Gif_Name}.gif")
+            output_png_path = os.path.join(output_dir, f"{Gif_Name}_center_slice.png")
+            
+            # Save the center slice as a PNG
+            self.log_to_viz_console(f"Saving center slice to {output_png_path}...")
+            center_slice_idx = frames.shape[0] // 2
+            center_slice = frames[center_slice_idx]
+            
+            # Save using the utility function that preserves gray levels
+            save_center_slice_image(frames, output_png_path, consistent_gray=True)
+            
+            # Create and save the GIF
+            self.log_to_viz_console(f"Creating GIF with {len(frames)} frames...")
+            enhanced_frames = []
+            for frame in frames:
+                # Min-max normalization to stretch contrast
+                frame_min, frame_max = frame.min(), frame.max()
+                if frame_max > frame_min:  # Avoid division by zero
+                    normalized = (frame - frame_min) / (frame_max - frame_min)
+                else:
+                    normalized = frame
+                enhanced_frames.append((normalized * 255).astype(np.uint8))
+            
+            import imageio
+            imageio.mimsave(output_gif_path, enhanced_frames, fps=10)
+            
+            # Show the center slice in the preview
+            self.log_to_viz_console("Loading preview image...")
+            self.latest_visualization = output_png_path
+            self.update_preview(output_png_path)
+            
+            # Update status
+            self.status_var.set(f"Visualization created and saved to {output_dir}")
+            self.log_to_viz_console(f"Visualization successfully created and saved to {output_dir}")
+            
+            # Enable the open output folder button
+            self.open_output_btn.config(state=tk.NORMAL)
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"An error occurred while creating the visualization: {str(e)}")
+            self.status_var.set("Error creating visualization")
+            self.log_to_viz_console(f"Error: {str(e)}")
+    
+    def update_preview(self, image_path):
+        """Update the preview with the generated visualization"""
+        from PIL import Image, ImageTk
+        
+        # Clear the current preview
+        for widget in self.preview_frame.winfo_children():
+            widget.destroy()
+        
+        try:
+            # Open and resize the image for preview
+            img = Image.open(image_path)
+            
+            # Calculate the resize ratio to fit the preview area
+            max_size = (400, 400)
+            img.thumbnail(max_size, Image.Resampling.LANCZOS)
+            
+            # Convert to PhotoImage
+            tk_img = ImageTk.PhotoImage(img)
+            
+            # Display the image
+            img_label = ttk.Label(self.preview_frame, image=tk_img)
+            img_label.image = tk_img  # Keep a reference to prevent garbage collection
+            img_label.pack(padx=10, pady=10)
+            
+            # Add a label with the image info
+            ttk.Label(
+                self.preview_frame, 
+                text=f"Preview of: {os.path.basename(image_path)}"
+            ).pack(padx=10, pady=5)
+            
+        except Exception as e:
+            ttk.Label(
+                self.preview_frame, 
+                text=f"Error loading preview: {str(e)}"
+            ).pack(padx=10, pady=10)
+    
+    def open_visualization_folder(self):
+        """Open the folder containing the visualizations"""
+        output_dir = self.viz_output_dir.get()
+        
+        # Create the directory if it doesn't exist
+        try:
+            os.makedirs(output_dir, exist_ok=True)
+            self.log_to_viz_console(f"Created output directory: {output_dir}")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to create directory: {str(e)}")
+            self.status_var.set(f"Error creating directory: {str(e)}")
+            return
+        
+        try:
+            # Convert to absolute path with proper separators for the OS
+            abs_path = os.path.abspath(output_dir)
+            
+            # Open the folder using the default file explorer
+            if sys.platform == 'win32':
+                # On Windows, ensure the path uses backslashes
+                abs_path = abs_path.replace('/', '\\')
+                os.startfile(abs_path)
+            elif sys.platform == 'darwin':  # macOS
+                subprocess.run(['open', abs_path])
+            else:  # Linux
+                subprocess.run(['xdg-open', abs_path])
+                
+            self.status_var.set(f"Opened visualization folder: {abs_path}")
+            self.log_to_viz_console(f"Opened folder: {abs_path}")
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to open folder: {str(e)}")
+            self.status_var.set(f"Error opening folder: {str(e)}")
+            self.log_to_viz_console(f"Error: {str(e)}")
+    
+    def log_to_viz_console(self, message):
+        """Log a message to the visualization console"""
+        self.viz_log_text.config(state=tk.NORMAL)
+        self.viz_log_text.insert(tk.END, f"{message}\n")
+        self.viz_log_text.see(tk.END)  # Auto-scroll to the end
+        self.viz_log_text.config(state=tk.DISABLED)
+        self.root.update_idletasks()  # Update the UI
+    
+    def reset_visualization_dataset(self):
+        """Reset the visualization dataset when parameters change"""
+        self.dataset = None
+        self.log_to_viz_console("Visualization parameters changed - dataset will be recreated")
+    
+    def setup_run_tab(self):
+        """Set up the run tab for executing the analysis"""
+        run_frame = ttk.Frame(self.notebook, padding="10")
+        self.notebook.add(run_frame, text="Run Analysis")
+        
+        # Create top frame for options
+        options_frame = ttk.LabelFrame(run_frame, text="Analysis Options", padding=10)
+        options_frame.pack(fill=tk.X, pady=5)
+        
+        # Checkboxes for different parts of the analysis
+        self.feature_extraction_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(options_frame, text="Feature Extraction", variable=self.feature_extraction_var).grid(row=0, column=0, sticky=tk.W, padx=10)
+        
+        self.clustering_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(options_frame, text="Clustering Analysis", variable=self.clustering_var).grid(row=0, column=1, sticky=tk.W, padx=10)
+        
+        self.presynapse_analysis_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(options_frame, text="Presynapse Analysis", variable=self.presynapse_analysis_var).grid(row=0, column=2, sticky=tk.W, padx=10)
+        
+        self.report_generation_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(options_frame, text="Report Generation", variable=self.report_generation_var).grid(row=0, column=3, sticky=tk.W, padx=10)
+        
+        # Create buttons frame
+        button_frame = ttk.Frame(run_frame)
+        button_frame.pack(fill=tk.X, pady=10)
+        
+        self.run_button = ttk.Button(button_frame, text="Run Analysis", command=self.run_analysis)
+        self.run_button.pack(side=tk.LEFT, padx=5)
+        
+        self.stop_button = ttk.Button(button_frame, text="Stop", command=self.stop_analysis, state=tk.DISABLED)
+        self.stop_button.pack(side=tk.LEFT, padx=5)
+        
+        # Create a frame for the log display
+        log_frame = ttk.LabelFrame(run_frame, text="Analysis Log", padding=10)
+        log_frame.pack(fill=tk.BOTH, expand=True, pady=5)
+        
+        # Text widget for log output
+        self.log_text = scrolledtext.ScrolledText(log_frame, wrap=tk.WORD, height=20)
+        self.log_text.pack(fill=tk.BOTH, expand=True)
+        self.log_text.config(state=tk.DISABLED)
+        
+        # Add custom handler to redirect log output to text widget
+        self.log_handler = TextHandler(self.log_text)
+        self.log_handler.setLevel(logging.INFO)
+        logger.addHandler(self.log_handler)
+    
+    def setup_reports_tab(self):
+        """Set up the reports tab for viewing generated reports"""
+        reports_frame = ttk.Frame(self.notebook, padding="10")
+        self.notebook.add(reports_frame, text="Reports")
+        
+        # Create refresh button
+        refresh_frame = ttk.Frame(reports_frame)
+        refresh_frame.pack(fill=tk.X, pady=5)
+        
+        ttk.Button(refresh_frame, text="Refresh Reports List", command=self.scan_reports).pack(side=tk.LEFT)
+        
+        # Create the reports list frame
+        list_frame = ttk.LabelFrame(reports_frame, text="Available Reports", padding=10)
+        list_frame.pack(fill=tk.BOTH, expand=True, pady=5)
+        
+        # Create a frame with a tree view for reports
+        tree_frame = ttk.Frame(list_frame)
+        tree_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Create treeview for reports
+        self.reports_tree = ttk.Treeview(tree_frame, columns=("Type", "Date", "Path"), show="headings")
+        self.reports_tree.heading("Type", text="Report Type")
+        self.reports_tree.heading("Date", text="Date")
+        self.reports_tree.heading("Path", text="Path")
+        
+        self.reports_tree.column("Type", width=150)
+        self.reports_tree.column("Date", width=150)
+        self.reports_tree.column("Path", width=400)
+        
+        self.reports_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        
+        # Add scrollbar
+        scrollbar = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=self.reports_tree.yview)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.reports_tree.configure(yscrollcommand=scrollbar.set)
+        
+        # Bind double-click to open report
+        self.reports_tree.bind("<Double-1>", self.open_selected_report)
+        
+        # Create buttons for report actions
+        button_frame = ttk.Frame(list_frame)
+        button_frame.pack(fill=tk.X, pady=5)
+        
+        ttk.Button(button_frame, text="Open Report", command=self.open_report).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Open Report Folder", command=self.open_report_folder).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Delete Report", command=self.delete_report).pack(side=tk.LEFT, padx=5)
+    
+    def setup_about_tab(self):
+        """Set up the about tab with information about the project and institute"""
+        about_frame = ttk.Frame(self.notebook, padding="20")
+        self.notebook.add(about_frame, text="About")
+        
+        # Project title
+        title_label = ttk.Label(
+            about_frame, 
+            text="SynapseClusterEM",
+            font=("Arial", 18, "bold")
+        )
+        title_label.pack(anchor=tk.W, pady=(0, 5))
+        
+        # Version
+        version_label = ttk.Label(
+            about_frame,
+            text="Version 1.0.0",
+            font=("Arial", 10)
+        )
+        version_label.pack(anchor=tk.W, pady=(0, 20))
+        
+        # Description
+        description = (
+            "SynapseClusterEM is a deep learning framework for analyzing and clustering "
+            "3D synapse structures from electron microscopy (EM) data. The tool uses "
+            "advanced neural networks and unsupervised learning techniques to identify "
+            "structural patterns and classify synapses based on their 3D architecture."
+        )
+        desc_label = ttk.Label(
+            about_frame,
+            text=description,
+            wraplength=700,
+            justify=tk.LEFT
+        )
+        desc_label.pack(anchor=tk.W, pady=(0, 20), fill=tk.X)
+        
+        # Institute information
+        institute_frame = ttk.LabelFrame(about_frame, text="Developed at", padding=10)
+        institute_frame.pack(fill=tk.X, pady=10)
+        
+        institute_name = ttk.Label(
+            institute_frame,
+            text="Max Planck Institute for Brain Research",
+            font=("Arial", 12, "bold")
+        )
+        institute_name.pack(anchor=tk.W)
+        
+        institute_address = ttk.Label(
+            institute_frame,
+            text="Frankfurt am Main, Germany",
+            font=("Arial", 10)
+        )
+        institute_address.pack(anchor=tk.W)
+        
+        institute_website = ttk.Label(
+            institute_frame,
+            text="https://brain.mpg.de/",
+            font=("Arial", 10),
+            foreground="blue",
+            cursor="hand2"
+        )
+        institute_website.pack(anchor=tk.W, pady=(0, 10))
+        institute_website.bind("<Button-1>", lambda e: webbrowser.open_new("https://brain.mpg.de/"))
+        
+        # Developer information
+        developer_frame = ttk.LabelFrame(about_frame, text="Development Team", padding=10)
+        developer_frame.pack(fill=tk.X, pady=10)
+        
+        developer_info = ttk.Label(
+            developer_frame,
+            text="Ali Mikaeili",
+            font=("Arial", 10, "bold")
+        )
+        developer_info.pack(anchor=tk.W)
+        
+        contact_info = ttk.Label(
+            developer_frame,
+            text="Email: Mikaeili.Barzili@gmail.com",
+            font=("Arial", 10)
+        )
+        contact_info.pack(anchor=tk.W)
+        
+        github_link = ttk.Label(
+            developer_frame,
+            text="GitHub: https://github.com/alim98",
+            font=("Arial", 10),
+            foreground="blue",
+            cursor="hand2"
+        )
+        github_link.pack(anchor=tk.W)
+        github_link.bind("<Button-1>", lambda e: webbrowser.open_new("https://github.com/alim98"))
+        
+        # Copyright notice
+        copyright_label = ttk.Label(
+            about_frame,
+            text="© 2025 Max Planck Institute for Brain Research. All rights reserved.",
+            font=("Arial", 9),
+            foreground="gray"
+        )
+        copyright_label.pack(side=tk.BOTTOM, pady=20)
 
 
 class TextHandler(logging.Handler):

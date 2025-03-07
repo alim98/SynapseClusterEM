@@ -6,6 +6,7 @@ import imageio
 from torch.utils.data import Dataset, DataLoader
 import logging
 from pathlib import Path
+import matplotlib.pyplot as plt
 
 # Import from the reorganized modules
 from synapse import (
@@ -50,6 +51,43 @@ def create_gif_from_volume(volume, output_path, fps=10, loop=0):
     
     logger.info(f"GIF saved to {output_path}")
 
+def save_center_slice_image(volume, output_path, consistent_gray=True):
+    """
+    Save a center slice of a 3D volume as an image with consistent gray values.
+    
+    Args:
+        volume (numpy.ndarray): 3D volume with shape (z, y, x) or (z, c, y, x)
+        output_path (str): Path to save the image
+        consistent_gray (bool): Whether to enforce consistent gray levels
+    """
+    # Get center slice
+    if len(volume.shape) == 4:  # (z, c, y, x)
+        center_slice = volume[volume.shape[0] // 2, 0]
+    else:  # (z, y, x)
+        center_slice = volume[volume.shape[0] // 2]
+    
+    # Create the output directory if it doesn't exist
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    
+    # Create the figure with controlled normalization
+    fig, ax = plt.subplots(figsize=(8, 8))
+    
+    # Use fixed vmin and vmax to prevent matplotlib's auto-scaling
+    if consistent_gray:
+        ax.imshow(center_slice, cmap='gray', vmin=0, vmax=1)
+    else:
+        # For comparison, you can also save with matplotlib's auto-scaling
+        ax.imshow(center_slice, cmap='gray')
+    
+    ax.axis('off')
+    
+    # Save the figure
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=300, bbox_inches='tight', pad_inches=0.0)
+    plt.close()
+    
+    logger.info(f"Center slice image saved to {output_path}")
+
 def visualize_specific_sample(dataset, syn_df, bbox_name, var1, save_gifs_dir, segmentation_type):
     """
     Visualize a specific sample from the dataset.
@@ -88,6 +126,13 @@ def visualize_specific_sample(dataset, syn_df, bbox_name, var1, save_gifs_dir, s
         f"{bbox_name}_sample{var1}_seg{segmentation_type}.gif"
     )
     create_gif_from_volume(pixel_values, output_path)
+    
+    # Also save the center slice as an image with consistent gray levels
+    slice_output_path = os.path.join(
+        save_gifs_dir,
+        f"{bbox_name}_sample{var1}_seg{segmentation_type}_center_slice.png" 
+    )
+    save_center_slice_image(pixel_values, slice_output_path)
     
     logger.info(f"Visualized sample {var1} from {bbox_name} with segmentation type {segmentation_type}")
     
