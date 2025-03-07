@@ -37,11 +37,11 @@ class SynapseGUI:
         # Set application icon if available
         try:
             # On Windows, iconbitmap requires .ico format
-            if os.path.exists("assets/synapse_icon.ico"):
-                self.root.iconbitmap("assets/synapse_icon.ico")
+            if os.path.exists("assets/bioicon.ico"):
+                self.root.iconbitmap("assets/bioicon.ico")
             # For cross-platform support using PNG (requires PhotoImage)
-            elif os.path.exists("assets/synapse_icon.png"):
-                icon = ImageTk.PhotoImage(Image.open("assets/synapse_icon.png"))
+            elif os.path.exists("assets/bioicon.png"):
+                icon = ImageTk.PhotoImage(Image.open("assets/bioicon.png"))
                 self.root.iconphoto(True, icon)
                 # Keep a reference to prevent garbage collection
                 self.icon_image = icon

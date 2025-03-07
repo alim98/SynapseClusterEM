@@ -52,6 +52,6 @@ results/
 *.xlsx
 *.checkpoint
 
-# Exceptions - track these specific files even if they match above patterns
-# For example, if you want to track a specific data file:
-# !data/example_data.csv 
+# DO NOT ignore assets directory and its contents
+!assets/
+!assets/* 
