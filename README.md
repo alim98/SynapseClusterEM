@@ -188,12 +188,16 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 This work was conducted at the **Max Planck Institute for Brain Research** in Frankfurt, Germany. We gratefully acknowledge the support and resources provided by the institute.
 
+## Development Team
+
+- **Ali Mikaeili** - Intern - Max Planck Institute for Brain Research, Frankfurt am Main
+- **Ali Karimi** - Postdo - Max Planck Institute for Brain Research, Frankfurt am Main
+- **Dominic Evans, Ph.D.** - Postdoc - Max Planck Institute for Brain Research, Frankfurt am Main
+
 ## Contact
 
 Ali Mikaeili - Mikaeili.Barzili@gmail.com
 - GitHub: [@alim98](https://github.com/alim98)
-- Affiliation: University of Tehran, M.Sc. in Artificial Intelligence and Robotics
-- Intern at Max Planck Institute for Brain Research
 
 ## Citation
 

@@ -1396,6 +1396,23 @@ class SynapseGUI:
             cursor="hand2"
         )
         github_link.pack(anchor=tk.W)
+        
+        # Add Ali Karimi
+        developer_info2 = ttk.Label(
+            developer_frame,
+            text="Ali Karimi - Postdoc",
+            font=("Arial", 10, "bold")
+        )
+        developer_info2.pack(anchor=tk.W, pady=(10, 0))
+        
+        # Add Dominic Evans
+        developer_info3 = ttk.Label(
+            developer_frame,
+            text="Dominic Evans - Postdoc",
+            font=("Arial", 10, "bold")
+        )
+        developer_info3.pack(anchor=tk.W, pady=(10, 0))
+        github_link.pack(anchor=tk.W)
         github_link.bind("<Button-1>", lambda e: webbrowser.open_new("https://github.com/alim98"))
         
         # Copyright notice
