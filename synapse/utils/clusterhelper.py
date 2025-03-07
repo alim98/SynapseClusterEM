@@ -2,22 +2,45 @@ import os
 import numpy as np
 import pandas as pd
 from sklearn.manifold import TSNE
-from sklearn.cluster import KMeans
+from sklearn.cluster import KMeans, DBSCAN
 from sklearn.metrics.pairwise import pairwise_distances_argmin_min
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 import plotly.express as px
 
-def load_and_cluster_features(csv_filepath, n_clusters=5):
+def load_and_cluster_features(csv_filepath, n_clusters=5, clustering_algorithm='KMeans', dbscan_eps=0.5, dbscan_min_samples=5):
+    """
+    Load features from CSV and perform clustering using the specified algorithm
+    
+    Args:
+        csv_filepath: Path to CSV file containing features
+        n_clusters: Number of clusters for KMeans (not used for DBSCAN)
+        clustering_algorithm: 'KMeans' or 'DBSCAN'
+        dbscan_eps: Epsilon parameter for DBSCAN (not used for KMeans)
+        dbscan_min_samples: Minimum samples parameter for DBSCAN (not used for KMeans)
+        
+    Returns:
+        features_df: DataFrame with features and cluster assignments
+        clusterer: Clustering model (KMeans or DBSCAN)
+        feature_cols: List of feature column names
+    """
     features_df = pd.read_csv(csv_filepath)
 
     feature_cols = [col for col in features_df.columns if col.startswith('feat_')]
     features = features_df[feature_cols].values
+    
+    if clustering_algorithm == 'KMeans':
+        clusterer = KMeans(n_clusters=n_clusters, random_state=42)
+        features_df['cluster'] = clusterer.fit_predict(features)
+    else:  # DBSCAN
+        clusterer = DBSCAN(eps=dbscan_eps, min_samples=dbscan_min_samples)
+        features_df['cluster'] = clusterer.fit_predict(features)
+        
+        # DBSCAN assigns -1 to noise points, which can cause issues for visualization
+        # Let's assign noise points to cluster 999 for easier identification
+        features_df.loc[features_df['cluster'] == -1, 'cluster'] = 999
 
-    kmeans = KMeans(n_clusters=n_clusters, random_state=42)
-    features_df['cluster'] = kmeans.fit_predict(features)
-
-    return features_df, kmeans, feature_cols
+    return features_df, clusterer, feature_cols
 
 def find_random_samples_in_clusters(features_df, feature_cols, n_samples=4):
     random_samples_per_cluster = {}
@@ -137,7 +160,7 @@ def plot_tsne(features_df, tsne_results_2d, tsne_results_3d, kmeans, color_mappi
 
     fig_2d_cluster.show()
 
-def save_tsne_plots(features_df, tsne_results_2d, tsne_results_3d, kmeans, color_mapping, output_dir):
+def save_tsne_plots(features_df, tsne_results_2d, tsne_results_3d, clusterer, color_mapping, output_dir):
     plt.figure(figsize=(12, 10))
     bbox_groups = features_df.groupby('bbox_name')
     for bbox_name, group in bbox_groups:
@@ -160,14 +183,37 @@ def save_tsne_plots(features_df, tsne_results_2d, tsne_results_3d, kmeans, color
     plt.close()
 
     plt.figure(figsize=(12, 10))
-    for cluster_id in range(kmeans.n_clusters):
-        indices = np.where(kmeans.labels_ == cluster_id)[0]
+    
+    # Get cluster labels based on the type of clusterer
+    if hasattr(clusterer, 'labels_'):
+        # For DBSCAN
+        cluster_labels = clusterer.labels_
+        # Replace -1 (noise points) with 999 for consistent visualization
+        cluster_labels = np.array([label if label != -1 else 999 for label in cluster_labels])
+    else:
+        # For KMeans
+        cluster_labels = clusterer.labels_
+    
+    # Get unique clusters
+    unique_clusters = np.unique(cluster_labels)
+    
+    for cluster_id in unique_clusters:
+        # For noise points in DBSCAN
+        if cluster_id == 999:
+            marker = 'x'  # Use 'x' marker for noise points
+            label = 'Noise'
+        else:
+            marker = 'o'  # Use 'o' marker for regular points
+            label = f'Cluster {cluster_id}'
+            
+        indices = np.where(cluster_labels == cluster_id)[0]
         plt.scatter(
             tsne_results_2d[indices, 0],
             tsne_results_2d[indices, 1],
-            label=f'Cluster {cluster_id}',
+            label=label,
             alpha=0.7,
-            s=50
+            s=50,
+            marker=marker
         )
     plt.title('2D t-SNE colored by cluster')
     plt.xlabel('t-SNE 1')
@@ -181,15 +227,24 @@ def save_tsne_plots(features_df, tsne_results_2d, tsne_results_3d, kmeans, color
         fig = plt.figure(figsize=(12, 10))
         ax = fig.add_subplot(111, projection='3d')
         
-        for cluster_id in range(kmeans.n_clusters):
-            indices = np.where(kmeans.labels_ == cluster_id)[0]
+        for cluster_id in unique_clusters:
+            # Handle noise points
+            if cluster_id == 999:
+                marker = 'x'
+                label = 'Noise'
+            else:
+                marker = 'o'
+                label = f'Cluster {cluster_id}'
+                
+            indices = np.where(cluster_labels == cluster_id)[0]
             ax.scatter(
                 tsne_results_3d[indices, 0],
                 tsne_results_3d[indices, 1],
                 tsne_results_3d[indices, 2],
-                label=f'Cluster {cluster_id}',
+                label=label,
                 alpha=0.7,
-                s=50
+                s=50,
+                marker=marker
             )
         
         ax.set_title('3D t-SNE')

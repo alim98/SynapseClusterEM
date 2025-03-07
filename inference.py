@@ -443,9 +443,18 @@ def run_clustering_analysis(features_df, output_dir):
     features_df['umap_1'] = umap_results[:, 0]
     features_df['umap_2'] = umap_results[:, 1]
     
-    # Apply k-means clustering
-    kmeans = KMeans(n_clusters=10, random_state=42)
-    features_df['cluster'] = kmeans.fit_predict(features_df[feature_cols])
+    # Apply clustering based on selected algorithm
+    if config.clustering_algorithm == 'KMeans':
+        clusterer = KMeans(n_clusters=config.n_clusters, random_state=42)
+        features_df['cluster'] = clusterer.fit_predict(features_df[feature_cols])
+    else:  # DBSCAN
+        from sklearn.cluster import DBSCAN
+        clusterer = DBSCAN(eps=config.dbscan_eps, min_samples=config.dbscan_min_samples)
+        features_df['cluster'] = clusterer.fit_predict(features_df[feature_cols])
+        
+        # DBSCAN assigns -1 to noise points, which can cause issues for visualization
+        # Let's assign noise points to cluster 999 for easier identification
+        features_df.loc[features_df['cluster'] == -1, 'cluster'] = 999
     
     # Save clustered features
     features_df.to_csv(os.path.join(output_dir, "clustered_features.csv"), index=False)
@@ -461,7 +470,7 @@ def run_clustering_analysis(features_df, output_dir):
     }
     
     # Save t-SNE plots
-    save_tsne_plots(features_df, tsne_results_2d, tsne_results_3d, kmeans, color_mapping, output_dir)
+    save_tsne_plots(features_df, tsne_results_2d, tsne_results_3d, clusterer, color_mapping, output_dir)
     
     # Find and save sample images from each cluster
     random_samples_in_clusters = find_random_samples_in_clusters(features_df, feature_cols, 4)

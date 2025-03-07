@@ -262,6 +262,53 @@ class SynapseGUI:
         self.num_frames_var = tk.IntVar(value=80)
         ttk.Spinbox(params_frame, from_=10, to=200, textvariable=self.num_frames_var, width=5).grid(row=0, column=5, sticky=tk.W, padx=5, pady=2)
         
+        # Clustering Parameters Section
+        self.create_section_header(scrollable_frame, "Clustering Parameters")
+        
+        clustering_frame = ttk.Frame(scrollable_frame)
+        clustering_frame.pack(fill=tk.X, pady=5)
+        
+        # Clustering algorithm selection
+        ttk.Label(clustering_frame, text="Clustering Algorithm:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=2)
+        self.clustering_algorithm_var = tk.StringVar(value="KMeans")
+        algorithm_combo = ttk.Combobox(clustering_frame, textvariable=self.clustering_algorithm_var, width=10, state="readonly")
+        algorithm_combo['values'] = ["KMeans", "DBSCAN"]
+        algorithm_combo.grid(row=0, column=1, sticky=tk.W, padx=5, pady=2)
+        
+        # Number of clusters (for KMeans)
+        ttk.Label(clustering_frame, text="Number of Clusters:").grid(row=0, column=2, sticky=tk.W, padx=5, pady=2)
+        self.n_clusters_var = tk.IntVar(value=10)
+        n_clusters_spin = ttk.Spinbox(clustering_frame, from_=2, to=50, textvariable=self.n_clusters_var, width=5)
+        n_clusters_spin.grid(row=0, column=3, sticky=tk.W, padx=5, pady=2)
+        
+        # DBSCAN epsilon parameter
+        ttk.Label(clustering_frame, text="DBSCAN Epsilon:").grid(row=0, column=4, sticky=tk.W, padx=5, pady=2)
+        self.dbscan_eps_var = tk.DoubleVar(value=0.5)
+        dbscan_eps_spin = ttk.Spinbox(clustering_frame, from_=0.1, to=10.0, increment=0.1, textvariable=self.dbscan_eps_var, width=5)
+        dbscan_eps_spin.grid(row=0, column=5, sticky=tk.W, padx=5, pady=2)
+        
+        # DBSCAN min_samples parameter
+        ttk.Label(clustering_frame, text="DBSCAN Min Samples:").grid(row=1, column=0, sticky=tk.W, padx=5, pady=2)
+        self.dbscan_min_samples_var = tk.IntVar(value=5)
+        dbscan_min_samples_spin = ttk.Spinbox(clustering_frame, from_=1, to=100, textvariable=self.dbscan_min_samples_var, width=5)
+        dbscan_min_samples_spin.grid(row=1, column=1, sticky=tk.W, padx=5, pady=2)
+        
+        # Update the enabled/disabled state of parameters based on selected algorithm
+        def update_clustering_params(*args):
+            if self.clustering_algorithm_var.get() == "KMeans":
+                n_clusters_spin.configure(state="normal")
+                dbscan_eps_spin.configure(state="disabled")
+                dbscan_min_samples_spin.configure(state="disabled")
+            else:  # DBSCAN
+                n_clusters_spin.configure(state="disabled")
+                dbscan_eps_spin.configure(state="normal")
+                dbscan_min_samples_spin.configure(state="normal")
+        
+        # Register the callback
+        self.clustering_algorithm_var.trace_add("write", update_clustering_params)
+        # Call initially to set the correct states
+        update_clustering_params()
+        
         # Segmentation Parameters Section
         self.create_section_header(scrollable_frame, "Segmentation Parameters")
         
@@ -489,63 +536,79 @@ class SynapseGUI:
         self.status_var.set("Default configuration loaded.")
     
     def save_config(self):
-        """Save current configuration to a file"""
-        filename = filedialog.asksaveasfilename(
-            defaultextension=".ini",
-            filetypes=[("Configuration files", "*.ini"), ("All files", "*.*")],
-            title="Save Configuration"
+        """Save the current configuration to a file"""
+        filepath = filedialog.asksaveasfilename(
+            defaultextension=".conf",
+            filetypes=[("Configuration files", "*.conf"), ("All files", "*.*")]
         )
         
-        if not filename:
+        if not filepath:
             return
         
-        try:
-            with open(filename, 'w') as f:
-                f.write("[Paths]\n")
-                f.write(f"raw_base_dir = {self.raw_base_dir.get()}\n")
-                f.write(f"seg_base_dir = {self.seg_base_dir.get()}\n")
-                f.write(f"add_mask_base_dir = {self.add_mask_base_dir.get()}\n")
-                f.write(f"excel_file = {self.excel_file.get()}\n")
-                f.write(f"csv_output_dir = {self.csv_output_dir.get()}\n")
-                f.write(f"save_gifs_dir = {self.save_gifs_dir.get()}\n")
-                f.write(f"clustering_output_dir = {self.clustering_output_dir.get()}\n")
-                f.write(f"report_output_dir = {self.report_output_dir.get()}\n")
-                
-                f.write("\n[BoundingBoxes]\n")
-                for bbox, var in self.bbox_vars.items():
-                    f.write(f"{bbox} = {var.get()}\n")
-                
-                f.write("\n[Parameters]\n")
-                f.write(f"size = {self.size_var.get()}\n")
-                f.write(f"subvol_size = {self.subvol_size_var.get()}\n")
-                f.write(f"num_frames = {self.num_frames_var.get()}\n")
-                f.write(f"segmentation_type = {self.seg_type_var.get()}\n")
-                f.write(f"alpha = {self.alpha_var.get()}\n")
-                f.write(f"gray_color = {self.gray_color_var.get()}\n")
+        with open(filepath, 'w') as f:
+            f.write("[Paths]\n")
+            f.write(f"raw_base_dir = {self.raw_base_dir.get()}\n")
+            f.write(f"seg_base_dir = {self.seg_base_dir.get()}\n")
+            f.write(f"add_mask_base_dir = {self.add_mask_base_dir.get()}\n")
+            f.write(f"excel_file = {self.excel_file.get()}\n")
+            f.write(f"csv_output_dir = {self.csv_output_dir.get()}\n")
+            f.write(f"save_gifs_dir = {self.save_gifs_dir.get()}\n")
+            f.write(f"clustering_output_dir = {self.clustering_output_dir.get()}\n")
+            f.write(f"report_output_dir = {self.report_output_dir.get()}\n")
             
-            self.status_var.set(f"Configuration saved to {filename}")
-            logger.info(f"Configuration saved to {filename}")
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to save configuration: {str(e)}")
-            logger.error(f"Failed to save configuration: {str(e)}")
+            f.write("\n[Parameters]\n")
+            # Bounding boxes
+            bbox_list = [bbox for bbox, var in self.bbox_vars.items() if var.get()]
+            f.write(f"bbox_name = {','.join(bbox_list)}\n")
+            
+            # Size parameters
+            f.write(f"size = {self.size_var.get()}\n")
+            f.write(f"subvol_size = {self.subvol_size_var.get()}\n")
+            f.write(f"num_frames = {self.num_frames_var.get()}\n")
+            
+            # Clustering parameters
+            f.write(f"clustering_algorithm = {self.clustering_algorithm_var.get()}\n")
+            f.write(f"n_clusters = {self.n_clusters_var.get()}\n")
+            f.write(f"dbscan_eps = {self.dbscan_eps_var.get()}\n")
+            f.write(f"dbscan_min_samples = {self.dbscan_min_samples_var.get()}\n")
+            
+            # Segmentation parameters
+            f.write(f"segmentation_type = {self.seg_type_var.get()}\n")
+            f.write(f"alpha = {self.alpha_var.get()}\n")
+            f.write(f"gray_color = {self.gray_color_var.get()}\n")
+        
+        messagebox.showinfo("Configuration Saved", f"Configuration saved to {filepath}")
     
     def load_config(self):
         """Load configuration from a file"""
-        filename = filedialog.askopenfilename(
-            defaultextension=".ini",
-            filetypes=[("Configuration files", "*.ini"), ("All files", "*.*")],
+        filepath = filedialog.askopenfilename(
+            filetypes=[("Configuration files", "*.conf;*.ini"), ("All files", "*.*")],
             title="Load Configuration"
         )
         
-        if not filename:
+        if not filepath:
             return
         
         try:
-            import configparser
-            config = configparser.ConfigParser()
-            config.read(filename)
+            # Parse the config file
+            config = {'Paths': {}, 'Parameters': {}}
+            current_section = None
             
-            # Load path settings
+            with open(filepath, 'r') as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith('#'):
+                        continue
+                    
+                    if line.startswith('[') and line.endswith(']'):
+                        current_section = line[1:-1]
+                        continue
+                    
+                    if '=' in line and current_section:
+                        key, value = line.split('=', 1)
+                        config[current_section][key.strip()] = value.strip()
+            
+            # Update paths
             if 'Paths' in config:
                 if 'raw_base_dir' in config['Paths']:
                     self.raw_base_dir.set(config['Paths']['raw_base_dir'])
@@ -564,29 +627,39 @@ class SynapseGUI:
                 if 'report_output_dir' in config['Paths']:
                     self.report_output_dir.set(config['Paths']['report_output_dir'])
             
-            # Load bounding box settings
-            if 'BoundingBoxes' in config:
-                for bbox, var in self.bbox_vars.items():
-                    if bbox in config['BoundingBoxes']:
-                        var.set(config['BoundingBoxes'].getboolean(bbox))
-            
-            # Load parameter settings
+            # Update parameters
             if 'Parameters' in config:
+                if 'bbox_name' in config['Parameters']:
+                    bbox_list = config['Parameters']['bbox_name'].split(',')
+                    for bbox, var in self.bbox_vars.items():
+                        var.set(bbox in bbox_list)
+                
                 if 'size' in config['Parameters']:
-                    self.size_var.set(config['Parameters'].getint('size'))
+                    self.size_var.set(int(config['Parameters']['size']))
                 if 'subvol_size' in config['Parameters']:
-                    self.subvol_size_var.set(config['Parameters'].getint('subvol_size'))
+                    self.subvol_size_var.set(int(config['Parameters']['subvol_size']))
                 if 'num_frames' in config['Parameters']:
-                    self.num_frames_var.set(config['Parameters'].getint('num_frames'))
+                    self.num_frames_var.set(int(config['Parameters']['num_frames']))
+                
+                # Load clustering parameters
+                if 'clustering_algorithm' in config['Parameters']:
+                    self.clustering_algorithm_var.set(config['Parameters']['clustering_algorithm'])
+                if 'n_clusters' in config['Parameters']:
+                    self.n_clusters_var.set(int(config['Parameters']['n_clusters']))
+                if 'dbscan_eps' in config['Parameters']:
+                    self.dbscan_eps_var.set(float(config['Parameters']['dbscan_eps']))
+                if 'dbscan_min_samples' in config['Parameters']:
+                    self.dbscan_min_samples_var.set(int(config['Parameters']['dbscan_min_samples']))
+                
                 if 'segmentation_type' in config['Parameters']:
-                    self.seg_type_var.set(config['Parameters'].getint('segmentation_type'))
+                    self.seg_type_var.set(int(config['Parameters']['segmentation_type']))
                 if 'alpha' in config['Parameters']:
-                    self.alpha_var.set(config['Parameters'].getfloat('alpha'))
+                    self.alpha_var.set(float(config['Parameters']['alpha']))
                 if 'gray_color' in config['Parameters']:
-                    self.gray_color_var.set(config['Parameters'].getfloat('gray_color'))
+                    self.gray_color_var.set(float(config['Parameters']['gray_color']))
             
-            self.status_var.set(f"Configuration loaded from {filename}")
-            logger.info(f"Configuration loaded from {filename}")
+            self.status_var.set(f"Configuration loaded from {filepath}")
+            logger.info(f"Configuration loaded from {filepath}")
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load configuration: {str(e)}")
             logger.error(f"Failed to load configuration: {str(e)}")
@@ -623,6 +696,15 @@ class SynapseGUI:
         cmd.extend(["--segmentation_type", str(self.seg_type_var.get())])
         cmd.extend(["--alpha", str(self.alpha_var.get())])
         cmd.extend(["--gray_color", str(self.gray_color_var.get())])
+        
+        # Add clustering parameters
+        cmd.extend(["--clustering_algorithm", self.clustering_algorithm_var.get()])
+        
+        if self.clustering_algorithm_var.get() == "KMeans":
+            cmd.extend(["--n_clusters", str(self.n_clusters_var.get())])
+        else:  # DBSCAN
+            cmd.extend(["--dbscan_eps", str(self.dbscan_eps_var.get())])
+            cmd.extend(["--dbscan_min_samples", str(self.dbscan_min_samples_var.get())])
         
         # Add analysis flags
         if not self.feature_extraction_var.get():
@@ -1397,7 +1479,6 @@ class SynapseGUI:
         )
         github_link.pack(anchor=tk.W)
         
-        # Add Ali Karimi
         developer_info2 = ttk.Label(
             developer_frame,
             text="Ali Karimi - Postdoc",
@@ -1405,7 +1486,6 @@ class SynapseGUI:
         )
         developer_info2.pack(anchor=tk.W, pady=(10, 0))
         
-        # Add Dominic Evans
         developer_info3 = ttk.Label(
             developer_frame,
             text="Dominic Evans - Postdoc",

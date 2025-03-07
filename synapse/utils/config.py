@@ -22,6 +22,12 @@ class SynapseConfig:
         self.clustering_output_dir = 'results/clustering_results_final'
         self.report_output_dir = 'results/comprehensive_reports'
         
+        # Clustering parameters
+        self.clustering_algorithm = 'KMeans'  # Default clustering algorithm
+        self.n_clusters = 10  # Default number of clusters for KMeans
+        self.dbscan_eps = 0.5  # Default epsilon parameter for DBSCAN
+        self.dbscan_min_samples = 5  # Default min_samples parameter for DBSCAN
+        
     def parse_args(self):
         parser = argparse.ArgumentParser(description="Synapse Dataset Configuration")
         parser.add_argument('--raw_base_dir', type=str, default=self.raw_base_dir)
@@ -41,6 +47,16 @@ class SynapseConfig:
                            help='Gray color value (0-1) for overlaying segmentation')
         parser.add_argument('--clustering_output_dir', type=str, default=self.clustering_output_dir)
         parser.add_argument('--report_output_dir', type=str, default=self.report_output_dir)
+        
+        # Clustering parameters
+        parser.add_argument('--clustering_algorithm', type=str, default=self.clustering_algorithm,
+                           choices=['KMeans', 'DBSCAN'], help='Clustering algorithm to use')
+        parser.add_argument('--n_clusters', type=int, default=self.n_clusters,
+                           help='Number of clusters for KMeans')
+        parser.add_argument('--dbscan_eps', type=float, default=self.dbscan_eps,
+                           help='Epsilon parameter for DBSCAN')
+        parser.add_argument('--dbscan_min_samples', type=int, default=self.dbscan_min_samples,
+                           help='Minimum samples parameter for DBSCAN')
         
         args, _ = parser.parse_known_args()
         

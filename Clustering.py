@@ -79,15 +79,21 @@ for csv_file in csv_files:
     output_dir = Path(config.clustering_output_dir) / iteration_name
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    n_clusters = 10
-    features_df, kmeans, feature_cols = load_and_cluster_features(csv_filepath, n_clusters)
+    # Use the clustering algorithm and parameters from the config
+    features_df, clusterer, feature_cols = load_and_cluster_features(
+        csv_filepath, 
+        n_clusters=config.n_clusters, 
+        clustering_algorithm=config.clustering_algorithm,
+        dbscan_eps=config.dbscan_eps, 
+        dbscan_min_samples=config.dbscan_min_samples
+    )
 
     features_df.to_csv(output_dir / "clustered_features.csv", index=False)
 
     tsne_results_2d = apply_tsne(features_df, feature_cols, 2)
     tsne_results_3d = apply_tsne(features_df, feature_cols, 3)
 
-    save_tsne_plots(features_df, tsne_results_2d, tsne_results_3d, kmeans, color_mapping, output_dir)
+    save_tsne_plots(features_df, tsne_results_2d, tsne_results_3d, clusterer, color_mapping, output_dir)
 
     random_samples_per_cluster = find_random_samples_in_clusters(features_df, feature_cols, 4)
 
