@@ -6,7 +6,7 @@ A deep learning framework for analyzing and clustering 3D synapse structures fro
 
 SynapseClusterEM is a powerful tool designed to analyze 3D synapse morphology using advanced neural networks and unsupervised learning techniques. The project aims to identify structural patterns and classify synapses based on their 3D architecture, providing insights into brain connectivity and function.
 
-![GUI Screenshot](docs/images/gui_screenshot.png)
+![GUI Screenshot](assets/scr.png)
 
 ## Features
 
@@ -95,9 +95,6 @@ data/
     └── synapse_info.xlsx
 ```
 
-4. (Optional) Add branding:
-- Place the Max Planck Institute logo as `assets/mpi_logo.png`
-- Place application icon as `assets/synapse_icon.ico` (Windows) or `assets/synapse_icon.png` (Mac/Linux)
 
 ## Usage
 
