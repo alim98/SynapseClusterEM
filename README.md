@@ -74,7 +74,25 @@ data/
 
 ## Usage
 
-### Basic Analysis
+### Graphical User Interface (GUI)
+
+The easiest way to use SynapseClusterEM is through its graphical interface:
+
+```bash
+python synapse_gui.py
+```
+
+The GUI provides:
+- Configuration of all analysis parameters
+- Running the full pipeline or individual components
+- Viewing and managing generated reports
+- Saving and loading configurations
+
+![GUI Screenshot](docs/images/gui_screenshot.png)
+
+### Command Line Usage
+
+#### Basic Analysis
 
 Run the main analysis script for feature extraction and visualization:
 

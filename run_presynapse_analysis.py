@@ -35,6 +35,7 @@ def main():
     """Main function to run the presynapse analysis."""
     # Parse arguments
     args = parse_arguments()
+    config.parse_args()
     
     # Update config with parsed arguments
     config.parse_args()
