@@ -1174,6 +1174,11 @@ class SynapseReportGenerator:
         # Add link to presynapse analysis report if available
         if 'presynapse_report' in viz:
             report_path = self.copy_to_assets(viz['presynapse_report'], report_dir)
+            
+            # Copy all presynapse-specific visualization files
+            presynapse_dir = os.path.dirname(viz['presynapse_report'])
+            self.copy_presynapse_visualizations(presynapse_dir, report_dir)
+            
             html += f'''
             <div class="summary-box">
                 <h2>Presynapse Analysis</h2>
@@ -1653,3 +1658,33 @@ class SynapseReportGenerator:
         logger.info(f"Presynapse summary report saved to {html_file}")
         
         return html_file
+
+    def copy_presynapse_visualizations(self, presynapse_dir, report_dir):
+        """
+        Copy all presynapse-specific visualization files (like distance_heatmap_pre*.png, cluster_dist_pre*.png, and umap_pre*.png) to the assets directory when copying the presynapse report.
+        
+        Args:
+            presynapse_dir: Directory containing presynapse-specific visualization files
+            report_dir: Directory to save the report
+        """
+        # Ensure presynapse_dir is a Path object
+        presynapse_dir = Path(presynapse_dir)
+        
+        # Define patterns for presynapse-specific visualization files
+        file_patterns = [
+            "distance_heatmap_pre*.png",  # Distance heatmaps
+            "cluster_dist_pre*.png",      # Cluster distribution
+            "umap_pre*.png",              # UMAP visualizations
+            "*.png",                      # Any other PNG files
+            "*.gif"                       # GIF animations
+        ]
+        
+        # Find and copy all files matching the patterns
+        for pattern in file_patterns:
+            matched_files = list(presynapse_dir.glob(pattern))
+            logger.info(f"Found {len(matched_files)} files matching pattern '{pattern}' in {presynapse_dir}")
+            
+            for file_path in matched_files:
+                # Copy the file to the report assets directory
+                dest_path = self.copy_image_to_assets(str(file_path), report_dir)
+                logger.info(f"Copied presynapse file: {file_path.name} -> {dest_path}")

@@ -10,6 +10,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import umap
 import imageio
+import shutil
 
 from presynapse_distance_analysis import compare_intra_inter_presynapse_distances, add_distance_comparison_to_report
 
@@ -927,6 +928,8 @@ def generate_report(output_dir, presynapse_groups, distance_matrices, cluster_in
             
             if 'histogram' in plots:
                 hist_path = os.path.basename(plots['histogram'])
+                # Copy the file to the output directory for easier access in the report
+                shutil.copy2(plots['histogram'], os.path.join(output_dir, hist_path))
                 f.write(f"""
                     <h3>Distance Distribution Comparison</h3>
                     <img src="{hist_path}" alt="Distance Distribution Histogram">
@@ -935,6 +938,8 @@ def generate_report(output_dir, presynapse_groups, distance_matrices, cluster_in
             
             if 'boxplot' in plots:
                 box_path = os.path.basename(plots['boxplot'])
+                # Copy the file to the output directory
+                shutil.copy2(plots['boxplot'], os.path.join(output_dir, box_path))
                 f.write(f"""
                     <h3>Distance Box Plot</h3>
                     <img src="{box_path}" alt="Distance Box Plot">
@@ -943,6 +948,8 @@ def generate_report(output_dir, presynapse_groups, distance_matrices, cluster_in
             
             if 'violinplot' in plots:
                 violin_path = os.path.basename(plots['violinplot'])
+                # Copy the file to the output directory
+                shutil.copy2(plots['violinplot'], os.path.join(output_dir, violin_path))
                 f.write(f"""
                     <h3>Distance Violin Plot</h3>
                     <img src="{violin_path}" alt="Distance Violin Plot">
@@ -951,6 +958,8 @@ def generate_report(output_dir, presynapse_groups, distance_matrices, cluster_in
             
             if 'barplot' in plots:
                 bar_path = os.path.basename(plots['barplot'])
+                # Copy the file to the output directory
+                shutil.copy2(plots['barplot'], os.path.join(output_dir, bar_path))
                 f.write(f"""
                     <h3>Distance Ratio by Presynapse ID</h3>
                     <img src="{bar_path}" alt="Distance Ratio by Presynapse ID">
@@ -959,6 +968,8 @@ def generate_report(output_dir, presynapse_groups, distance_matrices, cluster_in
             
             if 'scatterplot' in plots:
                 scatter_path = os.path.basename(plots['scatterplot'])
+                # Copy the file to the output directory
+                shutil.copy2(plots['scatterplot'], os.path.join(output_dir, scatter_path))
                 f.write(f"""
                     <h3>Intra vs. Inter Presynapse Distances</h3>
                     <img src="{scatter_path}" alt="Intra vs. Inter Presynapse Distances">
@@ -967,16 +978,24 @@ def generate_report(output_dir, presynapse_groups, distance_matrices, cluster_in
         
         connected_umap_path = "cluster_visualizations/connected_umap_visualization.png"
         if os.path.exists(os.path.join(output_dir, connected_umap_path)):
+            # Copy the connected UMAP visualization to the output directory
+            src_path = os.path.join(output_dir, connected_umap_path)
+            dest_path = os.path.join(output_dir, "connected_umap_visualization.png")
+            shutil.copy2(src_path, dest_path)
             f.write(f"""
                 <h3>Connected UMAP Visualization of All Presynapse Groups</h3>
-                <img src="{connected_umap_path}" alt="Connected UMAP Visualization">
+                <img src="connected_umap_visualization.png" alt="Connected UMAP Visualization">
                 <p>This visualization shows all synapses in the UMAP space, with synapses sharing the same presynapse ID connected by lines.</p>
             """)
             
         interactive_umap_path = "cluster_visualizations/connected_umap_interactive.html"
         if os.path.exists(os.path.join(output_dir, interactive_umap_path)):
+            # Copy the interactive UMAP visualization to the output directory
+            src_path = os.path.join(output_dir, interactive_umap_path)
+            dest_path = os.path.join(output_dir, "connected_umap_interactive.html")
+            shutil.copy2(src_path, dest_path)
             f.write(f"""
-                <p><a href="{interactive_umap_path}" target="_blank">Interactive UMAP Visualization (Click to Open)</a></p>
+                <p><a href="connected_umap_interactive.html" target="_blank">Interactive UMAP Visualization (Click to Open)</a></p>
             """)
             
         f.write("</div>")
@@ -1093,23 +1112,38 @@ def generate_report(output_dir, presynapse_groups, distance_matrices, cluster_in
             
             heatmap_path = f"distance_heatmaps/distance_heatmap_pre{pre_id}.png"
             if os.path.exists(os.path.join(output_dir, heatmap_path)):
+                # Copy the file to make it available in the same directory as the report
+                original_path = os.path.join(output_dir, heatmap_path)
+                dest_filename = f"distance_heatmap_pre{pre_id}.png"
+                shutil.copy2(original_path, os.path.join(output_dir, dest_filename))
+                
                 f.write(f"""
                     <h4>Feature Distance Heatmap</h4>
-                    <img src="{heatmap_path}" alt="Feature Distance Heatmap">
+                    <img src="{dest_filename}" alt="Feature Distance Heatmap">
                 """)
             
             cluster_dist_path = f"cluster_visualizations/cluster_dist_pre{pre_id}.png"
             if os.path.exists(os.path.join(output_dir, cluster_dist_path)):
+                # Copy the file to make it available in the same directory as the report
+                original_path = os.path.join(output_dir, cluster_dist_path)
+                dest_filename = f"cluster_dist_pre{pre_id}.png"
+                shutil.copy2(original_path, os.path.join(output_dir, dest_filename))
+                
                 f.write(f"""
                     <h4>Cluster Distribution</h4>
-                    <img src="{cluster_dist_path}" alt="Cluster Distribution">
+                    <img src="{dest_filename}" alt="Cluster Distribution">
                 """)
             
             umap_path = f"cluster_visualizations/umap_pre{pre_id}.png"
             if os.path.exists(os.path.join(output_dir, umap_path)):
+                # Copy the file to make it available in the same directory as the report
+                original_path = os.path.join(output_dir, umap_path)
+                dest_filename = f"umap_pre{pre_id}.png"
+                shutil.copy2(original_path, os.path.join(output_dir, dest_filename))
+                
                 f.write(f"""
                     <h4>UMAP Visualization</h4>
-                    <img src="{umap_path}" alt="UMAP Visualization">
+                    <img src="{dest_filename}" alt="UMAP Visualization">
                 """)
             
             f.write("</div>")
