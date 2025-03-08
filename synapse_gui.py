@@ -718,6 +718,10 @@ class SynapseGUI:
         
         if not self.report_generation_var.get():
             cmd.append("--skip_report_generation")
+            
+        # Add only feature extraction and clustering flag if selected
+        if self.only_feature_clustering_var.get():
+            cmd.append("--only_feature_extraction_and_clustering")
         
         # Update UI
         self.running = True
@@ -1316,6 +1320,28 @@ class SynapseGUI:
         
         self.report_generation_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(options_frame, text="Report Generation", variable=self.report_generation_var).grid(row=0, column=3, sticky=tk.W, padx=10)
+        
+        # Add a separator
+        ttk.Separator(options_frame, orient='horizontal').grid(row=1, column=0, columnspan=4, sticky='ew', pady=5)
+        
+        # Add "Only Feature Extraction and Clustering" option
+        self.only_feature_clustering_var = tk.BooleanVar(value=False)
+        only_feature_clustering_cb = ttk.Checkbutton(
+            options_frame, 
+            text="Only Feature Extraction and Clustering", 
+            variable=self.only_feature_clustering_var
+        )
+        only_feature_clustering_cb.grid(row=2, column=0, columnspan=4, sticky=tk.W, padx=10)
+        
+        # Add trace to disable other options when "Only Feature Extraction and Clustering" is selected
+        def update_analysis_options(*args):
+            if self.only_feature_clustering_var.get():
+                # If "Only Feature Extraction and Clustering" is selected, disable other options
+                self.presynapse_analysis_var.set(False)
+                self.report_generation_var.set(False)
+            
+        # Register the callback
+        self.only_feature_clustering_var.trace_add("write", update_analysis_options)
         
         # Create buttons frame
         button_frame = ttk.Frame(run_frame)

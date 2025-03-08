@@ -132,6 +132,39 @@ Perform clustering on extracted features:
 python Clustering.py
 ```
 
+#### Attention Visualization
+
+Visualize model attention using Grad-CAM to understand what regions of the synapse the model focuses on:
+
+```bash
+# Basic attention visualization for a specific sample
+python attention_visualization.py --sample_idx 0 --output_dir results/attention_maps
+
+# Visualize attention with a specific layer
+python attention_visualization.py --sample_idx 0 --output_dir results/attention_maps --target_layer features.20
+
+# Multi-layer attention visualization
+# This generates a comparative view of attention at early, middle, and late network layers
+python attention_visualization.py --sample_idx 0 --output_dir results/multi_layer_analysis --multi_layer --n_slices 3
+
+# Batch processing for multiple samples
+python attention_visualization.py --batch_mode --n_samples 5 --output_dir results/batch_attention
+
+# Find top attended regions across samples
+python attention_visualization.py --find_top_regions --n_samples 10 --n_top_regions 5 --output_dir results/top_attention
+```
+
+The attention visualization offers these key options:
+- `--sample_idx`: Index of the sample to visualize
+- `--output_dir`: Directory to save attention maps
+- `--target_layer`: Layer to use for Grad-CAM (e.g., features.3, features.20, features.27)
+- `--multi_layer`: Compare attention across multiple network layers simultaneously
+- `--n_slices`: Number of depth slices to visualize
+- `--batch_mode`: Process multiple samples sequentially
+- `--find_top_regions`: Identify and visualize regions with highest attention across samples
+
+The attention maps show how the 3D model processes spatial information at different depths and network layers, revealing the progressive abstraction of synapse features through the network.
+
 ### Configuration
 
 Configure the analysis by editing parameters in `synapse/utils/config.py` or passing command line arguments:
@@ -169,6 +202,10 @@ The analysis produces various visualization outputs:
 - Representative sample images from each cluster
 - GIF animations of 3D synapse volumes
 - Comprehensive HTML reports with interactive elements
+- Grad-CAM attention maps showing model focus areas at different network depths
+  - Single-layer attention maps showing what features the model focuses on
+  - Multi-layer comparative visualizations showing how attention evolves through the network
+  - Top attended regions across multiple samples to identify common patterns
 
 ## Reports
 
@@ -192,7 +229,7 @@ This work was conducted at the **Max Planck Institute for Brain Research** in Fr
 
 - **Ali Mikaeili** - Intern - Max Planck Institute for Brain Research, Frankfurt am Main
 - **Ali Karimi** - Postdo - Max Planck Institute for Brain Research, Frankfurt am Main
-- **Dominic Evans, Ph.D.** - Postdoc - Max Planck Institute for Brain Research, Frankfurt am Main
+- **Dominic Evans** - Postdoc - Max Planck Institute for Brain Research, Frankfurt am Main
 
 ## Contact
 

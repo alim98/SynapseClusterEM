@@ -362,6 +362,11 @@ def run_full_analysis(config, vol_data_dict, syn_df, processor, model):
     
     print("Main analysis complete!")
 
+    # Check if only feature extraction and clustering should be run
+    if hasattr(config, 'only_feature_extraction_and_clustering') and config.only_feature_extraction_and_clustering:
+        print("Only running feature extraction and clustering as requested.")
+        return
+
     # Run presynapse analysis if not skipped
     if not hasattr(config, 'skip_presynapse_analysis') or not config.skip_presynapse_analysis:
         print("\n\n" + "="*80)
@@ -602,44 +607,55 @@ def main():
 
     processor = Synapse3DProcessor(size=config.size)
 
+    # Set flags to skip parts of the analysis
+    for flag in ['skip_feature_extraction', 'skip_clustering', 'skip_presynapse_analysis', 
+                'skip_report_generation', 'only_feature_extraction_and_clustering']:
+        if hasattr(args, flag) and getattr(args, flag):
+            setattr(config, flag, True)
+            
+    # If only_feature_extraction_and_clustering is set, also set skip flags for later steps
+    if hasattr(config, 'only_feature_extraction_and_clustering') and config.only_feature_extraction_and_clustering:
+        config.skip_presynapse_analysis = True
+        config.skip_report_generation = True
+
     # Run the full analysis pipeline
     run_full_analysis(config, vol_data_dict, syn_df, processor, model)
 
     print("All analyses complete!")
 
-    # Generate comprehensive reports if not skipped
-    if not hasattr(config, 'skip_report_generation') or not config.skip_report_generation:
-        try:
-            from report_generator import SynapseReportGenerator
+    # # Generate comprehensive reports if not skipped
+    # if not hasattr(config, 'skip_report_generation') or not config.skip_report_generation:
+    #     try:
+    #         from report_generator import SynapseReportGenerator
             
-            print("\n\n" + "="*80)
-            print("Generating comprehensive reports")
-            print("="*80)
+            # print("\n\n" + "="*80)
+            # print("Generating comprehensive reports")
+            # print("="*80)
             
-            report_generator = SynapseReportGenerator(
-                csv_output_dir=config.csv_output_dir,
-                clustering_output_dir=config.clustering_output_dir,
-                report_output_dir=config.report_output_dir
-            )
+            # report_generator = SynapseReportGenerator(
+            #     csv_output_dir=config.csv_output_dir,
+            #     clustering_output_dir=config.clustering_output_dir,
+            #     report_output_dir=config.report_output_dir
+            # )
             
             # Generate reports
-            comprehensive_report = report_generator.generate_complete_report()
-            presynapse_summary = report_generator.generate_presynapse_summary()
+            # comprehensive_report = report_generator.generate_complete_report()
+            # presynapse_summary = report_generator.generate_presynapse_summary()
             
-            if comprehensive_report:
-                print(f"Comprehensive report generated at: {comprehensive_report}")
-            else:
-                print("Failed to generate comprehensive report")
+            # if comprehensive_report:
+            #     print(f"Comprehensive report generated at: {comprehensive_report}")
+            # else:
+            #     print("Failed to generate comprehensive report")
                 
-            if presynapse_summary:
-                print(f"Presynapse summary report generated at: {presynapse_summary}")
-            else:
-                print("Failed to generate presynapse summary report")
+        #     if presynapse_summary:
+        #         print(f"Presynapse summary report generated at: {presynapse_summary}")
+        #     else:
+        #         print("Failed to generate presynapse summary report")
         
-        except Exception as e:
-            print(f"Error generating reports: {e}")
-            import traceback
-            traceback.print_exc()
+        # except Exception as e:
+        #     print(f"Error generating reports: {e}")
+        #     import traceback
+        #     traceback.print_exc()
     
     print("Pipeline complete!")
 
@@ -659,6 +675,10 @@ if __name__ == '__main__':
                        help='Skip presynapse analysis')
     parser.add_argument('--skip_report_generation', action='store_true',
                        help='Skip report generation')
+    
+    # Add flag to only run feature extraction and clustering
+    parser.add_argument('--only_feature_extraction_and_clustering', action='store_true',
+                       help='Only run feature extraction and clustering, skip presynapse analysis and report generation')
     
     args, _ = parser.parse_known_args()
 
