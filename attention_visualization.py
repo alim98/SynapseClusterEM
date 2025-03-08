@@ -252,6 +252,14 @@ def visualize_attention(model, sample_idx, output_dir, n_slices=5, target_class=
                 cam = F.relu(cam)
                 if cam.max() > 0:
                     cam = cam / cam.max()
+
+                # Ensure consistency across slices by applying volume-wide min-max normalization
+                if cam.shape[0] > 1:  # Only needed for 3D CAMs with multiple slices
+                    # Apply volume-wide min-max normalization
+                    min_val = cam.min()
+                    max_val = cam.max()
+                    if max_val > min_val:  # Avoid division by zero
+                        cam = (cam - min_val) / (max_val - min_val)
                     
                 return cam
         
@@ -582,17 +590,25 @@ def get_sample(sample_idx):
     # Create dataset if not already created
     print("Creating dataset")
     
-    # Load data using the same import as in the main file
+    # Load data with correct imports
+    from inference import load_and_prepare_data
+    from synapse import Synapse3DProcessor, SynapseDataset, config
+    
     vol_data_dict, syn_df = load_and_prepare_data(config)
     processor = Synapse3DProcessor(size=config.size)
     
-    # Create dataset
+    # Ensure the processor uses volume-wide normalization
+    if hasattr(processor, 'normalize_volume'):
+        processor.normalize_volume = True
+    
+    # Create dataset with volume-wide normalization
     dataset = SynapseDataset(
         vol_data_dict=vol_data_dict,
         synapse_df=syn_df,
         processor=processor,
         segmentation_type=config.segmentation_type,
-        alpha=config.alpha
+        alpha=config.alpha,
+        normalize_across_volume=True  # Ensure volume-wide normalization
     )
     
     print(f"Dataset length: {len(dataset)}")
@@ -631,6 +647,13 @@ def prepare_input(pixel_values):
     
     print(f"Input tensor shape before permute: {input_tensor.shape}")
     
+    # Apply volume-wide normalization before permuting dimensions
+    # This ensures consistent grayscale values across slices
+    min_val = input_tensor.min()
+    max_val = input_tensor.max()
+    if max_val > min_val:  # Avoid division by zero
+        input_tensor = (input_tensor - min_val) / (max_val - min_val)
+    
     # Permute dimensions from [batch, depth, channels, height, width] to [batch, channels, depth, height, width]
     # This is what the model expects for Conv3D layers
     input_tensor = input_tensor.permute(0, 2, 1, 3, 4)
@@ -641,6 +664,9 @@ def prepare_input(pixel_values):
 
 def main():
     try:
+        # Ensure config is available in this scope
+        from synapse import config
+        
         parser = argparse.ArgumentParser(description='Visualize model attention using Grad-CAM')
         parser.add_argument('--seg_type', type=int, default=config.segmentation_type, 
                         choices=range(0, 11), help='Type of segmentation overlay (0-10)')
@@ -830,6 +856,12 @@ def main():
                     )
                     cam = cam_resized.squeeze(0).squeeze(0)  # Remove batch and channel dims
                 
+                # Ensure consistency across slices in the resized volume
+                min_val = cam.min()
+                max_val = cam.max()
+                if max_val > min_val:  # Avoid division by zero
+                    cam = (cam - min_val) / (max_val - min_val)
+                
                 print(f"Final CAM shape after resizing: {cam.shape}")
                 
                 # Display CAM for each slice
@@ -884,17 +916,25 @@ def main():
         # Process multiple samples in batch mode
         elif args.batch_mode:
             print(f"Processing {args.n_samples} samples in batch mode")
-            # Create dataset
+            # Create dataset with correct imports
+            from inference import load_and_prepare_data
+            from synapse import Synapse3DProcessor, SynapseDataset, config
+            
             vol_data_dict, syn_df = load_and_prepare_data(config)
             processor = Synapse3DProcessor(size=config.size)
             
-            # Create dataset
+            # Ensure the processor uses volume-wide normalization
+            if hasattr(processor, 'normalize_volume'):
+                processor.normalize_volume = True
+            
+            # Create dataset with volume-wide normalization
             dataset = SynapseDataset(
                 vol_data_dict=vol_data_dict,
                 synapse_df=syn_df,
                 processor=processor,
                 segmentation_type=args.seg_type,
-                alpha=args.alpha
+                alpha=args.alpha,
+                normalize_across_volume=True  # Ensure volume-wide normalization
             )
             
             # Get sample indices
@@ -915,17 +955,25 @@ def main():
         elif args.find_top_regions:
             print(f"Finding top {args.n_top_regions} attended regions across {args.n_samples} samples")
             
-            # Create dataset
+            # Create dataset with correct imports
+            from inference import load_and_prepare_data
+            from synapse import Synapse3DProcessor, SynapseDataset, config
+            
             vol_data_dict, syn_df = load_and_prepare_data(config)
             processor = Synapse3DProcessor(size=config.size)
             
-            # Create dataset
+            # Ensure the processor uses volume-wide normalization
+            if hasattr(processor, 'normalize_volume'):
+                processor.normalize_volume = True
+            
+            # Create dataset with volume-wide normalization
             dataset = SynapseDataset(
                 vol_data_dict=vol_data_dict,
                 synapse_df=syn_df,
                 processor=processor,
                 segmentation_type=args.seg_type,
-                alpha=args.alpha
+                alpha=args.alpha,
+                normalize_across_volume=True  # Ensure volume-wide normalization
             )
             
             top_regions = identify_top_attended_regions(

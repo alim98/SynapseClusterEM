@@ -165,6 +165,31 @@ The attention visualization offers these key options:
 
 The attention maps show how the 3D model processes spatial information at different depths and network layers, revealing the progressive abstraction of synapse features through the network.
 
+### Enhanced Grad-CAM Visualization with Consistent Grayscale Values
+
+For the most accurate visualization of attention maps with consistent grayscale values across depth slices, use the optimized multi-layer script:
+
+```bash
+python multi_layer_cam.py
+```
+
+This script offers several advantages:
+- **Consistent Grayscale Values**: Implements proper normalization at multiple stages to ensure uniform grayscale values across all slices
+- **Multi-Layer Analysis**: Shows attention maps from early, middle, and late layers side by side
+- **3D Attention Visualization**: Clearly demonstrates how attention patterns evolve across depth slices
+- **High-Quality Output**: Generates a comprehensive visualization with proper colorbars and normalization
+
+The multi_layer_cam.py script can be easily modified to:
+- Change the sample index to visualize different samples
+- Select different network layers for attention analysis
+- Adjust the number of displayed slices
+- Customize the visualization layout
+
+When comparing attention across different layers in a 3D CNN, this script helps reveal how:
+1. Early layers (e.g., features.3) focus on detailed local features
+2. Middle layers (e.g., features.20) show more complex pattern recognition
+3. Late layers (e.g., features.27) capture high-level abstractions
+
 ### Configuration
 
 Configure the analysis by editing parameters in `synapse/utils/config.py` or passing command line arguments:
