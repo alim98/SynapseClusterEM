@@ -173,10 +173,10 @@ def main():
             
             # Register hooks
             self.forward_hook = self.target_layer.register_forward_hook(
-                lambda module, input, output: setattr(self, 'activations', output)
+                lambda module, input, output: setattr(self, 'activations', output.clone())
             )
             self.backward_hook = self.target_layer.register_full_backward_hook(
-                lambda module, grad_in, grad_out: setattr(self, 'gradients', grad_out[0])
+                lambda module, grad_in, grad_out: setattr(self, 'gradients', grad_out[0].clone())
             )
         
         def remove_hooks(self):
@@ -184,47 +184,57 @@ def main():
             self.backward_hook.remove()
             
         def generate_cam(self, input_tensor):
+            # Create a copy of the input tensor to avoid in-place issues
+            input_copy = input_tensor.clone()
+            
             # Run model through features only
-            feature_output = self.model.features(input_tensor)
+            with torch.set_grad_enabled(True):
+                feature_output = self.model.features(input_copy)
+                
+                # Create a simple classifier proxy
+                pooled = F.adaptive_avg_pool3d(feature_output, (1, 1, 1))
+                flattened = pooled.view(1, -1)
+                
+                # Dummy weights for binary classification
+                fc_weight = torch.ones(2, flattened.shape[1], device=input_copy.device) * 0.01
+                fc_weight[1] = 0.02  # Class 1 slightly different
+                
+                # Forward pass
+                output = F.linear(flattened, fc_weight)
+                
+                # Get class 1 gradient
+                self.model.zero_grad()
+                
+                one_hot = torch.zeros_like(output)
+                one_hot[0, 1] = 1  # Target class 1
+                
+                output.backward(gradient=one_hot, retain_graph=True)
             
-            # Create a simple classifier proxy
-            pooled = F.adaptive_avg_pool3d(feature_output, (1, 1, 1))
-            flattened = pooled.view(1, -1)
-            
-            # Dummy weights for binary classification
-            fc_weight = torch.ones(2, flattened.shape[1], device=input_tensor.device) * 0.01
-            fc_weight[1] = 0.02  # Class 1 slightly different
-            
-            # Forward pass
-            output = F.linear(flattened, fc_weight)
-            
-            # Get class 1 gradient
-            self.model.zero_grad()
-            
-            one_hot = torch.zeros_like(output)
-            one_hot[0, 1] = 1  # Target class 1
-            
-            output.backward(gradient=one_hot, retain_graph=True)
-            
-            # Get feature maps and gradients
-            feature_maps = self.activations.detach()
-            gradients = self.gradients.detach()
+            # Make sure we have valid activations and gradients
+            if self.activations is None or self.gradients is None:
+                raise ValueError("No activations or gradients captured. Check hook setup.")
+                
+            # Get feature maps and gradients with explicit cloning
+            feature_maps = self.activations.clone().detach()
+            gradients = self.gradients.clone().detach()
             
             print(f"Feature maps shape: {feature_maps.shape}")
             print(f"Gradients shape: {gradients.shape}")
             
-            # Global average pool gradients
-            weights = gradients.mean(dim=(0, 2, 3, 4))
+            # Global average pool gradients - avoid any potential in-place issues
+            weights = gradients.mean(dim=(0, 2, 3, 4)).clone()
             
             # Create CAM by weighted sum of feature maps
             cam = torch.zeros(feature_maps.shape[2:], device=feature_maps.device)
             for i, w in enumerate(weights):
-                cam += w * feature_maps[0, i]
+                # Use fresh clones at each step to avoid any gradient issues
+                cam = cam + (w * feature_maps[0, i].clone())
                 
-            # ReLU and normalize
+            # ReLU and normalize - explicitly avoid in-place operations
             cam = F.relu(cam)
-            if cam.max() > 0:
-                cam = cam / cam.max()
+            cam_max = cam.max()
+            if cam_max > 0:
+                cam = cam / cam_max
                 
             return cam
     
@@ -233,8 +243,8 @@ def main():
     model = model.to(device)
     
     # Define layers to analyze (early, middle, late)
-    layers = ["features.3", "features.13", "features.20", "features.27"]
-    layer_names = ["Early (Layer 3)", "Early-Mid (Layer 13)", "Mid (Layer 20)", "Late (Layer 27)"]
+    layers = ["features.3", "features.6", "features.9", "features.20", "features.27"]
+    layer_names = ["Early (Layer 3)", "Early-Mid (Layer 6)", "Mid-Low (Layer 9)", "Mid-High (Layer 20)", "Late (Layer 27)"]
     layer_name_map = dict(zip(layers, layer_names))
     
     # Determine which samples to process
