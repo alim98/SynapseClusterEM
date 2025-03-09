@@ -12,8 +12,10 @@ import torch.nn.functional as F
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
 import pandas as pd
-from scipy.stats import pearsonr
+from scipy.stats import pearsonr, ttest_ind, f_oneway
 from mpl_toolkits.axes_grid1 import make_axes_locatable
+import seaborn as sns
+from sklearn.metrics import roc_curve, auc
 
 from synapse import config, SynapseDataset, Synapse3DProcessor
 from synapse.data.dataloader import SynapseDataLoader
@@ -27,7 +29,7 @@ class AttentionMaskAnalyzer:
     Analyzes the overlap between attention maps and masked regions in 3D electron microscopy data.
     """
     
-    def __init__(self, model, dataset, segmentation_type, output_dir='results/attention_analysis'):
+    def __init__(self, model, dataset, segmentation_type, output_dir='results/attention_analysis', use_cuda=True, batch_size=5):
         """
         Initialize the analyzer.
         
@@ -36,6 +38,8 @@ class AttentionMaskAnalyzer:
             dataset: The SynapseDataset
             segmentation_type: Segmentation type to use for mask generation
             output_dir: Directory to save analysis results
+            use_cuda: Whether to use CUDA for running the model
+            batch_size: Number of samples to process before clearing cache
         """
         self.model = model
         self.dataset = dataset
@@ -60,8 +64,9 @@ class AttentionMaskAnalyzer:
         self.results = {}
         
         # Device for running the model
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = torch.device("cuda" if torch.cuda.is_available() and use_cuda else "cpu")
         self.model = self.model.to(self.device)
+        self.batch_size = batch_size
     
     def _generate_attention_maps(self, input_tensor, sample_info):
         """
@@ -516,14 +521,6 @@ class AttentionMaskAnalyzer:
             axes[slice_idx, 0].imshow(original_img[slice_num, 0], cmap='gray', vmin=0, vmax=1)
             axes[slice_idx, 0].axis('off')
             
-            # Get mask slice for boundary drawing (but no dedicated mask column)
-            if len(mask.shape) == 3:
-                mask_slice = mask[slice_num]
-            elif len(mask.shape) == 4:
-                mask_slice = mask[slice_num, 0]
-            else:
-                mask_slice = np.zeros((original_img.shape[2], original_img.shape[3]), dtype=bool)
-            
             # Attention maps for each layer - adjusted column indices since mask is removed
             for col, layer_name in enumerate(self.layers, 1):  # Start from 1 since mask column is removed
                 attention = attention_maps[layer_name]
@@ -578,20 +575,6 @@ class AttentionMaskAnalyzer:
                     print(f"Error displaying attention map for layer {layer_name}, slice {slice_num}: {e}")
                     continue  # Skip this slice if display fails
                 
-                # Highlight mask boundary
-                try:
-                    from scipy.ndimage import binary_erosion
-                    mask_boundary = mask_slice > 0
-                    if np.any(mask_boundary):
-                        eroded = binary_erosion(mask_boundary, iterations=1)
-                        boundary = mask_boundary & ~eroded
-                        
-                        # Only draw contour if the boundary has enough points
-                        if boundary.shape[0] >= 2 and boundary.shape[1] >= 2 and np.any(boundary):
-                            axes[slice_idx, col].contour(boundary, colors=['blue'], linewidths=0.5)
-                except Exception as e:
-                    print(f"Warning: Could not draw contour for layer {layer_name}, slice {slice_num}: {e}")
-                
                 axes[slice_idx, col].axis('off')
                 
                 # Add colorbar to last row only
@@ -623,28 +606,24 @@ class AttentionMaskAnalyzer:
         # Create a list to store results
         report_data = []
         
-        for sample_idx, result in self.results.items():
-            bbox_name = result['bbox_name']
-            synapse_id = result['syn_info'].get('Var1', f'Sample_{sample_idx}')
+        # Extract all metrics
+        for sample_idx, sample_result in self.results.items():
+            bbox_name = sample_result['bbox_name']
+            metrics = sample_result['metrics']
             
-            for layer_name in self.layers:
-                metrics = result['metrics'][layer_name]
-                
-                # Add row to report
-                report_data.append({
+            for layer_name, layer_metrics in metrics.items():
+                row = {
                     'sample_idx': sample_idx,
                     'bbox_name': bbox_name,
-                    'synapse_id': synapse_id,
-                    'layer_name': layer_name,
-                    'layer_description': self.layer_name_map[layer_name],
-                    'dice_coefficient': metrics['dice'],
-                    'iou': metrics['iou'],
-                    'correlation': metrics['correlation'],
-                    'mean_attention_masked': metrics['mean_attention_masked'],
-                    'mean_attention_nonmasked': metrics['mean_attention_nonmasked'],
-                    'attention_ratio': metrics['attention_ratio'],
-                    'segmentation_type': self.segmentation_type
-                })
+                    'layer': layer_name,
+                    'layer_name': self.layer_name_map[layer_name]
+                }
+                
+                # Add all metrics
+                for metric_name, metric_value in layer_metrics.items():
+                    row[metric_name] = metric_value
+                
+                report_data.append(row)
         
         # Create DataFrame
         report_df = pd.DataFrame(report_data)
@@ -654,53 +633,91 @@ class AttentionMaskAnalyzer:
         report_df.to_csv(report_path, index=False)
         print(f"Report saved to {report_path}")
         
-        # Generate summary statistics by layer
-        summary = report_df.groupby('layer_name').agg({
-            'dice_coefficient': ['mean', 'std', 'min', 'max'],
-            'iou': ['mean', 'std', 'min', 'max'],
-            'correlation': ['mean', 'std', 'min', 'max'],
-            'attention_ratio': ['mean', 'std', 'min', 'max']
+        # Create summary statistics by layer
+        summary_df = report_df.groupby('layer').agg({
+            'dice': ['mean', 'std', 'min', 'max', 'median'],
+            'iou': ['mean', 'std', 'min', 'max', 'median'],
+            'correlation': ['mean', 'std', 'min', 'max', 'median'],
+            'mean_attention_masked': ['mean', 'std', 'min', 'max', 'median'],
+            'mean_attention_nonmasked': ['mean', 'std', 'min', 'max', 'median'],
+            'attention_ratio': ['mean', 'std', 'min', 'max', 'median']
         })
         
-        # Save summary to CSV
+        # Calculate confidence intervals (95%)
+        group_sizes = report_df.groupby('layer').size()
+        confidence_intervals = {}
+        
+        for layer in summary_df.index:
+            confidence_intervals[layer] = {}
+            for metric in ['dice', 'iou', 'correlation', 'attention_ratio']:
+                values = report_df[report_df['layer'] == layer][metric]
+                n = len(values)
+                if n > 1:
+                    # Calculate 95% confidence interval
+                    mean = values.mean()
+                    sem = values.std() / np.sqrt(n)
+                    ci_95 = (mean - 1.96 * sem, mean + 1.96 * sem)
+                    confidence_intervals[layer][f"{metric}_ci_lower"] = ci_95[0]
+                    confidence_intervals[layer][f"{metric}_ci_upper"] = ci_95[1]
+                else:
+                    confidence_intervals[layer][f"{metric}_ci_lower"] = np.nan
+                    confidence_intervals[layer][f"{metric}_ci_upper"] = np.nan
+        
+        # Add confidence intervals to summary
+        ci_df = pd.DataFrame(confidence_intervals).T
+        summary_df = pd.concat([summary_df, ci_df], axis=1)
+        
+        # Save summary statistics to CSV
         summary_path = os.path.join(self.output_dir, f"attention_mask_summary_seg{self.segmentation_type}.csv")
-        summary.to_csv(summary_path)
+        summary_df.to_csv(summary_path)
         print(f"Summary statistics saved to {summary_path}")
         
-        # Create and save visualization of mean metrics by layer
+        # Create plots for better visualization
         self._plot_layer_metrics(report_df)
+        self._plot_boxplots(report_df)
+        self._plot_distributions(report_df)
+        self._plot_correlation_heatmap(report_df)
+        self._perform_statistical_tests(report_df)
+        self._plot_roc_curves(report_df)
         
         return report_df
     
     def _plot_layer_metrics(self, report_df):
         """
-        Plot metrics by layer.
+        Create bar plots comparing metrics across layers.
         
         Args:
-            report_df: DataFrame with results
+            report_df: DataFrame with analysis results
         """
-        metrics = ['dice_coefficient', 'iou', 'correlation', 'attention_ratio']
-        metric_names = ['Dice Coefficient', 'IoU', 'Correlation', 'Attention Ratio (Masked/Non-masked)']
+        # Group by layer
+        grouped = report_df.groupby('layer').agg({
+            'dice': ['mean', 'std'],
+            'iou': ['mean', 'std'],
+            'correlation': ['mean', 'std'],
+            'attention_ratio': ['mean', 'std']
+        })
         
-        fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+        # Create figure with subplots
+        fig, axes = plt.subplots(2, 2, figsize=(14, 10))
         axes = axes.flatten()
         
-        for i, (metric, name) in enumerate(zip(metrics, metric_names)):
-            # Calculate mean and std by layer
-            grouped = report_df.groupby('layer_description')[metric].agg(['mean', 'std'])
+        # Plot each metric
+        metrics = ['dice', 'iou', 'correlation', 'attention_ratio']
+        titles = ['Dice Coefficient', 'IoU', 'Correlation', 'Attention Ratio (Masked/Non-masked)']
+        
+        for i, (name, ax) in enumerate(zip(metrics, axes)):
+            # Get data for this metric
+            sorted_grouped = grouped[name].sort_values('mean', ascending=False)
             
-            # Sort by layer order
-            sorted_indices = [self.layer_name_map.get(layer) for layer in self.layers]
-            sorted_grouped = grouped.loc[sorted_indices]
+            # Create x positions
+            x = np.arange(len(sorted_grouped.index))
             
-            # Plot
-            ax = axes[i]
-            x = np.arange(len(sorted_grouped))
+            # Create bar plot
             ax.bar(x, sorted_grouped['mean'], yerr=sorted_grouped['std'], capsize=5, 
                   color='skyblue', edgecolor='black', alpha=0.7)
-            ax.set_title(name)
+            ax.set_title(titles[i])
             ax.set_xticks(x)
-            ax.set_xticklabels(sorted_grouped.index, rotation=45, ha='right')
+            ax.set_xticklabels([self.layer_name_map[l] for l in sorted_grouped.index], rotation=45, ha='right')
             ax.set_ylabel('Value')
             ax.grid(axis='y', linestyle='--', alpha=0.7)
             
@@ -713,6 +730,314 @@ class AttentionMaskAnalyzer:
         plt.savefig(plot_path, dpi=300, bbox_inches='tight')
         plt.close()
         print(f"Layer metrics comparison plot saved to {plot_path}")
+    
+    def _plot_boxplots(self, report_df):
+        """
+        Create boxplots to show distribution of metrics across layers.
+        
+        Args:
+            report_df: DataFrame with analysis results
+        """
+        # Map layer names for better readability
+        report_df_plot = report_df.copy()
+        report_df_plot['Layer'] = report_df_plot['layer'].map(self.layer_name_map)
+        
+        # Create figure with subplots
+        fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+        axes = axes.flatten()
+        
+        # Plot each metric
+        metrics = ['dice', 'iou', 'correlation', 'attention_ratio']
+        titles = ['Dice Coefficient', 'IoU', 'Correlation', 'Attention Ratio (Masked/Non-masked)']
+        
+        for i, (metric, title, ax) in enumerate(zip(metrics, titles, axes)):
+            # Create boxplot
+            sns.boxplot(x='Layer', y=metric, data=report_df_plot, ax=ax, palette='Set3')
+            ax.set_title(title)
+            ax.set_xlabel('Layer')
+            ax.set_ylabel('Value')
+            ax.grid(axis='y', linestyle='--', alpha=0.4)
+            ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha='right')
+            
+            # Add sample size
+            sample_sizes = report_df_plot.groupby('Layer').size()
+            for j, layer in enumerate(ax.get_xticklabels()):
+                ax.text(j, ax.get_ylim()[0], f"n={sample_sizes[layer.get_text()]}", 
+                       ha='center', va='top', fontsize=8, rotation=0, color='blue')
+        
+        plt.tight_layout()
+        plot_path = os.path.join(self.output_dir, f"layer_boxplots_seg{self.segmentation_type}.png")
+        plt.savefig(plot_path, dpi=300, bbox_inches='tight')
+        plt.close()
+        print(f"Layer boxplots saved to {plot_path}")
+    
+    def _plot_distributions(self, report_df):
+        """
+        Create distribution plots to visualize the distribution of metrics across layers.
+        
+        Args:
+            report_df: DataFrame with analysis results
+        """
+        # Map layer names for better readability
+        report_df_plot = report_df.copy()
+        report_df_plot['Layer'] = report_df_plot['layer'].map(self.layer_name_map)
+        
+        # Create figure with subplots
+        fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+        axes = axes.flatten()
+        
+        # Plot each metric
+        metrics = ['dice', 'iou', 'correlation', 'attention_ratio']
+        titles = ['Dice Coefficient Distribution', 'IoU Distribution', 
+                 'Correlation Distribution', 'Attention Ratio Distribution']
+        
+        for i, (metric, title, ax) in enumerate(zip(metrics, titles, axes)):
+            # Create KDE plot for each layer
+            for layer_name in self.layer_names:
+                layer_data = report_df_plot[report_df_plot['Layer'] == layer_name][metric]
+                # Only plot if we have enough data points
+                if len(layer_data) > 1:
+                    sns.kdeplot(layer_data, ax=ax, label=layer_name)
+            
+            ax.set_title(title)
+            ax.set_xlabel('Value')
+            ax.set_ylabel('Density')
+            ax.grid(True, linestyle='--', alpha=0.3)
+            ax.legend(fontsize=8)
+        
+        plt.tight_layout()
+        plot_path = os.path.join(self.output_dir, f"metric_distributions_seg{self.segmentation_type}.png")
+        plt.savefig(plot_path, dpi=300, bbox_inches='tight')
+        plt.close()
+        print(f"Metric distribution plots saved to {plot_path}")
+    
+    def _plot_correlation_heatmap(self, report_df):
+        """
+        Create heatmap to visualize correlations between different metrics.
+        
+        Args:
+            report_df: DataFrame with analysis results
+        """
+        # Calculate correlation matrix for each layer
+        for layer in self.layers:
+            layer_df = report_df[report_df['layer'] == layer]
+            if len(layer_df) < 2:
+                continue  # Skip if not enough data
+                
+            metrics = ['dice', 'iou', 'correlation', 'mean_attention_masked', 
+                       'mean_attention_nonmasked', 'attention_ratio']
+            
+            # Calculate correlation matrix
+            corr_matrix = layer_df[metrics].corr()
+            
+            # Create heatmap
+            plt.figure(figsize=(10, 8))
+            sns.heatmap(corr_matrix, annot=True, cmap='coolwarm', vmin=-1, vmax=1, center=0,
+                       linewidths=.5, fmt='.2f')
+            plt.title(f"Metric Correlations for {self.layer_name_map[layer]}")
+            
+            # Save plot
+            plot_path = os.path.join(self.output_dir, f"correlation_heatmap_{layer.replace('.', '_')}_seg{self.segmentation_type}.png")
+            plt.savefig(plot_path, dpi=300, bbox_inches='tight')
+            plt.close()
+            print(f"Correlation heatmap for {layer} saved to {plot_path}")
+    
+    def _perform_statistical_tests(self, report_df):
+        """
+        Perform statistical tests to compare metrics across layers.
+        
+        Args:
+            report_df: DataFrame with analysis results
+        """
+        # Create a DataFrame for statistics
+        stats_data = []
+        
+        # Metrics to test
+        metrics = ['dice', 'iou', 'correlation', 'attention_ratio']
+        metric_names = ['Dice Coefficient', 'IoU', 'Correlation', 'Attention Ratio']
+        
+        # ANOVA test for each metric
+        for metric, metric_name in zip(metrics, metric_names):
+            # Group data by layer
+            groups = [report_df[report_df['layer'] == layer][metric].dropna() for layer in self.layers]
+            
+            # Only perform ANOVA if at least 2 groups have enough data
+            valid_groups = [g for g in groups if len(g) > 1]
+            if len(valid_groups) >= 2:
+                f_val, p_val = f_oneway(*valid_groups)
+                
+                stats_data.append({
+                    'Test': 'ANOVA',
+                    'Metric': metric_name,
+                    'Statistic': f_val,
+                    'p-value': p_val,
+                    'Significant': p_val < 0.05
+                })
+                
+                # Perform pairwise t-tests between layers
+                for i, layer1 in enumerate(self.layers):
+                    for j, layer2 in enumerate(self.layers):
+                        if i < j:  # Only compare each pair once
+                            data1 = report_df[report_df['layer'] == layer1][metric].dropna()
+                            data2 = report_df[report_df['layer'] == layer2][metric].dropna()
+                            
+                            # Only perform t-test if both groups have enough data
+                            if len(data1) > 1 and len(data2) > 1:
+                                t_val, p_val = ttest_ind(data1, data2, equal_var=False)  # Welch's t-test
+                                
+                                stats_data.append({
+                                    'Test': 't-test',
+                                    'Metric': metric_name,
+                                    'Comparison': f"{self.layer_name_map[layer1]} vs {self.layer_name_map[layer2]}",
+                                    'Statistic': t_val,
+                                    'p-value': p_val,
+                                    'Significant': p_val < 0.05
+                                })
+        
+        # Create DataFrame with statistics
+        if stats_data:
+            stats_df = pd.DataFrame(stats_data)
+            
+            # Save to CSV
+            stats_path = os.path.join(self.output_dir, f"statistical_tests_seg{self.segmentation_type}.csv")
+            stats_df.to_csv(stats_path, index=False)
+            print(f"Statistical test results saved to {stats_path}")
+            
+            # Create summary plot for ANOVA p-values
+            anova_stats = stats_df[stats_df['Test'] == 'ANOVA']
+            if len(anova_stats) > 0:
+                plt.figure(figsize=(10, 6))
+                
+                # Create barplot of p-values
+                bars = plt.bar(anova_stats['Metric'], anova_stats['p-value'], color='skyblue')
+                
+                # Mark significant results
+                for i, bar in enumerate(bars):
+                    if anova_stats.iloc[i]['Significant']:
+                        bar.set_color('green')
+                        bar.set_alpha(0.7)
+                
+                plt.axhline(y=0.05, color='red', linestyle='--', label='p=0.05')
+                plt.ylabel('p-value')
+                plt.title('ANOVA Test Results Across Metrics')
+                plt.xticks(rotation=45, ha='right')
+                plt.tight_layout()
+                
+                # Save plot
+                plot_path = os.path.join(self.output_dir, f"anova_results_seg{self.segmentation_type}.png")
+                plt.savefig(plot_path, dpi=300, bbox_inches='tight')
+                plt.close()
+                print(f"ANOVA test results plot saved to {plot_path}")
+    
+    def _plot_roc_curves(self, report_df):
+        """
+        Plot ROC curves for attention maps per layer.
+        This treats the masks as ground truth and evaluates 
+        how well attention maps can discriminate masked from non-masked regions.
+        
+        Args:
+            report_df: DataFrame with analysis results
+        """
+        # We need sample-level data for this, so iterate through results
+        layer_auc_data = []
+        
+        for sample_idx, sample_result in self.results.items():
+            # Get original shape
+            if 'original_img' not in sample_result or 'mask' not in sample_result:
+                continue
+                
+            mask = sample_result['mask'].flatten()
+            attention_maps = sample_result['attention_maps']
+            
+            plt.figure(figsize=(10, 8))
+            
+            for layer_name in self.layers:
+                if layer_name not in attention_maps:
+                    continue
+                    
+                # Resize attention map to match mask if needed
+                attention_map = attention_maps[layer_name]
+                if attention_map.shape != sample_result['mask'].shape:
+                    attention_tensor = torch.from_numpy(attention_map).unsqueeze(0).unsqueeze(0).float()
+                    resized_tensor = F.interpolate(
+                        attention_tensor,
+                        size=sample_result['mask'].shape,
+                        mode='trilinear',
+                        align_corners=False
+                    )
+                    attention_map = resized_tensor.squeeze(0).squeeze(0).numpy()
+                
+                # Flatten for ROC calculation
+                attention_flat = attention_map.flatten()
+                
+                # Only calculate if we have both positive and negative samples
+                if np.sum(mask) > 0 and np.sum(mask) < len(mask):
+                    # Calculate ROC
+                    fpr, tpr, _ = roc_curve(mask, attention_flat)
+                    roc_auc = auc(fpr, tpr)
+                    
+                    # Store AUC data
+                    layer_auc_data.append({
+                        'sample_idx': sample_idx,
+                        'layer': layer_name,
+                        'auc': roc_auc
+                    })
+                    
+                    # Plot ROC curve for this sample
+                    plt.plot(fpr, tpr, lw=2, alpha=0.7,
+                            label=f'{self.layer_name_map[layer_name]} (AUC = {roc_auc:.2f})')
+            
+            # Finalize plot
+            plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--', alpha=0.5)
+            plt.xlim([0.0, 1.0])
+            plt.ylim([0.0, 1.05])
+            plt.xlabel('False Positive Rate')
+            plt.ylabel('True Positive Rate')
+            plt.title(f'ROC Curves for Sample {sample_idx}')
+            plt.legend(loc="lower right")
+            
+            # Save plot
+            plt.tight_layout()
+            plot_path = os.path.join(self.output_dir, f"roc_curves_sample_{sample_idx}_seg{self.segmentation_type}.png")
+            plt.savefig(plot_path, dpi=300, bbox_inches='tight')
+            plt.close()
+        
+        # Summarize AUC values across samples
+        if layer_auc_data:
+            auc_df = pd.DataFrame(layer_auc_data)
+            
+            # Create boxplot of AUC values by layer
+            plt.figure(figsize=(10, 6))
+            auc_df['Layer'] = auc_df['layer'].map(self.layer_name_map)
+            sns.boxplot(x='Layer', y='auc', data=auc_df, palette='Set3')
+            plt.title('AUC Distribution by Layer')
+            plt.xlabel('Layer')
+            plt.ylabel('Area Under ROC Curve')
+            plt.xticks(rotation=45, ha='right')
+            plt.tight_layout()
+            
+            # Save plot
+            plot_path = os.path.join(self.output_dir, f"auc_distribution_seg{self.segmentation_type}.png")
+            plt.savefig(plot_path, dpi=300, bbox_inches='tight')
+            plt.close()
+            print(f"AUC distribution plot saved to {plot_path}")
+            
+            # Save AUC data
+            auc_path = os.path.join(self.output_dir, f"auc_values_seg{self.segmentation_type}.csv")
+            auc_df.to_csv(auc_path, index=False)
+            print(f"AUC values saved to {auc_path}")
+            
+            # Calculate average AUC by layer
+            auc_summary = auc_df.groupby('layer').agg({
+                'auc': ['mean', 'std', 'min', 'max', 'count']
+            })
+            
+            # Report the best layer based on AUC
+            best_layer = auc_summary['auc'].sort_values('mean', ascending=False).index[0]
+            print(f"\nBased on AUC analysis, the best performing layer is: {self.layer_name_map[best_layer]}")
+            print(f"Average AUC: {auc_summary.loc[best_layer, ('auc', 'mean')]:.4f}")
+            
+            return auc_summary
 
 
 def main():
@@ -723,21 +1048,25 @@ def main():
     
     parser = argparse.ArgumentParser(description='Analyze overlap between attention maps and segmentation masks')
     parser.add_argument('--sample_idx', type=int, default=0,
-                        help='Sample index to analyze')
+                        help='Sample index to analyze (if not in batch mode)')
     parser.add_argument('--output_dir', type=str, default='results/attention_mask_analysis',
                         help='Directory to save output')
     parser.add_argument('--n_slices', type=int, default=4,
                         help='Number of slices to visualize')
     parser.add_argument('--batch_mode', action='store_true',
                         help='Process multiple samples in batch mode')
-    parser.add_argument('--n_samples', type=int, default=5,
+    parser.add_argument('--n_samples', type=int, default=10,
                         help='Number of samples to analyze in batch mode')
+    parser.add_argument('--n_visualize', type=int, default=10,
+                        help='Number of random samples to visualize (when analyzing all)')
     parser.add_argument('--specific_indices', type=int, nargs='+',
                         help='Specific sample indices to analyze')
     parser.add_argument('--segmentation_type', type=int, default=5,
                         help='Type of segmentation mask to use')
     parser.add_argument('--visualize_only', action='store_true',
                         help='Skip analysis and only visualize previously analyzed samples')
+    parser.add_argument('--analyze_all', action='store_true',
+                        help='Analyze the entire dataset')
     
     args = parser.parse_args()
     
@@ -785,11 +1114,39 @@ def main():
         model=model,
         dataset=dataset,
         segmentation_type=segmentation_type,
-        output_dir=f"{args.output_dir}_seg{segmentation_type}"  # Include segmentation type in the output dir
+        output_dir=f"{args.output_dir}_seg{segmentation_type}", # Remove the extra space
     )
     
-    # Process in batch or individual mode
-    if args.batch_mode:
+    if args.analyze_all:
+        # Analyze the entire dataset
+        print(f"Analyzing all {len(dataset)} samples...")
+        
+        # Process the entire dataset
+        all_indices = list(range(len(dataset)))
+        
+        if not args.visualize_only:
+            # Analyze all samples
+            print("Running analysis on the entire dataset...")
+            analyzer.analyze_multiple_samples(all_indices)
+            
+            # Generate report on all samples
+            print("Generating report for all samples...")
+            analyzer.generate_report()
+        
+        # Visualize only a random subset
+        print(f"Visualizing {args.n_visualize} random samples...")
+        if args.specific_indices and len(args.specific_indices) > 0:
+            # Use specified indices for visualization if provided
+            viz_indices = args.specific_indices[:args.n_visualize]
+        else:
+            # Otherwise, choose random indices
+            viz_indices = np.random.choice(all_indices, min(args.n_visualize, len(dataset)), replace=False)
+        
+        print(f"Selected indices for visualization: {viz_indices}")
+        for idx in viz_indices:
+            analyzer.visualize_sample(idx, n_slices=args.n_slices)
+    
+    elif args.batch_mode:
         # Get specific sample indices or generate random ones
         if args.specific_indices:
             sample_indices = args.specific_indices
