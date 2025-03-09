@@ -24,6 +24,92 @@ def normalize_globally(array):
         normalized = array.copy()
     return normalized
 
+# Define SimpleGradCAM class for attention visualization outside main for importing
+class SimpleGradCAM:
+    def __init__(self, model, layer_name):
+        self.model = model
+        self.model.eval()
+        
+        # Get the target layer
+        parts = layer_name.split('.')
+        target = self.model
+        for part in parts:
+            if part.isdigit():
+                target = target[int(part)]
+            else:
+                target = getattr(target, part)
+                
+        self.target_layer = target
+        self.activations = None
+        self.gradients = None
+        
+        # Register hooks
+        self.forward_hook = self.target_layer.register_forward_hook(
+            lambda module, input, output: setattr(self, 'activations', output.clone())
+        )
+        self.backward_hook = self.target_layer.register_full_backward_hook(
+            lambda module, grad_in, grad_out: setattr(self, 'gradients', grad_out[0].clone())
+        )
+    
+    def remove_hooks(self):
+        self.forward_hook.remove()
+        self.backward_hook.remove()
+        
+    def generate_cam(self, input_tensor):
+        # Create a copy of the input tensor to avoid in-place issues
+        input_copy = input_tensor.clone()
+        
+        # Run model through features only
+        with torch.set_grad_enabled(True):
+            feature_output = self.model.features(input_copy)
+            
+            # Create a simple classifier proxy
+            pooled = F.adaptive_avg_pool3d(feature_output, (1, 1, 1))
+            flattened = pooled.view(1, -1)
+            
+            # Dummy weights for binary classification
+            fc_weight = torch.ones(2, flattened.shape[1], device=input_copy.device) * 0.01
+            fc_weight[1] = 0.02  # Class 1 slightly different
+            
+            # Forward pass
+            output = F.linear(flattened, fc_weight)
+            
+            # Get class 1 gradient
+            self.model.zero_grad()
+            
+            one_hot = torch.zeros_like(output)
+            one_hot[0, 1] = 1  # Target class 1
+            
+            output.backward(gradient=one_hot, retain_graph=True)
+        
+        # Make sure we have valid activations and gradients
+        if self.activations is None or self.gradients is None:
+            raise ValueError("No activations or gradients captured. Check hook setup.")
+            
+        # Get feature maps and gradients with explicit cloning
+        feature_maps = self.activations.clone().detach()
+        gradients = self.gradients.clone().detach()
+        
+        print(f"Feature maps shape: {feature_maps.shape}")
+        print(f"Gradients shape: {gradients.shape}")
+        
+        # Global average pool gradients - avoid any potential in-place issues
+        weights = gradients.mean(dim=(0, 2, 3, 4)).clone()
+        
+        # Create CAM by weighted sum of feature maps
+        cam = torch.zeros(feature_maps.shape[2:], device=feature_maps.device)
+        for i, w in enumerate(weights):
+            # Use fresh clones at each step to avoid any gradient issues
+            cam = cam + (w * feature_maps[0, i].clone())
+            
+        # ReLU and normalize - explicitly avoid in-place operations
+        cam = F.relu(cam)
+        cam_max = cam.max()
+        if cam_max > 0:
+            cam = cam / cam_max
+            
+        return cam
+
 def process_single_sample(model, dataset, sample_idx, device, layers, layer_names):
     """Process a single sample and generate attention maps for all specified layers"""
     print(f"\nProcessing sample {sample_idx}...")
@@ -150,93 +236,6 @@ def main():
         data_loader = SynapseDataLoader("", "", "")
         dataset.data_loader = data_loader
         print("Created new dataloader for the dataset")
-    
-    # Define SimpleGradCAM class for attention visualization
-    global SimpleGradCAM
-    class SimpleGradCAM:
-        def __init__(self, model, layer_name):
-            self.model = model
-            self.model.eval()
-            
-            # Get the target layer
-            parts = layer_name.split('.')
-            target = self.model
-            for part in parts:
-                if part.isdigit():
-                    target = target[int(part)]
-                else:
-                    target = getattr(target, part)
-                    
-            self.target_layer = target
-            self.activations = None
-            self.gradients = None
-            
-            # Register hooks
-            self.forward_hook = self.target_layer.register_forward_hook(
-                lambda module, input, output: setattr(self, 'activations', output.clone())
-            )
-            self.backward_hook = self.target_layer.register_full_backward_hook(
-                lambda module, grad_in, grad_out: setattr(self, 'gradients', grad_out[0].clone())
-            )
-        
-        def remove_hooks(self):
-            self.forward_hook.remove()
-            self.backward_hook.remove()
-            
-        def generate_cam(self, input_tensor):
-            # Create a copy of the input tensor to avoid in-place issues
-            input_copy = input_tensor.clone()
-            
-            # Run model through features only
-            with torch.set_grad_enabled(True):
-                feature_output = self.model.features(input_copy)
-                
-                # Create a simple classifier proxy
-                pooled = F.adaptive_avg_pool3d(feature_output, (1, 1, 1))
-                flattened = pooled.view(1, -1)
-                
-                # Dummy weights for binary classification
-                fc_weight = torch.ones(2, flattened.shape[1], device=input_copy.device) * 0.01
-                fc_weight[1] = 0.02  # Class 1 slightly different
-                
-                # Forward pass
-                output = F.linear(flattened, fc_weight)
-                
-                # Get class 1 gradient
-                self.model.zero_grad()
-                
-                one_hot = torch.zeros_like(output)
-                one_hot[0, 1] = 1  # Target class 1
-                
-                output.backward(gradient=one_hot, retain_graph=True)
-            
-            # Make sure we have valid activations and gradients
-            if self.activations is None or self.gradients is None:
-                raise ValueError("No activations or gradients captured. Check hook setup.")
-                
-            # Get feature maps and gradients with explicit cloning
-            feature_maps = self.activations.clone().detach()
-            gradients = self.gradients.clone().detach()
-            
-            print(f"Feature maps shape: {feature_maps.shape}")
-            print(f"Gradients shape: {gradients.shape}")
-            
-            # Global average pool gradients - avoid any potential in-place issues
-            weights = gradients.mean(dim=(0, 2, 3, 4)).clone()
-            
-            # Create CAM by weighted sum of feature maps
-            cam = torch.zeros(feature_maps.shape[2:], device=feature_maps.device)
-            for i, w in enumerate(weights):
-                # Use fresh clones at each step to avoid any gradient issues
-                cam = cam + (w * feature_maps[0, i].clone())
-                
-            # ReLU and normalize - explicitly avoid in-place operations
-            cam = F.relu(cam)
-            cam_max = cam.max()
-            if cam_max > 0:
-                cam = cam / cam_max
-                
-            return cam
     
     # Use GPU if available
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
