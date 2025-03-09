@@ -95,7 +95,7 @@ class AttentionMaskAnalyzer:
     
     def _get_masks(self, raw_vol, seg_vol, add_mask_vol, sample_info, original_shape):
         """
-        Extract masks based on segmentation type.
+        Extract masks based on segmentation type directly from segmentation volumes.
         
         Args:
             raw_vol: Raw volume data
@@ -126,57 +126,162 @@ class AttentionMaskAnalyzer:
             sample_info.get('side_2_coord_3')
         )
         
-        # Create segmented cube using the dataloader
+        # Extract bounding box information for label identification
         bbox_name = sample_info.get('bbox_name', '')
-        cube = self.data_loader.create_segmented_cube(
-            raw_vol=raw_vol,
-            seg_vol=seg_vol,
-            add_mask_vol=add_mask_vol,
-            central_coord=central_coord,
-            side1_coord=side1_coord,
-            side2_coord=side2_coord,
-            segmentation_type=self.segmentation_type,
-            subvolume_size=config.subvol_size,
-            alpha=config.alpha,
-            bbox_name=bbox_name,
-            normalize_across_volume=True
+        bbox_num = bbox_name.replace("bbox", "").strip()
+        
+        # Determine label values based on bbox
+        if bbox_num in {'2', '5',}:
+            mito_label = 1
+            vesicle_label = 3
+            cleft_label2 = 4
+            cleft_label = 2
+        elif bbox_num == '7':
+            mito_label = 1
+            vesicle_label = 2
+            cleft_label2 = 3
+            cleft_label = 4
+        elif bbox_num == '4':
+            mito_label = 3
+            vesicle_label = 2
+            cleft_label2 = 4
+            cleft_label = 1
+        elif bbox_num == '3':
+            mito_label = 6
+            vesicle_label = 7
+            cleft_label2 = 8
+            cleft_label = 9
+        else:
+            mito_label = 5
+            vesicle_label = 6
+            cleft_label = 7
+            cleft_label2 = 7
+        
+        # Calculate crop boundaries (80x80x80 centered on synapse)
+        half_size = config.subvol_size // 2
+        cx, cy, cz = central_coord
+        x_start = max(cx - half_size, 0)
+        x_end = min(cx + half_size, raw_vol.shape[2])
+        y_start = max(cy - half_size, 0)
+        y_end = min(cy + half_size, raw_vol.shape[1])
+        z_start = max(cz - half_size, 0)
+        z_end = min(cz + half_size, raw_vol.shape[0])
+        
+        # Get vesicle mask
+        vesicle_full_mask = (add_mask_vol == vesicle_label)
+        vesicle_mask = self.data_loader.get_closest_component_mask(
+            vesicle_full_mask,
+            z_start, z_end,
+            y_start, y_end,
+            x_start, x_end,
+            (cx, cy, cz)
         )
         
-        # Extract the mask (regions not affected by gray overlay)
-        # The mask is determined by where the RGB values are still the original values
-        # In the overlaid_image calculation in create_segmented_cube:
-        # overlaid_image = raw_rgb * mask_factor + (1 - mask_factor) * blended_part
+        # Create segment masks for the two sides
+        def create_segment_masks(segmentation_volume, s1_coord, s2_coord):
+            x1, y1, z1 = s1_coord
+            x2, y2, z2 = s2_coord
+            seg_id_1 = segmentation_volume[z1, y1, x1]
+            seg_id_2 = segmentation_volume[z2, y2, x2]
+            mask_1 = (segmentation_volume == seg_id_1) if seg_id_1 != 0 else np.zeros_like(segmentation_volume, dtype=bool)
+            mask_2 = (segmentation_volume == seg_id_2) if seg_id_2 != 0 else np.zeros_like(segmentation_volume, dtype=bool)
+            return mask_1, mask_2
         
-        # To extract the mask from the cube, we need to:
-        # 1. Transpose the cube back to match original dimensions (it's in y,x,c,z format)
-        cube_transposed = np.transpose(cube, (3, 0, 1, 2))
+        mask_1_full, mask_2_full = create_segment_masks(seg_vol, side1_coord, side2_coord)
         
-        # 2. Check where the RGB channels are not affected by the gray overlay (equal values across channels)
-        # For our binary mask, we'll consider a pixel as "masked" if it's affected by the overlay
-        mask = np.zeros(cube_transposed.shape[:-1], dtype=bool)
-        gray_epsilon = 1e-5  # Small threshold to account for floating point errors
+        # Determine which side is the presynaptic side
+        overlap_side1 = np.sum(np.logical_and(mask_1_full, vesicle_mask))
+        overlap_side2 = np.sum(np.logical_and(mask_2_full, vesicle_mask))
+        presynapse_side = 1 if overlap_side1 > overlap_side2 else 2
         
-        # Assuming RGB channels are equal in original pixels and different in gray overlay
-        # This is a heuristic - if RGB channels are very close, it's likely not affected by gray overlay
-        for z in range(cube_transposed.shape[0]):
-            for y in range(cube_transposed.shape[1]):
-                for x in range(cube_transposed.shape[2]):
-                    r, g, b = cube_transposed[z, y, x, 0], cube_transposed[z, y, x, 1], cube_transposed[z, y, x, 2]
-                    if abs(r - g) < gray_epsilon and abs(r - b) < gray_epsilon and abs(g - b) < gray_epsilon:
-                        # Equal RGB values mean original pixel, which represents the "non-masked" region
-                        mask[z, y, x] = True
+        # Create mask based on segmentation type (directly, not from overlay)
+        if self.segmentation_type == 0:
+            combined_mask_full = np.ones_like(add_mask_vol, dtype=bool)
+        elif self.segmentation_type == 1:
+            combined_mask_full = mask_1_full if presynapse_side == 1 else mask_2_full
+        elif self.segmentation_type == 2:
+            combined_mask_full = mask_2_full if presynapse_side == 1 else mask_1_full
+        elif self.segmentation_type == 3:
+            combined_mask_full = np.logical_or(mask_1_full, mask_2_full)
+        elif self.segmentation_type == 4:
+            vesicle_closest = self.data_loader.get_closest_component_mask(
+                (add_mask_vol == vesicle_label), z_start, z_end, y_start, y_end, x_start, x_end, (cx, cy, cz)
+            )
+            cleft_closest = self.data_loader.get_closest_component_mask(
+                ((add_mask_vol == cleft_label)), z_start, z_end, y_start, y_end, x_start, x_end, (cx, cy, cz)
+            )
+            cleft_closest2 = self.data_loader.get_closest_component_mask(
+                ((add_mask_vol == cleft_label2)), z_start, z_end, y_start, y_end, x_start, x_end, (cx, cy, cz)
+            )
+            combined_mask_full = np.logical_or(vesicle_closest, np.logical_or(cleft_closest, cleft_closest2))
+        elif self.segmentation_type == 5:
+            vesicle_closest = self.data_loader.get_closest_component_mask(
+                (add_mask_vol == vesicle_label), z_start, z_end, y_start, y_end, x_start, x_end, (cx, cy, cz)
+            )
+            cleft_closest = self.data_loader.get_closest_component_mask(
+                (add_mask_vol == cleft_label), z_start, z_end, y_start, y_end, x_start, x_end, (cx, cy, cz)
+            )
+            combined_mask_extra = np.logical_or(vesicle_closest, cleft_closest)
+            combined_mask_full = np.logical_or(mask_1_full, np.logical_or(mask_2_full, combined_mask_extra))
+        elif self.segmentation_type == 6:
+            combined_mask_full = self.data_loader.get_closest_component_mask(
+                (add_mask_vol == vesicle_label), z_start, z_end, y_start, y_end, x_start, x_end, (cx, cy, cz)
+            )
+        elif self.segmentation_type == 7:
+            cleft_closest = self.data_loader.get_closest_component_mask(
+                ((add_mask_vol == cleft_label)), z_start, z_end, y_start, y_end, x_start, x_end, (cx, cy, cz)
+            )
+            cleft_closest2 = self.data_loader.get_closest_component_mask(
+                ((add_mask_vol == cleft_label2)), z_start, z_end, y_start, y_end, x_start, x_end, (cx, cy, cz)
+            )
+            combined_mask_full = np.logical_or(cleft_closest, cleft_closest2)
+        elif self.segmentation_type == 8:
+            combined_mask_full = self.data_loader.get_closest_component_mask(
+                (add_mask_vol == mito_label), z_start, z_end, y_start, y_end, x_start, x_end, (cx, cy, cz)
+            )
+        elif self.segmentation_type == 10:
+            cleft_closest = self.data_loader.get_closest_component_mask(
+                (add_mask_vol == cleft_label), z_start, z_end, y_start, y_end, x_start, x_end, (cx, cy, cz)
+            )
+            pre_mask_full = mask_1_full if presynapse_side == 1 else mask_2_full
+            combined_mask_full = np.logical_or(cleft_closest, pre_mask_full)
+        elif self.segmentation_type == 9:
+            vesicle_closest = self.data_loader.get_closest_component_mask(
+                (add_mask_vol == vesicle_label), z_start, z_end, y_start, y_end, x_start, x_end, (cx, cy, cz)
+            )
+            cleft_closest = self.data_loader.get_closest_component_mask(
+                (add_mask_vol == cleft_label), z_start, z_end, y_start, y_end, x_start, x_end, (cx, cy, cz)
+            )
+            combined_mask_full = np.logical_or(cleft_closest, vesicle_closest)
+        else:
+            raise ValueError(f"Unsupported segmentation type: {self.segmentation_type}")
+        
+        # Extract the subvolume from the mask
+        sub_mask = combined_mask_full[z_start:z_end, y_start:y_end, x_start:x_end]
+        
+        # Pad if necessary to match the desired subvolume size
+        pad_z = config.subvol_size - sub_mask.shape[0]
+        pad_y = config.subvol_size - sub_mask.shape[1]
+        pad_x = config.subvol_size - sub_mask.shape[2]
+        if pad_z > 0 or pad_y > 0 or pad_x > 0:
+            sub_mask = np.pad(sub_mask, ((0, pad_z), (0, pad_y), (0, pad_x)), mode='constant', constant_values=False)
+        
+        # Ensure the mask has the exact size expected
+        sub_mask = sub_mask[:config.subvol_size, :config.subvol_size, :config.subvol_size]
         
         # Resize mask to match original shape if needed
-        if mask.shape != original_shape:
+        if sub_mask.shape != original_shape:
             from scipy.ndimage import zoom
             zoom_factors = (
-                original_shape[0] / mask.shape[0],
-                original_shape[1] / mask.shape[1],
-                original_shape[2] / mask.shape[2]
+                original_shape[0] / sub_mask.shape[0],
+                original_shape[1] / sub_mask.shape[1],
+                original_shape[2] / sub_mask.shape[2]
             )
-            mask = zoom(mask.astype(float), zoom_factors, order=0).astype(bool)
+            sub_mask = zoom(sub_mask.astype(float), zoom_factors, order=0).astype(bool)
         
-        return mask
+        print(f"Generated mask for segmentation type {self.segmentation_type}, shape: {sub_mask.shape}")
+        
+        return sub_mask
     
     def calculate_metrics(self, attention_maps, mask):
         """
@@ -343,20 +448,46 @@ class AttentionMaskAnalyzer:
         for layer_name in self.layers:
             print(f"Debug - Attention map shape for {layer_name}: {attention_maps[layer_name].shape}")
         
+        # Make sure mask is properly shaped
+        # The mask should be 3D (depth, height, width) to match original image
+        if len(mask.shape) == 3 and mask.shape[0] == original_img.shape[0]:
+            print("Mask is already properly shaped for visualization")
+        elif len(mask.shape) == 2:
+            # If mask is 2D, expand it to match the depth dimension
+            print(f"Expanding 2D mask to 3D to match image depth")
+            mask = np.expand_dims(mask, axis=0)
+            mask = np.repeat(mask, original_img.shape[0], axis=0)
+        # If mask is missing dimensions or has wrong shape
+        elif len(mask.shape) < 3:
+            print(f"Warning: Unexpected mask shape: {mask.shape}. Trying to reshape...")
+            # Reshape to match original image shape
+            try:
+                mask = mask.reshape(original_img.shape[0], original_img.shape[2], original_img.shape[3])
+                print(f"Successfully reshaped mask to {mask.shape}")
+            except Exception as e:
+                print(f"Error reshaping mask: {e}")
+                # Create an empty mask as fallback
+                mask = np.zeros((original_img.shape[0], original_img.shape[2], original_img.shape[3]), dtype=bool)
+        
+        # Debug: Print final mask shape after adjustments
+        print(f"Final mask shape for visualization: {mask.shape}")
+        
         # Fix mask shape if needed (add missing width dimension)
         if len(mask.shape) == 3 and mask.shape[2] != original_img.shape[3]:
             print(f"Fixing mask shape from {mask.shape} to match original image width")
-            # Assuming mask is (depth, channels, height) and missing width
-            # Reshape to (depth, channels, height, 1) and repeat to match width
-            mask = np.repeat(mask[:, :, :, np.newaxis], original_img.shape[3], axis=3)
-            print(f"New mask shape: {mask.shape}")
+            # Assuming mask is (depth, height, width) or needs to be resized
+            from scipy.ndimage import zoom
+            target_shape = (original_img.shape[0], original_img.shape[2], original_img.shape[3])
+            zoom_factors = [target_shape[i] / mask.shape[i] for i in range(len(mask.shape))]
+            mask = zoom(mask.astype(float), zoom_factors, order=0).astype(bool)
+            print(f"New mask shape after resizing: {mask.shape}")
         
         # Select slices to visualize
         depth = original_img.shape[0]
         slice_indices = np.linspace(0, depth-1, n_slices, dtype=int)
         
-        # Create figure
-        fig, axes = plt.subplots(n_slices, len(self.layers) + 2, figsize=(3 * (len(self.layers) + 2), 3 * n_slices))
+        # Create figure - REMOVING mask column, now only original and attention maps
+        fig, axes = plt.subplots(n_slices, len(self.layers) + 1, figsize=(3 * (len(self.layers) + 1), 3 * n_slices))
         plt.suptitle(f"Attention Map Analysis - Sample {sample_idx} (Bbox: {bbox_name})", fontsize=16)
         
         # Modify colormap for better visibility of weak signals
@@ -369,11 +500,10 @@ class AttentionMaskAnalyzer:
                  (1, 0, 0, 1)]           # Pure red for highest values
         attention_cmap = LinearSegmentedColormap.from_list('custom_red', colors, N=256)
         
-        # Add column titles
+        # Add column titles - no mask column
         axes[0, 0].set_title("Original", fontsize=12)
-        axes[0, 1].set_title("Mask", fontsize=12)
         
-        for col, layer_name in enumerate(self.layers, 2):
+        for col, layer_name in enumerate(self.layers, 1):  # Start from 1 since mask column is removed
             axes[0, col].set_title(f"{self.layer_name_map[layer_name]}", fontsize=12)
         
         # Add row titles (slice numbers)
@@ -386,16 +516,16 @@ class AttentionMaskAnalyzer:
             axes[slice_idx, 0].imshow(original_img[slice_num, 0], cmap='gray', vmin=0, vmax=1)
             axes[slice_idx, 0].axis('off')
             
-            # Mask
-            mask_slice = mask[slice_num, 0] if len(mask.shape) == 4 else mask[slice_num]
-            axes[slice_idx, 1].imshow(original_img[slice_num, 0], cmap='gray', vmin=0, vmax=1)
-            mask_overlay = np.zeros((*mask_slice.shape, 4))
-            mask_overlay[mask_slice > 0] = [0, 1, 0, 0.5]  # Green with 50% opacity
-            axes[slice_idx, 1].imshow(mask_overlay)
-            axes[slice_idx, 1].axis('off')
+            # Get mask slice for boundary drawing (but no dedicated mask column)
+            if len(mask.shape) == 3:
+                mask_slice = mask[slice_num]
+            elif len(mask.shape) == 4:
+                mask_slice = mask[slice_num, 0]
+            else:
+                mask_slice = np.zeros((original_img.shape[2], original_img.shape[3]), dtype=bool)
             
-            # Attention maps for each layer
-            for col, layer_name in enumerate(self.layers, 2):
+            # Attention maps for each layer - adjusted column indices since mask is removed
+            for col, layer_name in enumerate(self.layers, 1):  # Start from 1 since mask column is removed
                 attention = attention_maps[layer_name]
                 
                 # Resize attention to match original image dimensions (without channels)
@@ -465,7 +595,7 @@ class AttentionMaskAnalyzer:
                 axes[slice_idx, col].axis('off')
                 
                 # Add colorbar to last row only
-                if slice_idx == n_slices - 1 and col == len(self.layers) + 1:
+                if slice_idx == n_slices - 1 and col == len(self.layers):
                     divider = make_axes_locatable(axes[slice_idx, col])
                     cax = divider.append_axes("right", size="5%", pad=0.05)
                     plt.colorbar(im, cax=cax)
@@ -587,30 +717,38 @@ class AttentionMaskAnalyzer:
 
 def main():
     """
-    Main function to run the attention-mask analysis.
+    Main entry point for the attention mask analyzer script.
     """
     import argparse
     
-    # Parse command line arguments
-    parser = argparse.ArgumentParser(description='Analyze overlap between attention maps and masks')
+    parser = argparse.ArgumentParser(description='Analyze overlap between attention maps and segmentation masks')
     parser.add_argument('--sample_idx', type=int, default=0,
-                      help='Sample index to analyze')
+                        help='Sample index to analyze')
     parser.add_argument('--output_dir', type=str, default='results/attention_mask_analysis',
-                      help='Directory to save analysis results')
+                        help='Directory to save output')
     parser.add_argument('--n_slices', type=int, default=4,
-                      help='Number of slices to visualize')
+                        help='Number of slices to visualize')
     parser.add_argument('--batch_mode', action='store_true',
-                      help='Process multiple samples in batch mode')
+                        help='Process multiple samples in batch mode')
     parser.add_argument('--n_samples', type=int, default=5,
-                      help='Number of random samples to process in batch mode')
+                        help='Number of samples to analyze in batch mode')
     parser.add_argument('--specific_indices', type=int, nargs='+',
-                      help='Process specific sample indices instead of random ones')
+                        help='Specific sample indices to analyze')
     parser.add_argument('--segmentation_type', type=int, default=5,
-                      help='Segmentation type to use (default: 5)')
+                        help='Type of segmentation mask to use')
+    parser.add_argument('--visualize_only', action='store_true',
+                        help='Skip analysis and only visualize previously analyzed samples')
+    
     args = parser.parse_args()
     
     # Create output directory
     os.makedirs(args.output_dir, exist_ok=True)
+    
+    # Set up
+    from synapse import config
+    from synapse.data import SynapseDataset
+    from inference import VGG3D, load_and_prepare_data
+    from synapse import Synapse3DProcessor
     
     print("Initializing model...")
     model = VGG3D()
@@ -626,7 +764,7 @@ def main():
         processor.normalize_volume = True
         print("Set processor.normalize_volume = True")
     
-    # Use the segmentation type specified in args instead of config
+    # Use the segmentation type specified in args
     segmentation_type = args.segmentation_type
     print(f"Using segmentation type: {segmentation_type}")
     
@@ -641,36 +779,52 @@ def main():
     )
     print(f"Created dataset with {len(dataset)} samples")
     
-    # Initialize analyzer
+    # Create analyzer
+    print(f"Creating analyzer with segmentation type {segmentation_type}...")
     analyzer = AttentionMaskAnalyzer(
         model=model,
         dataset=dataset,
-        segmentation_type=segmentation_type,  # Use the specified segmentation type
+        segmentation_type=segmentation_type,
         output_dir=f"{args.output_dir}_seg{segmentation_type}"  # Include segmentation type in the output dir
     )
     
+    # Process in batch or individual mode
     if args.batch_mode:
-        # Process multiple samples
+        # Get specific sample indices or generate random ones
         if args.specific_indices:
             sample_indices = args.specific_indices
-            print(f"Using specified indices: {sample_indices}")
+            print(f"Using specified sample indices: {sample_indices}")
         else:
-            # Generate random sample indices
             sample_indices = np.random.choice(len(dataset), min(args.n_samples, len(dataset)), replace=False)
             print(f"Generated random sample indices: {sample_indices}")
         
         # Analyze and visualize samples
-        analyzer.analyze_multiple_samples(sample_indices)
+        if not args.visualize_only:
+            print("Running analysis on multiple samples...")
+            analyzer.analyze_multiple_samples(sample_indices)
+        
+        # Always do visualization
         for sample_idx in sample_indices:
+            print(f"Visualizing sample {sample_idx}...")
             analyzer.visualize_sample(sample_idx, n_slices=args.n_slices)
         
-        # Generate report
-        analyzer.generate_report()
+        # Generate report if analysis was run
+        if not args.visualize_only:
+            print("Generating report...")
+            analyzer.generate_report()
     else:
         # Process single sample
-        analyzer.analyze_sample(args.sample_idx)
+        if not args.visualize_only:
+            print(f"Analyzing sample {args.sample_idx}...")
+            analyzer.analyze_sample(args.sample_idx)
+        
+        print(f"Visualizing sample {args.sample_idx}...")
         analyzer.visualize_sample(args.sample_idx, n_slices=args.n_slices)
-        analyzer.generate_report()
+        
+        # Generate report if analysis was run
+        if not args.visualize_only:
+            print("Generating report...")
+            analyzer.generate_report()
     
     print("Analysis complete!")
 
