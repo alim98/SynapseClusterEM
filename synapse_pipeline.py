@@ -77,13 +77,13 @@ class SynapsePipeline:
         
         # Initialize processor
         self.processor = Synapse3DProcessor(size=self.config.size)
-        
         # Create dataset with segmentation_type parameter
         self.dataset = SynapseDataset(
             self.vol_data_dict, 
             self.syn_df, 
             processor=self.processor,
-            segmentation_type=self.config.segmentation_type
+            segmentation_type=self.config.segmentation_type,
+            alpha=self.config.alpha
         )
         
         # Create dataloader if needed for batch processing

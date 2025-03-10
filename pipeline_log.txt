@@ -909,3 +909,201 @@ Pipeline completed successfully!
 Results saved to results\11-53-15_seg10_alpha1.0
 --- Pipeline run completed at 2025-03-10 12:02:15 ---
 
+
+--- Starting pipeline run at 2025-03-10 13:30:34 ---
+Using config with:
+  seg_type: 10
+  alpha: 1.0
+  csv_output_dir: results/csv_outputs
+  skip_feature_extraction: False
+  skip_clustering: False
+  only_vesicle_analysis: False
+Run ID: 13-30-34
+Output directory: results\13-30-34_seg10_alpha1.0
+Created directory: results
+Created directory: results\13-30-34_seg10_alpha1.0
+Created directory: results\13-30-34_seg10_alpha1.0\features
+Created directory: results\13-30-34_seg10_alpha1.0\clustering_results
+Created directory: results\13-30-34_seg10_alpha1.0\visualizations
+Created directory: results\13-30-34_seg10_alpha1.0\sample_visualizations
+Created directory: results\13-30-34_seg10_alpha1.0\presynapse_analysis
+Created directory: results\13-30-34_seg10_alpha1.0\vesicle_analysis
+Created directory: results\13-30-34_seg10_alpha1.0\csv_outputs
+Running synapse analysis pipeline with seg_type=10, alpha=1.0
+Starting data loading...
+Starting model loading...
+Starting feature extraction...
+Starting clustering...
+Starting visualizations...
+Starting presynapse analysis...
+Starting vesicle size analysis...
+Analyzing bounding box distribution in clusters...
+Pipeline completed successfully!
+Results saved to results\13-30-34_seg10_alpha1.0
+--- Pipeline run completed at 2025-03-10 13:34:15 ---
+
+
+--- Starting pipeline run at 2025-03-10 13:41:18 ---
+Using config with:
+  seg_type: 10
+  alpha: 1.0
+  csv_output_dir: results/csv_outputs
+  skip_feature_extraction: False
+  skip_clustering: False
+  only_vesicle_analysis: False
+Run ID: 13-41-18
+Output directory: results\13-41-18_seg10_alpha1.0
+Created directory: results
+Created directory: results\13-41-18_seg10_alpha1.0
+Created directory: results\13-41-18_seg10_alpha1.0\features
+Created directory: results\13-41-18_seg10_alpha1.0\clustering_results
+Created directory: results\13-41-18_seg10_alpha1.0\visualizations
+Created directory: results\13-41-18_seg10_alpha1.0\sample_visualizations
+Created directory: results\13-41-18_seg10_alpha1.0\presynapse_analysis
+Created directory: results\13-41-18_seg10_alpha1.0\vesicle_analysis
+Created directory: results\13-41-18_seg10_alpha1.0\csv_outputs
+Running synapse analysis pipeline with seg_type=10, alpha=1.0
+Starting data loading...
+Starting model loading...
+Starting feature extraction...
+Starting clustering...
+Starting visualizations...
+Starting presynapse analysis...
+Starting vesicle size analysis...
+Analyzing bounding box distribution in clusters...
+Pipeline completed successfully!
+Results saved to results\13-41-18_seg10_alpha1.0
+--- Pipeline run completed at 2025-03-10 13:47:21 ---
+
+
+--- Starting pipeline run at 2025-03-10 19:43:50 ---
+Using config with:
+  seg_type: 10
+  alpha: 1.0
+  csv_output_dir: results/csv_outputs
+  skip_feature_extraction: False
+  skip_clustering: False
+  only_vesicle_analysis: False
+Run ID: 19-43-50
+Output directory: results\19-43-50_seg10_alpha1.0
+Created directory: results
+Created directory: results\19-43-50_seg10_alpha1.0
+Created directory: results\19-43-50_seg10_alpha1.0\features
+Created directory: results\19-43-50_seg10_alpha1.0\clustering_results
+Created directory: results\19-43-50_seg10_alpha1.0\visualizations
+Created directory: results\19-43-50_seg10_alpha1.0\sample_visualizations
+Created directory: results\19-43-50_seg10_alpha1.0\presynapse_analysis
+Created directory: results\19-43-50_seg10_alpha1.0\vesicle_analysis
+Created directory: results\19-43-50_seg10_alpha1.0\csv_outputs
+Running synapse analysis pipeline with seg_type=10, alpha=1.0
+Starting data loading...
+Starting model loading...
+Starting feature extraction...
+Starting clustering...
+Starting visualizations...
+Starting presynapse analysis...
+Starting vesicle size analysis...
+Analyzing bounding box distribution in clusters...
+Pipeline completed successfully!
+Results saved to results\19-43-50_seg10_alpha1.0
+--- Pipeline run completed at 2025-03-10 19:45:52 ---
+
+
+--- Starting pipeline run at 2025-03-10 19:51:53 ---
+Using config with:
+  seg_type: 10
+  alpha: 1.0
+  csv_output_dir: results/csv_outputs
+  skip_feature_extraction: False
+  skip_clustering: False
+  only_vesicle_analysis: False
+Run ID: 19-51-53
+Output directory: results\19-51-53_seg10_alpha1.0
+Created directory: results
+Created directory: results\19-51-53_seg10_alpha1.0
+Created directory: results\19-51-53_seg10_alpha1.0\features
+Created directory: results\19-51-53_seg10_alpha1.0\clustering_results
+Created directory: results\19-51-53_seg10_alpha1.0\visualizations
+Created directory: results\19-51-53_seg10_alpha1.0\sample_visualizations
+Created directory: results\19-51-53_seg10_alpha1.0\presynapse_analysis
+Created directory: results\19-51-53_seg10_alpha1.0\vesicle_analysis
+Created directory: results\19-51-53_seg10_alpha1.0\csv_outputs
+Running synapse analysis pipeline with seg_type=10, alpha=1.0
+Starting data loading...
+Starting model loading...
+Starting feature extraction...
+Starting clustering...
+Starting visualizations...
+Starting presynapse analysis...
+Starting vesicle size analysis...
+Analyzing bounding box distribution in clusters...
+Pipeline completed successfully!
+Results saved to results\19-51-53_seg10_alpha1.0
+--- Pipeline run completed at 2025-03-10 19:53:35 ---
+
+
+--- Starting pipeline run at 2025-03-10 19:58:11 ---
+Using config with:
+  seg_type: 10
+  alpha: 1.0
+  csv_output_dir: results/csv_outputs
+  skip_feature_extraction: False
+  skip_clustering: False
+  only_vesicle_analysis: False
+Run ID: 19-58-11
+Output directory: results\19-58-11_seg10_alpha1.0
+Created directory: results
+Created directory: results\19-58-11_seg10_alpha1.0
+Created directory: results\19-58-11_seg10_alpha1.0\features
+Created directory: results\19-58-11_seg10_alpha1.0\clustering_results
+Created directory: results\19-58-11_seg10_alpha1.0\visualizations
+Created directory: results\19-58-11_seg10_alpha1.0\sample_visualizations
+Created directory: results\19-58-11_seg10_alpha1.0\presynapse_analysis
+Created directory: results\19-58-11_seg10_alpha1.0\vesicle_analysis
+Created directory: results\19-58-11_seg10_alpha1.0\csv_outputs
+Running synapse analysis pipeline with seg_type=10, alpha=1.0
+Starting data loading...
+Starting model loading...
+Starting feature extraction...
+Starting clustering...
+Starting visualizations...
+Starting presynapse analysis...
+Starting vesicle size analysis...
+Analyzing bounding box distribution in clusters...
+Pipeline completed successfully!
+Results saved to results\19-58-11_seg10_alpha1.0
+--- Pipeline run completed at 2025-03-10 19:59:13 ---
+
+
+--- Starting pipeline run at 2025-03-10 20:00:48 ---
+Using config with:
+  seg_type: 10
+  alpha: 1.0
+  csv_output_dir: results/csv_outputs
+  skip_feature_extraction: False
+  skip_clustering: False
+  only_vesicle_analysis: False
+Run ID: 20-00-48
+Output directory: results\20-00-48_seg10_alpha1.0
+Created directory: results
+Created directory: results\20-00-48_seg10_alpha1.0
+Created directory: results\20-00-48_seg10_alpha1.0\features
+Created directory: results\20-00-48_seg10_alpha1.0\clustering_results
+Created directory: results\20-00-48_seg10_alpha1.0\visualizations
+Created directory: results\20-00-48_seg10_alpha1.0\sample_visualizations
+Created directory: results\20-00-48_seg10_alpha1.0\presynapse_analysis
+Created directory: results\20-00-48_seg10_alpha1.0\vesicle_analysis
+Created directory: results\20-00-48_seg10_alpha1.0\csv_outputs
+Running synapse analysis pipeline with seg_type=10, alpha=1.0
+Starting data loading...
+Starting model loading...
+Starting feature extraction...
+Starting clustering...
+Starting visualizations...
+Starting presynapse analysis...
+Starting vesicle size analysis...
+Analyzing bounding box distribution in clusters...
+Pipeline completed successfully!
+Results saved to results\20-00-48_seg10_alpha1.0
+--- Pipeline run completed at 2025-03-10 20:01:42 ---
+

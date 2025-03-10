@@ -131,7 +131,8 @@ def process_single_sample(model, dataset, sample_idx, device, layers, layer_name
     print(f"\nProcessing sample {sample_idx}...")
     
     try:
-        # Get the sample
+        # Get the sample using dataset's __getitem__ which properly applies segmentation and alpha
+        # This ensures we get the exact same processed image as defined in the config
         pixel_values, syn_info, bbox_name = dataset[sample_idx]
         print(f"Sample shape: {pixel_values.shape}, BBox: {bbox_name}")
         
@@ -148,16 +149,12 @@ def process_single_sample(model, dataset, sample_idx, device, layers, layer_name
         
         print(f"Input tensor shape: {input_tensor.shape}")
         
-        # Get original image for display and apply global normalization
-        original_img = pixel_values.cpu().numpy()
-        img_depth = original_img.shape[0]
+        # Store the original tensor for visualization - this will include any masking from alpha
+        # and segmentation settings that were applied when the dataset created this sample
+        original_img = input_tensor.clone().cpu().numpy()
+        img_depth = original_img.shape[2]  # [B, C, D, H, W]
         
-        # Apply global normalization to original image to ensure consistent grayscale values
-        orig_min = np.min(original_img)
-        orig_max = np.max(original_img)
-        if orig_max > orig_min:
-            original_img = (original_img - orig_min) / (orig_max - orig_min)
-        print(f"Applied global normalization to original image: min={orig_min:.4f}, max={orig_max:.4f}")
+        print(f"Using dataset-processed image with alpha={config.alpha} and segmentation_type={config.segmentation_type}")
         
         # Store results for each layer
         layer_results = {}
@@ -252,8 +249,8 @@ def visualize_samples_attention(model, dataset, sample_indices, output_dir, laye
             synapse_id = result['syn_info'].get('Var1', f'Sample_{sample_idx}')
             
             # Choose a subset of slices to display
-            n_slices = min(n_slices, result['original_img'].shape[0])
-            slice_indices = np.linspace(0, result['original_img'].shape[0] - 1, n_slices, dtype=int)
+            n_slices = min(n_slices, result['original_img'].shape[2])
+            slice_indices = np.linspace(0, result['original_img'].shape[2] - 1, n_slices, dtype=int)
             
             # Create figure with one row per slice
             n_cols = len(layers) + 1  # Original + each layer
@@ -267,8 +264,9 @@ def visualize_samples_attention(model, dataset, sample_indices, output_dir, laye
             # Display slices
             for slice_idx, slice_num in enumerate(slice_indices):
                 # Display original slice in first column
+                # This is the properly processed image with segmentation and alpha from the config
                 axes[slice_idx, 0].set_title(f"Original (Slice {slice_num})", fontsize=10)
-                axes[slice_idx, 0].imshow(result['original_img'][slice_num, 0], cmap='gray', vmin=0, vmax=1)
+                axes[slice_idx, 0].imshow(result['original_img'][0, 0, slice_num, :, :], cmap='gray', vmin=0, vmax=1)
                 axes[slice_idx, 0].axis('off')
                 
                 # Display attention maps for each layer
@@ -284,17 +282,19 @@ def visualize_samples_attention(model, dataset, sample_indices, output_dir, laye
                     cam_slice = cam[slice_num]
                     
                     # Upscale if needed to match original image dimensions
-                    if cam_slice.shape[0] != result['original_img'].shape[2] or cam_slice.shape[1] != result['original_img'].shape[3]:
+                    if cam_slice.shape[0] != result['original_img'].shape[3] or cam_slice.shape[1] != result['original_img'].shape[4]:
                         from scipy.ndimage import zoom
-                        zoom_factors = (result['original_img'].shape[2] / cam_slice.shape[0], 
-                                      result['original_img'].shape[3] / cam_slice.shape[1])
+                        zoom_factors = (result['original_img'].shape[3] / cam_slice.shape[0], 
+                                      result['original_img'].shape[4] / cam_slice.shape[1])
                         cam_slice = zoom(cam_slice, zoom_factors, order=1)
                     
                     # Create overlay with consistent normalization
                     ax = axes[slice_idx, col]
-                    # Force vmin=0, vmax=1 for consistent display
-                    ax.imshow(result['original_img'][slice_num, 0], cmap='gray', vmin=0, vmax=1)
-                    # For overlay, also ensure consistent color range
+                    
+                    # Display the original image (which already includes proper segmentation and alpha)
+                    ax.imshow(result['original_img'][0, 0, slice_num, :, :], cmap='gray', vmin=0, vmax=1)
+                    
+                    # Overlay the attention map - use slightly reduced alpha for better visualization
                     im = ax.imshow(cam_slice, cmap='jet', alpha=0.5, vmin=0, vmax=1)
                     ax.axis('off')
                     
@@ -304,12 +304,14 @@ def visualize_samples_attention(model, dataset, sample_indices, output_dir, laye
                         cax = divider.append_axes("right", size="5%", pad=0.05)
                         plt.colorbar(im, cax=cax)
             
-            # Add title with sample information
-            fig.suptitle(f"Multi-layer Attention Analysis - Sample: {synapse_id} (BBox: {bbox_name})", fontsize=16)
+            # Add title with sample information and config settings
+            alpha_value = config.alpha if hasattr(config, 'alpha') else 'unknown'
+            seg_type = config.segmentation_type if hasattr(config, 'segmentation_type') else 'unknown'
+            fig.suptitle(f"Multi-layer Attention Analysis - Sample: {synapse_id} (BBox: {bbox_name})\nSegmentation Type: {seg_type}, Alpha: {alpha_value}", fontsize=14)
             
             # Save figure for this sample
-            output_file = os.path.join(output_dir, f"attention_sample_{sample_idx}_bbox_{bbox_name}.png")
-            plt.tight_layout(rect=[0, 0, 1, 0.97])  # Make room for suptitle
+            output_file = os.path.join(output_dir, f"attention_sample_{sample_idx}_bbox_{bbox_name}_alpha{alpha_value}_seg{seg_type}.png")
+            plt.tight_layout(rect=[0, 0, 1, 0.95])  # Make room for suptitle
             plt.savefig(output_file, dpi=300, bbox_inches='tight')
             plt.close()
             
@@ -412,7 +414,7 @@ def main():
         alpha=config.alpha,
         normalize_across_volume=True  # Ensure volume-wide normalization
     )
-    print("Created dataset with normalize_across_volume=True")
+    print(f"Created dataset with normalize_across_volume=True, alpha={config.alpha}, segmentation_type={config.segmentation_type}")
     print(f"Dataset size: {len(dataset)} samples")
     
     # Further ensure that the dataloader uses volume-wide normalization
@@ -430,7 +432,6 @@ def main():
     # Define layers to analyze (early, middle, late)
     layers = ["features.3", "features.6", "features.9", "features.20", "features.27"]
     layer_names = ["Early (Layer 3)", "Early-Mid (Layer 6)", "Mid-Low (Layer 9)", "Mid-High (Layer 20)", "Late (Layer 27)"]
-    layer_name_map = dict(zip(layers, layer_names))
     
     # Determine which samples to process
     if args.specific_indices is not None:
@@ -441,81 +442,20 @@ def main():
         sample_indices = np.random.choice(len(dataset), min(args.n_samples, len(dataset)), replace=False)
         print(f"Generated random sample indices: {sample_indices}")
     
-    # Process each sample
-    for sample_idx in sample_indices:
-        if sample_idx >= len(dataset):
-            print(f"Warning: Sample index {sample_idx} exceeds dataset size ({len(dataset)}). Skipping.")
-            continue
-            
-        # Process this sample
-        result = process_single_sample(model, dataset, sample_idx, device, layers, layer_names)
-        
-        # Create visualization for this sample
-        bbox_name = result['bbox_name']
-        synapse_id = result['syn_info'].get('Var1', f'Sample_{sample_idx}')
-        
-        # Choose a subset of slices to display
-        n_slices = min(args.n_slices, result['original_img'].shape[0])
-        slice_indices = np.linspace(0, result['original_img'].shape[0] - 1, n_slices, dtype=int)
-        
-        # Create figure with one row per slice
-        n_cols = len(layers) + 1  # Original + each layer
-        
-        fig, axes = plt.subplots(n_slices, n_cols, figsize=(n_cols * 4, n_slices * 3))
-        
-        # If we only have one row, wrap in a 2D array for consistent indexing
-        if n_slices == 1:
-            axes = np.array([axes])
-        
-        # Display slices
-        for slice_idx, slice_num in enumerate(slice_indices):
-            # Display original slice in first column
-            axes[slice_idx, 0].set_title(f"Original (Slice {slice_num})", fontsize=10)
-            axes[slice_idx, 0].imshow(result['original_img'][slice_num, 0], cmap='gray', vmin=0, vmax=1)
-            axes[slice_idx, 0].axis('off')
-            
-            # Display attention maps for each layer
-            for col, layer in enumerate(layers, start=1):
-                cam = result['layer_results'][layer]
-                
-                # Get layer name for title (only first row)
-                if slice_idx == 0:
-                    axes[slice_idx, col].set_title(layer_name_map[layer], fontsize=10)
-                
-                # Get CAM for this slice
-                cam_slice = cam[slice_num]
-                
-                # Upscale if needed to match original image dimensions
-                if cam_slice.shape[0] != result['original_img'].shape[2] or cam_slice.shape[1] != result['original_img'].shape[3]:
-                    from scipy.ndimage import zoom
-                    zoom_factors = (result['original_img'].shape[2] / cam_slice.shape[0], 
-                                   result['original_img'].shape[3] / cam_slice.shape[1])
-                    cam_slice = zoom(cam_slice, zoom_factors, order=1)
-                
-                # Create overlay with consistent normalization
-                ax = axes[slice_idx, col]
-                # Force vmin=0, vmax=1 for consistent display
-                ax.imshow(result['original_img'][slice_num, 0], cmap='gray', vmin=0, vmax=1)
-                # For overlay, also ensure consistent color range
-                im = ax.imshow(cam_slice, cmap='jet', alpha=0.5, vmin=0, vmax=1)
-                ax.axis('off')
-                
-                # Add colorbar to last column of last row
-                if col == len(layers) and slice_idx == n_slices - 1:
-                    divider = make_axes_locatable(ax)
-                    cax = divider.append_axes("right", size="5%", pad=0.05)
-                    plt.colorbar(im, cax=cax)
-        
-        # Add title with sample information
-        fig.suptitle(f"Multi-layer Attention Analysis - Sample: {synapse_id} (BBox: {bbox_name})", fontsize=16)
-        
-        # Save figure for this sample
-        output_file = os.path.join(args.output_dir, f"attention_sample_{sample_idx}_bbox_{bbox_name}.png")
-        plt.tight_layout(rect=[0, 0, 1, 0.97])  # Make room for suptitle
-        plt.savefig(output_file, dpi=300, bbox_inches='tight')
-        plt.close()
-        
-        print(f"Attention map for sample {sample_idx} saved to {output_file}")
+    # Use the visualize_samples_attention function for consistent visualization
+    output_files = visualize_samples_attention(
+        model=model,
+        dataset=dataset,
+        sample_indices=sample_indices,
+        output_dir=args.output_dir,
+        layers=layers,
+        layer_names=layer_names,
+        n_slices=args.n_slices
+    )
+    
+    print(f"Processing complete. {len(output_files)} visualizations generated.")
+    
+    return output_files
 
 if __name__ == "__main__":
     main() 
