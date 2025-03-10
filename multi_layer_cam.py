@@ -26,19 +26,35 @@ def normalize_globally(array):
 
 # Define SimpleGradCAM class for attention visualization outside main for importing
 class SimpleGradCAM:
-    def __init__(self, model, layer_name):
+    def __init__(self, model, layer_identifier):
+        """
+        Initialize the SimpleGradCAM object
+        
+        Args:
+            model: The PyTorch model
+            layer_identifier: Either an integer layer index or a string layer name
+        """
         self.model = model
         self.model.eval()
         
         # Get the target layer
-        parts = layer_name.split('.')
-        target = self.model
-        for part in parts:
-            if part.isdigit():
-                target = target[int(part)]
+        if isinstance(layer_identifier, int):
+            # If it's an integer, assume it's a direct index
+            target = self.model
+            if hasattr(target, 'features') and layer_identifier < len(target.features):
+                target = target.features[layer_identifier]
             else:
-                target = getattr(target, part)
-                
+                raise ValueError(f"Layer index {layer_identifier} out of range")
+        else:
+            # If it's a string, parse it as a path
+            parts = layer_identifier.split('.')
+            target = self.model
+            for part in parts:
+                if part.isdigit():
+                    target = target[int(part)]
+                else:
+                    target = getattr(target, part)
+        
         self.target_layer = target
         self.activations = None
         self.gradients = None
@@ -114,78 +130,248 @@ def process_single_sample(model, dataset, sample_idx, device, layers, layer_name
     """Process a single sample and generate attention maps for all specified layers"""
     print(f"\nProcessing sample {sample_idx}...")
     
-    # Get the sample
-    pixel_values, syn_info, bbox_name = dataset[sample_idx]
-    print(f"Sample shape: {pixel_values.shape}, BBox: {bbox_name}")
-    
-    # Check if this is actually a different bounding box
-    bbox_info = f"Sample {sample_idx}: {syn_info.get('Var1', 'Unknown')} (BBox: {bbox_name})"
-    
-    # Convert to batch format and move to device
-    input_tensor = pixel_values.float().unsqueeze(0).to(device)
-    
-    # Double-check dimensions - the model expects [B, C, D, H, W]
-    if input_tensor.shape[1] != 1:  # If channels dimension is not 1
-        # Probably in format [B, D, C, H, W], need to permute
-        input_tensor = input_tensor.permute(0, 2, 1, 3, 4)
-    
-    print(f"Input tensor shape: {input_tensor.shape}")
-    
-    # Get original image for display and apply global normalization
-    original_img = pixel_values.cpu().numpy()
-    img_depth = original_img.shape[0]
-    
-    # Apply global normalization to original image to ensure consistent grayscale values
-    orig_min = np.min(original_img)
-    orig_max = np.max(original_img)
-    if orig_max > orig_min:
-        original_img = (original_img - orig_min) / (orig_max - orig_min)
-    print(f"Applied global normalization to original image: min={orig_min:.4f}, max={orig_max:.4f}")
-    
-    # Store results for each layer
-    layer_results = {}
-    
-    # Process each layer
-    for layer_name in layers:
-        print(f"\nProcessing layer: {layer_name}")
+    try:
+        # Get the sample
+        pixel_values, syn_info, bbox_name = dataset[sample_idx]
+        print(f"Sample shape: {pixel_values.shape}, BBox: {bbox_name}")
         
-        # Initialize Grad-CAM
-        grad_cam = SimpleGradCAM(model, layer_name)
+        # Check if this is actually a different bounding box
+        bbox_info = f"Sample {sample_idx}: {syn_info.get('Var1', 'Unknown')} (BBox: {bbox_name})"
         
-        # Generate CAM
-        cam = grad_cam.generate_cam(input_tensor)
-        print(f"Generated CAM with shape: {cam.shape}")
+        # Convert to batch format and move to device
+        input_tensor = pixel_values.float().unsqueeze(0).to(device)
         
-        # Remove hooks to prevent interference with next layer
-        grad_cam.remove_hooks()
+        # Double-check dimensions - the model expects [B, C, D, H, W]
+        if input_tensor.shape[1] != 1:  # If channels dimension is not 1
+            # Probably in format [B, D, C, H, W], need to permute
+            input_tensor = input_tensor.permute(0, 2, 1, 3, 4)
         
-        # Resize CAM to match original depth if needed
-        if cam.shape[0] != img_depth:
-            print(f"Resizing CAM from {cam.shape} to match original depth {img_depth}")
-            cam_resized = F.interpolate(
-                cam.unsqueeze(0).unsqueeze(0),
-                size=(img_depth, cam.shape[1], cam.shape[2]),
-                mode='trilinear',
-                align_corners=False
-            )
-            cam = cam_resized.squeeze(0).squeeze(0)
+        print(f"Input tensor shape: {input_tensor.shape}")
         
-        # Ensure consistency across slices after resizing
-        min_val = cam.min()
-        max_val = cam.max()
-        if max_val > min_val:
-            cam = (cam - min_val) / (max_val - min_val)
+        # Get original image for display and apply global normalization
+        original_img = pixel_values.cpu().numpy()
+        img_depth = original_img.shape[0]
         
-        # Store the results for this layer
-        layer_results[layer_name] = cam.cpu().numpy()
+        # Apply global normalization to original image to ensure consistent grayscale values
+        orig_min = np.min(original_img)
+        orig_max = np.max(original_img)
+        if orig_max > orig_min:
+            original_img = (original_img - orig_min) / (orig_max - orig_min)
+        print(f"Applied global normalization to original image: min={orig_min:.4f}, max={orig_max:.4f}")
+        
+        # Store results for each layer
+        layer_results = {}
+        
+        # Process each layer
+        for i, layer_idx in enumerate(layers):
+            # Get layer name if provided
+            layer_name = layer_names[i] if i < len(layer_names) else f"layer{layer_idx}"
+            print(f"\nProcessing layer: {layer_idx}")
+            
+            # Initialize Grad-CAM
+            grad_cam = SimpleGradCAM(model, layer_idx)
+            
+            # Generate CAM
+            cam = grad_cam.generate_cam(input_tensor)
+            print(f"Generated CAM with shape: {cam.shape}")
+            
+            # Remove hooks to prevent interference with next layer
+            grad_cam.remove_hooks()
+            
+            # Resize CAM to match original depth if needed
+            if cam.shape[0] != img_depth:
+                print(f"Resizing CAM from {cam.shape} to match original depth {img_depth}")
+                cam_resized = F.interpolate(
+                    cam.unsqueeze(0).unsqueeze(0),
+                    size=(img_depth, cam.shape[1], cam.shape[2]),
+                    mode='trilinear',
+                    align_corners=False
+                )
+                cam = cam_resized.squeeze(0).squeeze(0)
+            
+            # Ensure consistency across slices after resizing
+            min_val = cam.min()
+            max_val = cam.max()
+            if max_val > min_val:
+                cam = (cam - min_val) / (max_val - min_val)
+            
+            # Store the results for this layer
+            layer_results[layer_name] = cam.cpu().numpy()
+        
+        return {
+            'original_img': original_img,
+            'layer_results': layer_results,
+            'bbox_name': bbox_name,
+            'syn_info': syn_info,
+            'bbox_info': bbox_info
+        }
+    except Exception as e:
+        # Print the error and allow the caller to handle it
+        print(f"Error processing sample {sample_idx}: {str(e)}")
+        raise
+
+def visualize_samples_attention(model, dataset, sample_indices, output_dir, layers, layer_names, n_slices=4):
+    """
+    Visualizes attention maps for a set of samples.
     
-    return {
-        'original_img': original_img,
-        'layer_results': layer_results,
-        'bbox_name': bbox_name,
-        'syn_info': syn_info,
-        'bbox_info': bbox_info
-    }
+    Args:
+        model: The PyTorch model
+        dataset: The dataset containing the samples
+        sample_indices: List of sample indices to visualize
+        output_dir: Directory to save visualizations
+        layers: List of layer indices to visualize
+        layer_names: List of layer names corresponding to the indices
+        n_slices: Number of slices to visualize per sample
+        
+    Returns:
+        List of paths to saved visualizations
+    """
+    os.makedirs(output_dir, exist_ok=True)
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    
+    output_files = []
+    
+    # Create a mapping from layer numbers to readable names
+    layer_name_map = {}
+    for i, layer in enumerate(layers):
+        layer_name = layer_names[i] if i < len(layer_names) else f"Layer {layer}"
+        layer_name_map[layer] = layer_name
+    
+    # Process each sample
+    for sample_idx in sample_indices:
+        if sample_idx >= len(dataset):
+            print(f"Warning: Sample index {sample_idx} exceeds dataset size ({len(dataset)}). Skipping.")
+            continue
+        
+        try:
+            # Process this sample
+            result = process_single_sample(model, dataset, sample_idx, device, layers, layer_names)
+            
+            # Create visualization for this sample
+            bbox_name = result['bbox_name']
+            synapse_id = result['syn_info'].get('Var1', f'Sample_{sample_idx}')
+            
+            # Choose a subset of slices to display
+            n_slices = min(n_slices, result['original_img'].shape[0])
+            slice_indices = np.linspace(0, result['original_img'].shape[0] - 1, n_slices, dtype=int)
+            
+            # Create figure with one row per slice
+            n_cols = len(layers) + 1  # Original + each layer
+            
+            fig, axes = plt.subplots(n_slices, n_cols, figsize=(n_cols * 4, n_slices * 3))
+            
+            # If we only have one row, wrap in a 2D array for consistent indexing
+            if n_slices == 1:
+                axes = np.array([axes])
+            
+            # Display slices
+            for slice_idx, slice_num in enumerate(slice_indices):
+                # Display original slice in first column
+                axes[slice_idx, 0].set_title(f"Original (Slice {slice_num})", fontsize=10)
+                axes[slice_idx, 0].imshow(result['original_img'][slice_num, 0], cmap='gray', vmin=0, vmax=1)
+                axes[slice_idx, 0].axis('off')
+                
+                # Display attention maps for each layer
+                for col, layer_name in enumerate(result['layer_results'].keys(), start=1):
+                    cam = result['layer_results'][layer_name]
+                    
+                    # Get layer display name for title (only first row)
+                    if slice_idx == 0:
+                        display_name = layer_name_map.get(layer_name, layer_name)
+                        axes[slice_idx, col].set_title(display_name, fontsize=10)
+                    
+                    # Get CAM for this slice
+                    cam_slice = cam[slice_num]
+                    
+                    # Upscale if needed to match original image dimensions
+                    if cam_slice.shape[0] != result['original_img'].shape[2] or cam_slice.shape[1] != result['original_img'].shape[3]:
+                        from scipy.ndimage import zoom
+                        zoom_factors = (result['original_img'].shape[2] / cam_slice.shape[0], 
+                                      result['original_img'].shape[3] / cam_slice.shape[1])
+                        cam_slice = zoom(cam_slice, zoom_factors, order=1)
+                    
+                    # Create overlay with consistent normalization
+                    ax = axes[slice_idx, col]
+                    # Force vmin=0, vmax=1 for consistent display
+                    ax.imshow(result['original_img'][slice_num, 0], cmap='gray', vmin=0, vmax=1)
+                    # For overlay, also ensure consistent color range
+                    im = ax.imshow(cam_slice, cmap='jet', alpha=0.5, vmin=0, vmax=1)
+                    ax.axis('off')
+                    
+                    # Add colorbar to last column of last row
+                    if col == len(result['layer_results']) and slice_idx == n_slices - 1:
+                        divider = make_axes_locatable(ax)
+                        cax = divider.append_axes("right", size="5%", pad=0.05)
+                        plt.colorbar(im, cax=cax)
+            
+            # Add title with sample information
+            fig.suptitle(f"Multi-layer Attention Analysis - Sample: {synapse_id} (BBox: {bbox_name})", fontsize=16)
+            
+            # Save figure for this sample
+            output_file = os.path.join(output_dir, f"attention_sample_{sample_idx}_bbox_{bbox_name}.png")
+            plt.tight_layout(rect=[0, 0, 1, 0.97])  # Make room for suptitle
+            plt.savefig(output_file, dpi=300, bbox_inches='tight')
+            plt.close()
+            
+            print(f"Attention map for sample {sample_idx} saved to {output_file}")
+            output_files.append(output_file)
+            
+        except Exception as e:
+            print(f"Error processing sample {sample_idx}: {e}")
+            continue
+    
+    return output_files
+
+def visualize_cluster_attention(model, dataset, clusters_samples, output_dir, layers, layer_names, n_slices=3):
+    """
+    Visualizes attention maps for samples grouped by clusters.
+    
+    Args:
+        model: The PyTorch model
+        dataset: The dataset containing the samples
+        clusters_samples: Dictionary mapping cluster IDs to lists of sample indices
+        output_dir: Directory to save visualizations
+        layers: List of layer indices to visualize
+        layer_names: List of layer names corresponding to the indices
+        n_slices: Number of slices to visualize per sample
+        
+    Returns:
+        Dictionary mapping cluster IDs to lists of visualization paths
+    """
+    os.makedirs(output_dir, exist_ok=True)
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    
+    results = {}
+    
+    for cluster_id, samples in clusters_samples.items():
+        print(f"Processing cluster {cluster_id}...")
+        # Create a subdirectory for this cluster
+        cluster_dir = os.path.join(output_dir, f"cluster_{cluster_id}")
+        os.makedirs(cluster_dir, exist_ok=True)
+        
+        # Extract sample indices from DataFrame rows
+        sample_indices = []
+        for sample in samples:
+            try:
+                if hasattr(sample, 'name'):  # If it's a Series
+                    sample_indices.append(sample.name)
+                elif hasattr(sample, 'iloc'):  # If it's a DataFrame row
+                    sample_indices.append(sample.index[0])
+                else:  # Assume it's already an index
+                    sample_indices.append(sample)
+            except Exception as e:
+                print(f"Error extracting index from sample: {e}")
+                continue
+        
+        # Visualize samples for this cluster
+        output_files = visualize_samples_attention(
+            model, dataset, sample_indices, cluster_dir, 
+            layers, layer_names, n_slices
+        )
+        
+        results[cluster_id] = output_files
+    
+    return results
 
 def main():
     # Parse command line arguments

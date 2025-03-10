@@ -517,7 +517,7 @@ def find_random_samples_in_clusters(features_df, feature_cols, n_samples=2):
         n_samples: Number of samples to select per cluster
         
     Returns:
-        dict: Dictionary mapping cluster IDs to sample rows
+        dict: Dictionary mapping cluster IDs to lists of sample indices (integers)
     """
     if 'cluster' not in features_df.columns:
         print("No cluster information in features DataFrame")
@@ -528,13 +528,16 @@ def find_random_samples_in_clusters(features_df, feature_cols, n_samples=2):
         cluster_samples = features_df[features_df['cluster'] == cluster_id]
         if len(cluster_samples) > 0:
             if len(cluster_samples) <= n_samples:
-                selected_samples = cluster_samples
+                # Take all samples but return their indices
+                selected_indices = cluster_samples.index.tolist()
             else:
-                selected_indices = np.random.choice(len(cluster_samples), n_samples, replace=False)
-                selected_samples = cluster_samples.iloc[selected_indices]
+                # Randomly select n_samples indices
+                all_indices = cluster_samples.index.tolist()
+                selected_indices = np.random.choice(all_indices, n_samples, replace=False).tolist()
             
-            random_samples[cluster_id] = selected_samples
-    
+            # Store the indices as integers
+            random_samples[cluster_id] = [int(idx) for idx in selected_indices]
+            
     return random_samples
 
 def save_cluster_samples(dataset, random_samples, output_dir):
@@ -543,16 +546,15 @@ def save_cluster_samples(dataset, random_samples, output_dir):
     
     Args:
         dataset: SynapseDataset instance
-        random_samples: Dictionary mapping cluster IDs to sample rows
+        random_samples: Dictionary mapping cluster IDs to lists of sample indices (integers)
         output_dir: Directory to save results
     """
     # This is a placeholder function for saving sample visualizations
     # The actual implementation would depend on how you want to visualize the samples
     
-    for cluster_id, samples in random_samples.items():
-        # Implementation of cluster sample visualization would go here
-        # This is just a placeholder
-        print(f"Saving {len(samples)} sample visualizations for cluster {cluster_id}")
+    for cluster_id, indices in random_samples.items():
+        # Print the indices we're going to visualize
+        print(f"Saving {len(indices)} sample visualizations for cluster {cluster_id} (indices: {indices})")
 
 def VGG3D():
     """

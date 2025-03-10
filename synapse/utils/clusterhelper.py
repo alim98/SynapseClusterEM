@@ -8,38 +8,37 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 import plotly.express as px
 
-def load_and_cluster_features(csv_filepath, n_clusters=5, clustering_algorithm='KMeans', dbscan_eps=0.5, dbscan_min_samples=5):
+def load_and_cluster_features(csv_path, n_clusters=10, random_state=42):
     """
-    Load features from CSV and perform clustering using the specified algorithm
+    Load features from CSV and cluster them with KMeans.
     
     Args:
-        csv_filepath: Path to CSV file containing features
-        n_clusters: Number of clusters for KMeans (not used for DBSCAN)
-        clustering_algorithm: 'KMeans' or 'DBSCAN'
-        dbscan_eps: Epsilon parameter for DBSCAN (not used for KMeans)
-        dbscan_min_samples: Minimum samples parameter for DBSCAN (not used for KMeans)
+        csv_path: Path to the CSV file containing features
+        n_clusters: Number of clusters to create
+        random_state: Random seed for reproducibility
         
     Returns:
-        features_df: DataFrame with features and cluster assignments
-        clusterer: Clustering model (KMeans or DBSCAN)
+        features_df: DataFrame with cluster assignments
+        kmeans: Trained KMeans model
         feature_cols: List of feature column names
     """
-    features_df = pd.read_csv(csv_filepath)
-
+    # Load features from CSV
+    features_df = pd.read_csv(csv_path)
+    
+    # Get features from DataFrame
     feature_cols = [col for col in features_df.columns if col.startswith('feat_')]
     features = features_df[feature_cols].values
     
-    if clustering_algorithm == 'KMeans':
-        clusterer = KMeans(n_clusters=n_clusters, random_state=42)
-        features_df['cluster'] = clusterer.fit_predict(features)
-    else:  # DBSCAN
-        clusterer = DBSCAN(eps=dbscan_eps, min_samples=dbscan_min_samples)
-        features_df['cluster'] = clusterer.fit_predict(features)
-        
-        # DBSCAN assigns -1 to noise points, which can cause issues for visualization
-        # Let's assign noise points to cluster 999 for easier identification
-        features_df.loc[features_df['cluster'] == -1, 'cluster'] = 999
-
+    # Ensure n_clusters is less than or equal to n_samples
+    n_samples = features.shape[0]
+    if n_samples < n_clusters:
+        print(f"Warning: n_samples ({n_samples}) < n_clusters ({n_clusters}), reducing n_clusters to {max(2, n_samples // 2)}")
+        n_clusters = max(2, n_samples // 2)  # Use at most half the samples, but at least 2 clusters
+    
+    # Cluster features with KMeans
+    clusterer = KMeans(n_clusters=n_clusters, random_state=random_state)
+    features_df['cluster'] = clusterer.fit_predict(features)
+    
     return features_df, clusterer, feature_cols
 
 def find_random_samples_in_clusters(features_df, feature_cols, n_samples=4):
@@ -128,10 +127,34 @@ def find_closest_samples_in_clusters(features_df, feature_cols, n_samples=4):
 
     return closest_samples_per_cluster
 
-def apply_tsne(features_df, feature_cols, n_components=2):
+def apply_tsne(features_df, feature_cols, n_components=2, perplexity=30, random_state=42):
+    """
+    Apply t-SNE dimensionality reduction to features.
+    
+    Args:
+        features_df: DataFrame with features
+        feature_cols: List of feature column names
+        n_components: Number of dimensions for t-SNE (default: 2)
+        perplexity: Perplexity parameter for t-SNE (default: 30)
+        random_state: Random seed for reproducibility
+        
+    Returns:
+        tsne_results: t-SNE embedding
+    """
     features = features_df[feature_cols].values
-    tsne = TSNE(n_components=n_components, random_state=42)
+    
+    # Adjust perplexity for small datasets
+    n_samples = features.shape[0]
+    if n_samples <= perplexity:
+        # For small datasets, set perplexity to max 0.5 * (n_samples - 1)
+        adjusted_perplexity = max(1, min(30, int(0.5 * (n_samples - 1))))
+        print(f"Warning: n_samples ({n_samples}) <= perplexity ({perplexity}), reducing perplexity to {adjusted_perplexity}")
+        perplexity = adjusted_perplexity
+    
+    # Initialize and apply t-SNE
+    tsne = TSNE(n_components=n_components, perplexity=perplexity, random_state=random_state)
     tsne_results = tsne.fit_transform(features)
+    
     return tsne_results
 
 def plot_tsne(features_df, tsne_results_2d, tsne_results_3d, kmeans, color_mapping):

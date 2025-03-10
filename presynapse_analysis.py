@@ -433,16 +433,41 @@ def create_cluster_colored_umap(features_df, output_dir):
     # Get all unique clusters
     unique_clusters = features_df['cluster'].unique()
     
-    # Create a scatter plot with points colored by cluster
+    # Add a categorical cluster column for coloring
+    features_df = features_df.copy()  # Create a copy to avoid modifying the original
+    features_df['cluster_str'] = 'Cluster ' + features_df['cluster'].astype(str)
+    
+    # Create a scatter plot with points colored by cluster - use a categorical color mapping
+    # Instead of a continuous colormap like 'viridis', use a list of distinct colors
+    from matplotlib.colors import ListedColormap
+    import numpy as np
+    
+    # Create a colormap with distinct colors for each cluster
+    num_clusters = len(unique_clusters)
+    # Use a qualitative colormap with distinct colors 
+    # We'll use tab10, tab20, or Set3 depending on the number of clusters
+    if num_clusters <= 10:
+        cmap_name = 'tab10'
+    elif num_clusters <= 20:
+        cmap_name = 'tab20'
+    else:
+        cmap_name = 'Set3'
+        
+    # Create a scatter plot with categorical colors
     scatter = plt.scatter(
         features_df['umap_x'],
         features_df['umap_y'],
-        c=features_df['cluster'],
-        cmap='viridis',
+        c=features_df['cluster'].astype('category').cat.codes,  # Use category codes for distinct coloring
+        cmap=cmap_name,
         s=80,
         alpha=0.8,
         edgecolors='black'
     )
+    
+    # Add a legend with cluster names
+    handles, labels = scatter.legend_elements()
+    legend_labels = [f'Cluster {c}' for c in unique_clusters]
+    plt.legend(handles, legend_labels, title="Clusters", loc='best')
     
     # Add annotations for cluster centers
     for cluster_id in unique_clusters:
@@ -459,24 +484,65 @@ def create_cluster_colored_umap(features_df, output_dir):
             weight='bold',
             ha='center',
             va='center',
-            bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="gray", alpha=0.7)
+            bbox=dict(facecolor='white', alpha=0.7, edgecolor='black', boxstyle='round,pad=0.5')
         )
-    
-    plt.title('UMAP Visualization Colored by Cluster')
-    plt.xlabel('UMAP Dimension 1', fontsize=12)
-    plt.ylabel('UMAP Dimension 2', fontsize=12)
-    
-    # Add colorbar
-    cbar = plt.colorbar(scatter)
-    cbar.set_label('Cluster ID', fontsize=12)
-    
+        
+    plt.xlabel('UMAP Dimension 1', fontsize=14)
+    plt.ylabel('UMAP Dimension 2', fontsize=14)
+    plt.title('UMAP Visualization Colored by Cluster', fontsize=16)
     plt.tight_layout()
     
-    output_path = os.path.join(output_dir, "umap_cluster_colored.png")
-    plt.savefig(output_path, dpi=300, bbox_inches='tight')
+    # Add a grid for better readability
+    plt.grid(True, linestyle='--', alpha=0.5)
+    
+    # Save the figure
+    plt.savefig(os.path.join(output_dir, 'umap_cluster_colored.png'), dpi=300, bbox_inches='tight')
+    
+    # Also create an interactive plotly version
+    from plotly.offline import plot
+    import plotly.express as px
+    
+    # Create interactive plot with categorical colors for clusters
+    features_df_for_plotly = features_df.copy()
+    features_df_for_plotly['cluster_str'] = 'Cluster ' + features_df_for_plotly['cluster'].astype(str)
+    
+    fig = px.scatter(
+        features_df_for_plotly, 
+        x='umap_x', 
+        y='umap_y',
+        color='cluster_str',  # Use categorical string version for coloring
+        hover_data=['bbox_name'],
+        title='Interactive UMAP Visualization Colored by Cluster',
+        color_discrete_sequence=px.colors.qualitative.Bold  # Use a qualitative color scale
+    )
+    
+    # Set point size and opacity
+    fig.update_traces(marker=dict(size=10, opacity=0.8))
+    
+    # Add cluster center labels
+    for cluster_id in unique_clusters:
+        cluster_points = features_df[features_df['cluster'] == cluster_id]
+        centroid_x = cluster_points['umap_x'].mean()
+        centroid_y = cluster_points['umap_y'].mean()
+        
+        fig.add_annotation(
+            x=centroid_x,
+            y=centroid_y,
+            text=f'Cluster {cluster_id}',
+            showarrow=False,
+            font=dict(size=14, color='black'),
+            bgcolor='white',
+            bordercolor='black',
+            borderwidth=1,
+            borderpad=4
+        )
+    
+    # Save as interactive HTML
+    plot(fig, filename=os.path.join(output_dir, 'umap_cluster_colored.html'), auto_open=False)
+    
     plt.close()
     
-    print(f"Cluster colored UMAP visualization saved to {output_path}")
+    return features_df
 
 
 def create_interactive_umap(features_df, presynapse_groups, output_dir):

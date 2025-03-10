@@ -1,0 +1,911 @@
+
+--- Starting pipeline run at 2025-03-09 21:17:15 ---
+Arguments: Namespace(seg_type=1, alpha=1.0, num_samples=4, attention_layer=20, output_dir='results', csv_output_dir='csv_outputs', skip_feature_extraction=False, skip_clustering=False, skip_visualization=False, skip_presynapse_analysis=False, only_vesicle_analysis=True)
+Using csv_output_dir: csv_outputs
+Created directory: results
+Created directory: results\features_seg1_alpha1.0
+Created directory: results\clustering_results_seg1_alpha1.0
+Created directory: results\visualizations_seg1_alpha1.0
+Created directory: results\sample_visualizations_seg1_alpha1.0
+Created directory: results\presynapse_analysis_seg1_alpha1.0
+Created directory: results\vesicle_analysis_seg1_alpha1.0
+Running only vesicle size analysis on existing results...
+Searching for feature files in these locations:
+  - results\clustering_results_seg1_alpha1.0\clustered_features.csv (exists: False)
+  - csv_outputs\features_seg1_alpha1.0\features_seg1_alpha1.0_0.csv (exists: False)
+  - csv_outputs\features_seg1_alpha1.0_0.csv (exists: False)
+  - csv_outputs\seg1_alpha1.0\clustered_features.csv (exists: False)
+  - csv_outputs\seg1_alpha1.0_0\clustered_features.csv (exists: False)
+Error: Could not find features or clustered features in any of these locations:
+  - results\clustering_results_seg1_alpha1.0\clustered_features.csv
+  - csv_outputs\features_seg1_alpha1.0\features_seg1_alpha1.0_0.csv
+  - csv_outputs\features_seg1_alpha1.0_0.csv
+  - csv_outputs\seg1_alpha1.0\clustered_features.csv
+  - csv_outputs\seg1_alpha1.0_0\clustered_features.csv
+
+--- Starting pipeline run at 2025-03-09 21:26:06 ---
+Error in pipeline: 'SynapseConfig' object has no attribute 'parser'
+Traceback (most recent call last):
+  File "C:\Users\alim9\Documents\synapse2\run_synapse_pipeline.py", line 261, in <module>
+    main()
+  File "C:\Users\alim9\Documents\synapse2\run_synapse_pipeline.py", line 64, in main
+    configure_pipeline_args()
+  File "C:\Users\alim9\Documents\synapse2\run_synapse_pipeline.py", line 43, in configure_pipeline_args
+    parser = config.parser
+             ^^^^^^^^^^^^^
+AttributeError: 'SynapseConfig' object has no attribute 'parser'
+
+
+--- Starting pipeline run at 2025-03-09 21:26:37 ---
+Using config with:
+  seg_type: 10
+  alpha: 1.0
+  csv_output_dir: results/csv_outputs
+  skip_feature_extraction: False
+  skip_clustering: False
+  only_vesicle_analysis: False
+Created directory: results
+Created directory: results\features_seg10_alpha1.0
+Created directory: results\clustering_results_seg10_alpha1.0
+Created directory: results\visualizations_seg10_alpha1.0
+Created directory: results\sample_visualizations_seg10_alpha1.0
+Created directory: results\presynapse_analysis_seg10_alpha1.0
+Created directory: results\vesicle_analysis_seg10_alpha1.0
+Running synapse analysis pipeline with seg_type=10, alpha=1.0
+Starting data loading...
+Starting model loading...
+Starting feature extraction...
+
+--- Starting pipeline run at 2025-03-09 22:54:48 ---
+Using config with:
+  seg_type: 10
+  alpha: 1.0
+  csv_output_dir: results/csv_outputs
+  skip_feature_extraction: False
+  skip_clustering: False
+  only_vesicle_analysis: True
+Created directory: results
+Created directory: results\features_seg10_alpha1.0
+Created directory: results\clustering_results_seg10_alpha1.0
+Created directory: results\visualizations_seg10_alpha1.0
+Created directory: results\sample_visualizations_seg10_alpha1.0
+Created directory: results\presynapse_analysis_seg10_alpha1.0
+Created directory: results\vesicle_analysis_seg10_alpha1.0
+Running only vesicle size analysis on existing results...
+Searching for feature files in these locations:
+  - results\clustering_results_seg10_alpha1.0\clustered_features.csv (exists: False)
+  - csv_outputs\features_seg10_alpha1.0\features_seg10_alpha1.0_0.csv (exists: False)
+  - csv_outputs\features_seg1_alpha1.0\features_seg1_alpha1_0.csv (exists: True)
+  - csv_outputs\features_seg10_alpha1.0_0.csv (exists: False)
+  - csv_outputs\seg10_alpha1.0\clustered_features.csv (exists: False)
+  - csv_outputs\seg10_alpha1.0_0\clustered_features.csv (exists: False)
+Found features at csv_outputs\features_seg1_alpha1.0\features_seg1_alpha1_0.csv
+Loaded 58 rows of feature data
+Feature columns: ['bbox', 'Var1', 'central_coord_1', 'central_coord_2', 'central_coord_3', 'side_1_coord_1', 'side_1_coord_2', 'side_1_coord_3', 'side_2_coord_1', 'side_2_coord_2', 'side_2_coord_3', 'bbox_name', 'feat_1', 'feat_2', 'feat_3', 'feat_4', 'feat_5', 'feat_6', 'feat_7', 'feat_8', 'feat_9', 'feat_10', 'feat_11', 'feat_12', 'feat_13', 'feat_14', 'feat_15', 'feat_16', 'feat_17', 'feat_18', 'feat_19', 'feat_20', 'feat_21', 'feat_22', 'feat_23', 'feat_24', 'feat_25', 'feat_26', 'feat_27', 'feat_28', 'feat_29', 'feat_30', 'feat_31', 'feat_32', 'feat_33', 'feat_34', 'feat_35', 'feat_36', 'feat_37', 'feat_38', 'feat_39', 'feat_40', 'feat_41', 'feat_42', 'feat_43', 'feat_44', 'feat_45', 'feat_46', 'feat_47', 'feat_48', 'feat_49', 'feat_50', 'feat_51', 'feat_52', 'feat_53', 'feat_54', 'feat_55', 'feat_56', 'feat_57', 'feat_58', 'feat_59', 'feat_60', 'feat_61', 'feat_62', 'feat_63', 'feat_64', 'feat_65', 'feat_66', 'feat_67', 'feat_68', 'feat_69', 'feat_70', 'feat_71', 'feat_72', 'feat_73', 'feat_74', 'feat_75', 'feat_76', 'feat_77', 'feat_78', 'feat_79', 'feat_80', 'feat_81', 'feat_82', 'feat_83', 'feat_84', 'feat_85', 'feat_86', 'feat_87', 'feat_88', 'feat_89', 'feat_90', 'feat_91', 'feat_92', 'feat_93', 'feat_94', 'feat_95', 'feat_96', 'feat_97', 'feat_98', 'feat_99', 'feat_100', 'feat_101', 'feat_102', 'feat_103', 'feat_104', 'feat_105', 'feat_106', 'feat_107', 'feat_108', 'feat_109', 'feat_110', 'feat_111', 'feat_112', 'feat_113', 'feat_114', 'feat_115', 'feat_116', 'feat_117', 'feat_118', 'feat_119', 'feat_120', 'feat_121', 'feat_122', 'feat_123', 'feat_124', 'feat_125', 'feat_126', 'feat_127', 'feat_128', 'feat_129', 'feat_130', 'feat_131', 'feat_132', 'feat_133', 'feat_134', 'feat_135', 'feat_136', 'feat_137', 'feat_138', 'feat_139', 'feat_140', 'feat_141', 'feat_142', 'feat_143', 'feat_144', 'feat_145', 'feat_146', 'feat_147', 'feat_148', 'feat_149', 'feat_150', 'feat_151', 'feat_152', 'feat_153', 'feat_154', 'feat_155', 'feat_156', 'feat_157', 'feat_158', 'feat_159', 'feat_160', 'feat_161', 'feat_162', 'feat_163', 'feat_164', 'feat_165', 'feat_166', 'feat_167', 'feat_168', 'feat_169', 'feat_170', 'feat_171', 'feat_172', 'feat_173', 'feat_174', 'feat_175', 'feat_176', 'feat_177', 'feat_178', 'feat_179', 'feat_180', 'feat_181', 'feat_182', 'feat_183', 'feat_184', 'feat_185', 'feat_186', 'feat_187', 'feat_188', 'feat_189', 'feat_190', 'feat_191', 'feat_192', 'umap_x', 'umap_y', 'segmentation_type', 'alpha']
+Features don't have cluster assignments. Running clustering...
+Found 0 vesicle CSV files
+Loading data for vesicle size calculation...
+Creating UMAP with vesicle sizes...
+Analyzing vesicle sizes by cluster...
+Error in pipeline: `dataset` input should have multiple elements.
+Traceback (most recent call last):
+  File "C:\Users\alim9\Documents\synapse2\run_synapse_pipeline.py", line 263, in <module>
+    main()
+  File "C:\Users\alim9\Documents\synapse2\run_synapse_pipeline.py", line 168, in main
+    analyze_vesicle_sizes_by_cluster(merged_df, vesicle_output_dir)
+  File "C:\Users\alim9\Documents\synapse2\vesicle_size_visualizer.py", line 437, in analyze_vesicle_sizes_by_cluster
+    kernel = gaussian_kde(data)
+             ^^^^^^^^^^^^^^^^^^
+  File "C:\Users\alim9\AppData\Local\Programs\Python\Python312\Lib\site-packages\scipy\stats\_kde.py", line 202, in __init__
+    raise ValueError("`dataset` input should have multiple elements.")
+ValueError: `dataset` input should have multiple elements.
+
+
+--- Starting pipeline run at 2025-03-09 22:56:19 ---
+Using config with:
+  seg_type: 10
+  alpha: 1.0
+  csv_output_dir: results/csv_outputs
+  skip_feature_extraction: False
+  skip_clustering: False
+  only_vesicle_analysis: True
+Created directory: results
+Created directory: results\features_seg10_alpha1.0
+Created directory: results\clustering_results_seg10_alpha1.0
+Created directory: results\visualizations_seg10_alpha1.0
+Created directory: results\sample_visualizations_seg10_alpha1.0
+Created directory: results\presynapse_analysis_seg10_alpha1.0
+Created directory: results\vesicle_analysis_seg10_alpha1.0
+Running only vesicle size analysis on existing results...
+Searching for feature files in these locations:
+  - results\clustering_results_seg10_alpha1.0\clustered_features.csv (exists: True)
+  - csv_outputs\features_seg10_alpha1.0\features_seg10_alpha1.0_0.csv (exists: False)
+  - csv_outputs\features_seg1_alpha1.0\features_seg1_alpha1_0.csv (exists: True)
+  - csv_outputs\features_seg10_alpha1.0_0.csv (exists: False)
+  - csv_outputs\seg10_alpha1.0\clustered_features.csv (exists: False)
+  - csv_outputs\seg10_alpha1.0_0\clustered_features.csv (exists: False)
+Found features at results\clustering_results_seg10_alpha1.0\clustered_features.csv
+Loaded 58 rows of feature data
+Feature columns: ['bbox', 'Var1', 'central_coord_1', 'central_coord_2', 'central_coord_3', 'side_1_coord_1', 'side_1_coord_2', 'side_1_coord_3', 'side_2_coord_1', 'side_2_coord_2', 'side_2_coord_3', 'bbox_name', 'feat_1', 'feat_2', 'feat_3', 'feat_4', 'feat_5', 'feat_6', 'feat_7', 'feat_8', 'feat_9', 'feat_10', 'feat_11', 'feat_12', 'feat_13', 'feat_14', 'feat_15', 'feat_16', 'feat_17', 'feat_18', 'feat_19', 'feat_20', 'feat_21', 'feat_22', 'feat_23', 'feat_24', 'feat_25', 'feat_26', 'feat_27', 'feat_28', 'feat_29', 'feat_30', 'feat_31', 'feat_32', 'feat_33', 'feat_34', 'feat_35', 'feat_36', 'feat_37', 'feat_38', 'feat_39', 'feat_40', 'feat_41', 'feat_42', 'feat_43', 'feat_44', 'feat_45', 'feat_46', 'feat_47', 'feat_48', 'feat_49', 'feat_50', 'feat_51', 'feat_52', 'feat_53', 'feat_54', 'feat_55', 'feat_56', 'feat_57', 'feat_58', 'feat_59', 'feat_60', 'feat_61', 'feat_62', 'feat_63', 'feat_64', 'feat_65', 'feat_66', 'feat_67', 'feat_68', 'feat_69', 'feat_70', 'feat_71', 'feat_72', 'feat_73', 'feat_74', 'feat_75', 'feat_76', 'feat_77', 'feat_78', 'feat_79', 'feat_80', 'feat_81', 'feat_82', 'feat_83', 'feat_84', 'feat_85', 'feat_86', 'feat_87', 'feat_88', 'feat_89', 'feat_90', 'feat_91', 'feat_92', 'feat_93', 'feat_94', 'feat_95', 'feat_96', 'feat_97', 'feat_98', 'feat_99', 'feat_100', 'feat_101', 'feat_102', 'feat_103', 'feat_104', 'feat_105', 'feat_106', 'feat_107', 'feat_108', 'feat_109', 'feat_110', 'feat_111', 'feat_112', 'feat_113', 'feat_114', 'feat_115', 'feat_116', 'feat_117', 'feat_118', 'feat_119', 'feat_120', 'feat_121', 'feat_122', 'feat_123', 'feat_124', 'feat_125', 'feat_126', 'feat_127', 'feat_128', 'feat_129', 'feat_130', 'feat_131', 'feat_132', 'feat_133', 'feat_134', 'feat_135', 'feat_136', 'feat_137', 'feat_138', 'feat_139', 'feat_140', 'feat_141', 'feat_142', 'feat_143', 'feat_144', 'feat_145', 'feat_146', 'feat_147', 'feat_148', 'feat_149', 'feat_150', 'feat_151', 'feat_152', 'feat_153', 'feat_154', 'feat_155', 'feat_156', 'feat_157', 'feat_158', 'feat_159', 'feat_160', 'feat_161', 'feat_162', 'feat_163', 'feat_164', 'feat_165', 'feat_166', 'feat_167', 'feat_168', 'feat_169', 'feat_170', 'feat_171', 'feat_172', 'feat_173', 'feat_174', 'feat_175', 'feat_176', 'feat_177', 'feat_178', 'feat_179', 'feat_180', 'feat_181', 'feat_182', 'feat_183', 'feat_184', 'feat_185', 'feat_186', 'feat_187', 'feat_188', 'feat_189', 'feat_190', 'feat_191', 'feat_192', 'umap_x', 'umap_y', 'segmentation_type', 'alpha', 'umap_1', 'umap_2', 'cluster']
+Found 1 vesicle CSV files
+Loaded 58 rows of vesicle data
+Creating UMAP with vesicle sizes...
+Analyzing vesicle sizes by cluster...
+Analyzing bounding box distribution in clusters...
+Vesicle analysis completed. Results saved to results\vesicle_analysis_seg10_alpha1.0
+
+--- Starting pipeline run at 2025-03-10 09:57:14 ---
+Using config with:
+  seg_type: 10
+  alpha: 1.0
+  csv_output_dir: results/csv_outputs
+  skip_feature_extraction: False
+  skip_clustering: False
+  only_vesicle_analysis: False
+Created directory: results
+Created directory: results\features_seg10_alpha1.0
+Created directory: results\clustering_results_seg10_alpha1.0
+Created directory: results\visualizations_seg10_alpha1.0
+Created directory: results\sample_visualizations_seg10_alpha1.0
+Created directory: results\presynapse_analysis_seg10_alpha1.0
+Created directory: results\vesicle_analysis_seg10_alpha1.0
+Running synapse analysis pipeline with seg_type=10, alpha=1.0
+Starting data loading...
+Starting model loading...
+Starting feature extraction...
+Starting clustering...
+Starting visualizations...
+Error in pipeline: Cannot index by location index with a non-integer key
+Traceback (most recent call last):
+  File "C:\Users\alim9\Documents\synapse2\run_synapse_pipeline.py", line 263, in <module>
+    main()
+  File "C:\Users\alim9\Documents\synapse2\run_synapse_pipeline.py", line 226, in main
+    pipeline.create_cluster_sample_visualizations(
+  File "C:\Users\alim9\Documents\synapse2\synapse_pipeline.py", line 220, in create_cluster_sample_visualizations
+    process_single_sample(
+  File "C:\Users\alim9\Documents\synapse2\multi_layer_cam.py", line 118, in process_single_sample
+    pixel_values, syn_info, bbox_name = dataset[sample_idx]
+                                        ~~~~~~~^^^^^^^^^^^^
+  File "C:\Users\alim9\Documents\synapse2\synapse\data\dataset.py", line 29, in __getitem__
+    syn_info = self.synapse_df.iloc[idx]
+               ~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "C:\Users\alim9\AppData\Local\Programs\Python\Python312\Lib\site-packages\pandas\core\indexing.py", line 1191, in __getitem__
+    return self._getitem_axis(maybe_callable, axis=axis)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\alim9\AppData\Local\Programs\Python\Python312\Lib\site-packages\pandas\core\indexing.py", line 1749, in _getitem_axis
+    raise TypeError("Cannot index by location index with a non-integer key")
+TypeError: Cannot index by location index with a non-integer key
+
+
+--- Starting pipeline run at 2025-03-10 10:06:06 ---
+Using config with:
+  seg_type: 10
+  alpha: 1.0
+  csv_output_dir: results/csv_outputs
+  skip_feature_extraction: False
+  skip_clustering: False
+  only_vesicle_analysis: False
+Created directory: results
+Created directory: results\features_seg10_alpha1.0
+Created directory: results\clustering_results_seg10_alpha1.0
+Created directory: results\visualizations_seg10_alpha1.0
+Created directory: results\sample_visualizations_seg10_alpha1.0
+Created directory: results\presynapse_analysis_seg10_alpha1.0
+Created directory: results\vesicle_analysis_seg10_alpha1.0
+Running synapse analysis pipeline with seg_type=10, alpha=1.0
+Starting data loading...
+Starting model loading...
+Starting feature extraction...
+Starting clustering...
+Starting visualizations...
+Starting presynapse analysis...
+Starting vesicle size analysis...
+Analyzing bounding box distribution in clusters...
+Pipeline completed successfully!
+Results saved to results
+--- Pipeline run completed at 2025-03-10 10:09:01 ---
+
+
+--- Starting pipeline run at 2025-03-10 10:18:14 ---
+Using config with:
+  seg_type: 10
+  alpha: 1.0
+  csv_output_dir: results/csv_outputs
+  skip_feature_extraction: False
+  skip_clustering: False
+  only_vesicle_analysis: False
+Created directory: results
+Created directory: results\features_seg10_alpha1.0
+Created directory: results\clustering_results_seg10_alpha1.0
+Created directory: results\visualizations_seg10_alpha1.0
+Created directory: results\sample_visualizations_seg10_alpha1.0
+Created directory: results\presynapse_analysis_seg10_alpha1.0
+Created directory: results\vesicle_analysis_seg10_alpha1.0
+Running synapse analysis pipeline with seg_type=10, alpha=1.0
+Starting data loading...
+Starting model loading...
+Starting feature extraction...
+Starting clustering...
+Starting visualizations...
+Starting presynapse analysis...
+Starting vesicle size analysis...
+Analyzing bounding box distribution in clusters...
+Pipeline completed successfully!
+Results saved to results
+--- Pipeline run completed at 2025-03-10 10:20:50 ---
+
+
+--- Starting pipeline run at 2025-03-10 10:25:30 ---
+Using config with:
+  seg_type: 10
+  alpha: 1.0
+  csv_output_dir: results/csv_outputs
+  skip_feature_extraction: False
+  skip_clustering: False
+  only_vesicle_analysis: False
+Created directory: results
+Created directory: results\features_seg10_alpha1.0
+Created directory: results\clustering_results_seg10_alpha1.0
+Created directory: results\visualizations_seg10_alpha1.0
+Created directory: results\sample_visualizations_seg10_alpha1.0
+Created directory: results\presynapse_analysis_seg10_alpha1.0
+Created directory: results\vesicle_analysis_seg10_alpha1.0
+Running synapse analysis pipeline with seg_type=10, alpha=1.0
+Starting data loading...
+Starting model loading...
+Starting feature extraction...
+Starting clustering...
+Error in pipeline: n_samples=8 should be >= n_clusters=10.
+Traceback (most recent call last):
+  File "C:\Users\alim9\Documents\synapse2\run_synapse_pipeline.py", line 263, in <module>
+    main()
+  File "C:\Users\alim9\Documents\synapse2\run_synapse_pipeline.py", line 208, in main
+    pipeline.cluster_features(clustering_output_dir)
+  File "C:\Users\alim9\Documents\synapse2\synapse_pipeline.py", line 152, in cluster_features
+    result = run_clustering_analysis(self.features_df, output_dir)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\alim9\Documents\synapse2\inference.py", line 454, in run_clustering_analysis
+    features_df['cluster'] = clusterer.fit_predict(features_df[feature_cols])
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\alim9\AppData\Local\Programs\Python\Python312\Lib\site-packages\sklearn\cluster\_kmeans.py", line 1064, in fit_predict
+    return self.fit(X, sample_weight=sample_weight).labels_
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\alim9\AppData\Local\Programs\Python\Python312\Lib\site-packages\sklearn\base.py", line 1389, in wrapper
+    return fit_method(estimator, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\alim9\AppData\Local\Programs\Python\Python312\Lib\site-packages\sklearn\cluster\_kmeans.py", line 1464, in fit
+    self._check_params_vs_input(X)
+  File "C:\Users\alim9\AppData\Local\Programs\Python\Python312\Lib\site-packages\sklearn\cluster\_kmeans.py", line 1404, in _check_params_vs_input
+    super()._check_params_vs_input(X, default_n_init=10)
+  File "C:\Users\alim9\AppData\Local\Programs\Python\Python312\Lib\site-packages\sklearn\cluster\_kmeans.py", line 871, in _check_params_vs_input
+    raise ValueError(
+ValueError: n_samples=8 should be >= n_clusters=10.
+
+
+--- Starting pipeline run at 2025-03-10 10:26:53 ---
+Using config with:
+  seg_type: 10
+  alpha: 1.0
+  csv_output_dir: results/csv_outputs
+  skip_feature_extraction: False
+  skip_clustering: False
+  only_vesicle_analysis: False
+Created directory: results
+Created directory: results\features_seg10_alpha1.0
+Created directory: results\clustering_results_seg10_alpha1.0
+Created directory: results\visualizations_seg10_alpha1.0
+Created directory: results\sample_visualizations_seg10_alpha1.0
+Created directory: results\presynapse_analysis_seg10_alpha1.0
+Created directory: results\vesicle_analysis_seg10_alpha1.0
+Running synapse analysis pipeline with seg_type=10, alpha=1.0
+Starting data loading...
+Starting model loading...
+Starting feature extraction...
+
+--- Starting pipeline run at 2025-03-10 10:27:25 ---
+Using config with:
+  seg_type: 10
+  alpha: 1.0
+  csv_output_dir: results/csv_outputs
+  skip_feature_extraction: False
+  skip_clustering: False
+  only_vesicle_analysis: False
+Created directory: results
+Created directory: results\features_seg10_alpha1.0
+Created directory: results\clustering_results_seg10_alpha1.0
+Created directory: results\visualizations_seg10_alpha1.0
+Created directory: results\sample_visualizations_seg10_alpha1.0
+Created directory: results\presynapse_analysis_seg10_alpha1.0
+Created directory: results\vesicle_analysis_seg10_alpha1.0
+Running synapse analysis pipeline with seg_type=10, alpha=1.0
+Starting data loading...
+Starting clustering...
+Error in pipeline: perplexity must be less than n_samples
+Traceback (most recent call last):
+  File "C:\Users\alim9\Documents\synapse2\run_synapse_pipeline.py", line 263, in <module>
+    main()
+  File "C:\Users\alim9\Documents\synapse2\run_synapse_pipeline.py", line 208, in main
+    pipeline.cluster_features(clustering_output_dir)
+  File "C:\Users\alim9\Documents\synapse2\synapse_pipeline.py", line 152, in cluster_features
+    result = run_clustering_analysis(self.features_df, output_dir)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\alim9\Documents\synapse2\inference.py", line 468, in run_clustering_analysis
+    tsne_results_2d = apply_tsne(features_df, feature_cols, 2)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\alim9\Documents\synapse2\synapse\utils\clusterhelper.py", line 134, in apply_tsne
+    tsne_results = tsne.fit_transform(features)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\alim9\AppData\Local\Programs\Python\Python312\Lib\site-packages\sklearn\utils\_set_output.py", line 319, in wrapped
+    data_to_wrap = f(self, X, *args, **kwargs)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\alim9\AppData\Local\Programs\Python\Python312\Lib\site-packages\sklearn\base.py", line 1389, in wrapper
+    return fit_method(estimator, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\alim9\AppData\Local\Programs\Python\Python312\Lib\site-packages\sklearn\manifold\_t_sne.py", line 1177, in fit_transform
+    self._check_params_vs_input(X)
+  File "C:\Users\alim9\AppData\Local\Programs\Python\Python312\Lib\site-packages\sklearn\manifold\_t_sne.py", line 862, in _check_params_vs_input
+    raise ValueError("perplexity must be less than n_samples")
+ValueError: perplexity must be less than n_samples
+
+Starting model loading...
+Starting feature extraction...
+Starting clustering...
+Error in pipeline: perplexity must be less than n_samples
+Traceback (most recent call last):
+  File "C:\Users\alim9\Documents\synapse2\run_synapse_pipeline.py", line 263, in <module>
+    main()
+  File "C:\Users\alim9\Documents\synapse2\run_synapse_pipeline.py", line 208, in main
+    pipeline.cluster_features(clustering_output_dir)
+  File "C:\Users\alim9\Documents\synapse2\synapse_pipeline.py", line 152, in cluster_features
+    result = run_clustering_analysis(self.features_df, output_dir)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\alim9\Documents\synapse2\inference.py", line 468, in run_clustering_analysis
+    tsne_results_2d = apply_tsne(features_df, feature_cols, 2)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\alim9\Documents\synapse2\synapse\utils\clusterhelper.py", line 134, in apply_tsne
+    tsne_results = tsne.fit_transform(features)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\alim9\AppData\Local\Programs\Python\Python312\Lib\site-packages\sklearn\utils\_set_output.py", line 319, in wrapped
+    data_to_wrap = f(self, X, *args, **kwargs)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\alim9\AppData\Local\Programs\Python\Python312\Lib\site-packages\sklearn\base.py", line 1389, in wrapper
+    return fit_method(estimator, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\alim9\AppData\Local\Programs\Python\Python312\Lib\site-packages\sklearn\manifold\_t_sne.py", line 1177, in fit_transform
+    self._check_params_vs_input(X)
+  File "C:\Users\alim9\AppData\Local\Programs\Python\Python312\Lib\site-packages\sklearn\manifold\_t_sne.py", line 862, in _check_params_vs_input
+    raise ValueError("perplexity must be less than n_samples")
+ValueError: perplexity must be less than n_samples
+
+
+--- Starting pipeline run at 2025-03-10 10:29:21 ---
+Using config with:
+  seg_type: 10
+  alpha: 1.0
+  csv_output_dir: results/csv_outputs
+  skip_feature_extraction: False
+  skip_clustering: False
+  only_vesicle_analysis: False
+Created directory: results
+Created directory: results\features_seg10_alpha1.0
+Created directory: results\clustering_results_seg10_alpha1.0
+Created directory: results\visualizations_seg10_alpha1.0
+Created directory: results\sample_visualizations_seg10_alpha1.0
+Created directory: results\presynapse_analysis_seg10_alpha1.0
+Created directory: results\vesicle_analysis_seg10_alpha1.0
+Running synapse analysis pipeline with seg_type=10, alpha=1.0
+Starting data loading...
+Starting model loading...
+Starting feature extraction...
+Starting clustering...
+Starting visualizations...
+Starting presynapse analysis...
+Starting vesicle size analysis...
+Analyzing bounding box distribution in clusters...
+Pipeline completed successfully!
+Results saved to results
+--- Pipeline run completed at 2025-03-10 10:30:35 ---
+
+
+--- Starting pipeline run at 2025-03-10 10:32:57 ---
+Using config with:
+  seg_type: 10
+  alpha: 1.0
+  csv_output_dir: results/csv_outputs
+  skip_feature_extraction: False
+  skip_clustering: False
+  only_vesicle_analysis: False
+Created directory: results
+Created directory: results\run_seg10_alpha1.0
+Created directory: results\run_seg10_alpha1.0\features
+Created directory: results\run_seg10_alpha1.0\clustering_results
+Created directory: results\run_seg10_alpha1.0\visualizations
+Created directory: results\run_seg10_alpha1.0\sample_visualizations
+Created directory: results\run_seg10_alpha1.0\presynapse_analysis
+Created directory: results\run_seg10_alpha1.0\vesicle_analysis
+Created directory: results\run_seg10_alpha1.0\csv_outputs
+Running synapse analysis pipeline with seg_type=10, alpha=1.0
+Starting data loading...
+Starting model loading...
+Starting feature extraction...
+Starting clustering...
+Starting visualizations...
+Starting presynapse analysis...
+
+--- Starting pipeline run at 2025-03-10 10:36:32 ---
+Using config with:
+  seg_type: 10
+  alpha: 1.0
+  csv_output_dir: results/csv_outputs
+  skip_feature_extraction: False
+  skip_clustering: False
+  only_vesicle_analysis: False
+Run ID: 2025-03-10_10-36-32
+Output directory: results\2025-03-10_10-36-32_seg10_alpha1.0
+Created directory: results
+Created directory: results\2025-03-10_10-36-32_seg10_alpha1.0
+Created directory: results\2025-03-10_10-36-32_seg10_alpha1.0\features
+Created directory: results\2025-03-10_10-36-32_seg10_alpha1.0\clustering_results
+Created directory: results\2025-03-10_10-36-32_seg10_alpha1.0\visualizations
+Created directory: results\2025-03-10_10-36-32_seg10_alpha1.0\sample_visualizations
+Created directory: results\2025-03-10_10-36-32_seg10_alpha1.0\presynapse_analysis
+Created directory: results\2025-03-10_10-36-32_seg10_alpha1.0\vesicle_analysis
+Created directory: results\2025-03-10_10-36-32_seg10_alpha1.0\csv_outputs
+Running synapse analysis pipeline with seg_type=10, alpha=1.0
+Starting data loading...
+Starting model loading...
+Starting feature extraction...
+Starting clustering...
+
+--- Starting pipeline run at 2025-03-10 10:41:02 ---
+Using config with:
+  seg_type: 10
+  alpha: 1.0
+  csv_output_dir: results/csv_outputs
+  skip_feature_extraction: False
+  skip_clustering: False
+  only_vesicle_analysis: False
+Run ID: 10-41-02
+Output directory: results\10-41-02_seg10_alpha1.0
+Created directory: results
+Created directory: results\10-41-02_seg10_alpha1.0
+Created directory: results\10-41-02_seg10_alpha1.0\features
+Created directory: results\10-41-02_seg10_alpha1.0\clustering_results
+Created directory: results\10-41-02_seg10_alpha1.0\visualizations
+Created directory: results\10-41-02_seg10_alpha1.0\sample_visualizations
+Created directory: results\10-41-02_seg10_alpha1.0\presynapse_analysis
+Created directory: results\10-41-02_seg10_alpha1.0\vesicle_analysis
+Created directory: results\10-41-02_seg10_alpha1.0\csv_outputs
+Running synapse analysis pipeline with seg_type=10, alpha=1.0
+Starting data loading...
+Starting model loading...
+Starting feature extraction...
+Starting clustering...
+Starting visualizations...
+Starting presynapse analysis...
+Starting vesicle size analysis...
+Analyzing bounding box distribution in clusters...
+Pipeline completed successfully!
+Results saved to results\10-41-02_seg10_alpha1.0
+--- Pipeline run completed at 2025-03-10 10:42:09 ---
+
+
+--- Starting pipeline run at 2025-03-10 10:48:06 ---
+Using config with:
+  seg_type: 10
+  alpha: 1.0
+  csv_output_dir: results/csv_outputs
+  skip_feature_extraction: False
+  skip_clustering: False
+  only_vesicle_analysis: False
+Run ID: 10-48-06
+Output directory: results\10-48-06_seg10_alpha1.0
+Created directory: results
+Created directory: results\10-48-06_seg10_alpha1.0
+Created directory: results\10-48-06_seg10_alpha1.0\features
+Created directory: results\10-48-06_seg10_alpha1.0\clustering_results
+Created directory: results\10-48-06_seg10_alpha1.0\visualizations
+Created directory: results\10-48-06_seg10_alpha1.0\sample_visualizations
+Created directory: results\10-48-06_seg10_alpha1.0\presynapse_analysis
+Created directory: results\10-48-06_seg10_alpha1.0\vesicle_analysis
+Created directory: results\10-48-06_seg10_alpha1.0\csv_outputs
+Running synapse analysis pipeline with seg_type=10, alpha=1.0
+Starting data loading...
+Starting model loading...
+Starting feature extraction...
+Starting clustering...
+Starting visualizations...
+Starting presynapse analysis...
+Starting vesicle size analysis...
+Analyzing bounding box distribution in clusters...
+Pipeline completed successfully!
+Results saved to results\10-48-06_seg10_alpha1.0
+--- Pipeline run completed at 2025-03-10 10:49:08 ---
+
+
+--- Starting pipeline run at 2025-03-10 10:50:38 ---
+Using config with:
+  seg_type: 10
+  alpha: 1.0
+  csv_output_dir: results/csv_outputs
+  skip_feature_extraction: False
+  skip_clustering: False
+  only_vesicle_analysis: False
+Run ID: 10-50-38
+Output directory: results\10-50-38_seg10_alpha1.0
+Created directory: results
+Created directory: results\10-50-38_seg10_alpha1.0
+Created directory: results\10-50-38_seg10_alpha1.0\features
+Created directory: results\10-50-38_seg10_alpha1.0\clustering_results
+Created directory: results\10-50-38_seg10_alpha1.0\visualizations
+Created directory: results\10-50-38_seg10_alpha1.0\sample_visualizations
+Created directory: results\10-50-38_seg10_alpha1.0\presynapse_analysis
+Created directory: results\10-50-38_seg10_alpha1.0\vesicle_analysis
+Created directory: results\10-50-38_seg10_alpha1.0\csv_outputs
+Running synapse analysis pipeline with seg_type=10, alpha=1.0
+Starting data loading...
+Starting model loading...
+Starting feature extraction...
+Starting clustering...
+Starting visualizations...
+Starting presynapse analysis...
+Starting vesicle size analysis...
+Analyzing bounding box distribution in clusters...
+Pipeline completed successfully!
+Results saved to results\10-50-38_seg10_alpha1.0
+--- Pipeline run completed at 2025-03-10 10:51:39 ---
+
+
+--- Starting pipeline run at 2025-03-10 11:42:11 ---
+Using config with:
+  seg_type: 10
+  alpha: 1.0
+  csv_output_dir: results/csv_outputs
+  skip_feature_extraction: False
+  skip_clustering: False
+  only_vesicle_analysis: False
+Run ID: 11-42-12
+Output directory: results\11-42-12_seg10_alpha1.0
+Created directory: results
+Created directory: results\11-42-12_seg10_alpha1.0
+Created directory: results\11-42-12_seg10_alpha1.0\features
+Created directory: results\11-42-12_seg10_alpha1.0\clustering_results
+Created directory: results\11-42-12_seg10_alpha1.0\visualizations
+Created directory: results\11-42-12_seg10_alpha1.0\sample_visualizations
+Created directory: results\11-42-12_seg10_alpha1.0\presynapse_analysis
+Created directory: results\11-42-12_seg10_alpha1.0\vesicle_analysis
+Created directory: results\11-42-12_seg10_alpha1.0\csv_outputs
+Running synapse analysis pipeline with seg_type=10, alpha=1.0
+Starting data loading...
+Starting model loading...
+Starting feature extraction...
+Starting clustering...
+Starting visualizations...
+Starting presynapse analysis...
+Starting vesicle size analysis...
+Analyzing bounding box distribution in clusters...
+Pipeline completed successfully!
+Results saved to results\11-42-12_seg10_alpha1.0
+--- Pipeline run completed at 2025-03-10 11:43:29 ---
+
+
+--- Starting pipeline run at 2025-03-10 11:46:18 ---
+Using config with:
+  seg_type: 10
+  alpha: 1.0
+  csv_output_dir: results/csv_outputs
+  skip_feature_extraction: False
+  skip_clustering: False
+  only_vesicle_analysis: True
+Run ID: 11-46-18
+Output directory: results\11-46-18_seg10_alpha1.0
+Created directory: results
+Created directory: results\11-46-18_seg10_alpha1.0
+Created directory: results\11-46-18_seg10_alpha1.0\features
+Created directory: results\11-46-18_seg10_alpha1.0\clustering_results
+Created directory: results\11-46-18_seg10_alpha1.0\visualizations
+Created directory: results\11-46-18_seg10_alpha1.0\sample_visualizations
+Created directory: results\11-46-18_seg10_alpha1.0\presynapse_analysis
+Created directory: results\11-46-18_seg10_alpha1.0\vesicle_analysis
+Created directory: results\11-46-18_seg10_alpha1.0\csv_outputs
+Running only vesicle size analysis on existing results...
+Created directory: results
+Created directory: results\2025-03-10_11-46-18_vesicle_analysis_seg10_alpha1.0
+Created directory: results\2025-03-10_11-46-18_vesicle_analysis_seg10_alpha1.0\csv_outputs
+Created directory: results\2025-03-10_11-46-18_vesicle_analysis_seg10_alpha1.0\vesicle_analysis
+Searching for feature files in these locations:
+  - results\2025-03-10_11-46-18_vesicle_analysis_seg10_alpha1.0\clustering_results\clustered_features.csv (exists: False)
+  - results\2025-03-10_11-46-18_vesicle_analysis_seg10_alpha1.0\features\features.csv (exists: False)
+  - results\clustering_results_seg10_alpha1.0\clustered_features.csv (exists: True)
+  - results\features_seg10_alpha1.0\features.csv (exists: False)
+  - results\10-41-02_seg10_alpha1.0\clustering_results\clustered_features.csv (exists: True)
+  - results\10-41-02_seg10_alpha1.0\features\features.csv (exists: False)
+  - results\10-48-06_seg10_alpha1.0\clustering_results\clustered_features.csv (exists: True)
+  - results\10-48-06_seg10_alpha1.0\features\features.csv (exists: False)
+  - results\10-50-38_seg10_alpha1.0\clustering_results\clustered_features.csv (exists: True)
+  - results\10-50-38_seg10_alpha1.0\features\features.csv (exists: False)
+  - results\11-42-12_seg10_alpha1.0\clustering_results\clustered_features.csv (exists: True)
+  - results\11-42-12_seg10_alpha1.0\features\features.csv (exists: False)
+  - results\11-46-18_seg10_alpha1.0\clustering_results\clustered_features.csv (exists: False)
+  - results\11-46-18_seg10_alpha1.0\features\features.csv (exists: False)
+  - results\2025-03-10_10-36-32_seg10_alpha1.0\clustering_results\clustered_features.csv (exists: True)
+  - results\2025-03-10_10-36-32_seg10_alpha1.0\features\features.csv (exists: False)
+  - results\2025-03-10_11-46-18_vesicle_analysis_seg10_alpha1.0\clustering_results\clustered_features.csv (exists: False)
+  - results\2025-03-10_11-46-18_vesicle_analysis_seg10_alpha1.0\features\features.csv (exists: False)
+  - results\clustering_results_seg10_alpha1.0\clustering_results\clustered_features.csv (exists: False)
+  - results\clustering_results_seg10_alpha1.0\features\features.csv (exists: False)
+  - results\features_seg10_alpha1.0\clustering_results\clustered_features.csv (exists: False)
+  - results\features_seg10_alpha1.0\features\features.csv (exists: False)
+  - results\presynapse_analysis_seg10_alpha1.0\clustering_results\clustered_features.csv (exists: False)
+  - results\presynapse_analysis_seg10_alpha1.0\features\features.csv (exists: False)
+  - results\run_seg10_alpha1.0\clustering_results\clustered_features.csv (exists: True)
+  - results\run_seg10_alpha1.0\features\features.csv (exists: False)
+  - results\sample_visualizations_seg10_alpha1.0\clustering_results\clustered_features.csv (exists: False)
+  - results\sample_visualizations_seg10_alpha1.0\features\features.csv (exists: False)
+  - results\vesicle_analysis_seg10_alpha1.0\clustering_results\clustered_features.csv (exists: False)
+  - results\vesicle_analysis_seg10_alpha1.0\features\features.csv (exists: False)
+  - results\visualizations_seg10_alpha1.0\clustering_results\clustered_features.csv (exists: False)
+  - results\visualizations_seg10_alpha1.0\features\features.csv (exists: False)
+  - results\2025-03-10_11-46-18_vesicle_analysis_seg10_alpha1.0\csv_outputs\features_seg10_alpha1.0_0.csv (exists: False)
+  - results\csv_outputs\features_seg10_alpha1.0_0.csv (exists: False)
+  - csv_outputs/features_seg10_alpha1.0_0.csv (exists: False)
+  - csv_outputs\features_seg1_alpha1.0\features_seg1_alpha1_0.csv (exists: True)
+Found features at results\clustering_results_seg10_alpha1.0\clustered_features.csv
+Error in pipeline: cannot access local variable 'pd' where it is not associated with a value
+Traceback (most recent call last):
+  File "C:\Users\alim9\Documents\synapse2\run_synapse_pipeline.py", line 320, in <module>
+    main()
+  File "C:\Users\alim9\Documents\synapse2\run_synapse_pipeline.py", line 168, in main
+    features_df = pd.read_csv(path)
+                  ^^
+UnboundLocalError: cannot access local variable 'pd' where it is not associated with a value
+
+
+--- Starting pipeline run at 2025-03-10 11:46:59 ---
+Using config with:
+  seg_type: 10
+  alpha: 1.0
+  csv_output_dir: results/csv_outputs
+  skip_feature_extraction: False
+  skip_clustering: False
+  only_vesicle_analysis: True
+Run ID: 11-46-59
+Output directory: results\11-46-59_seg10_alpha1.0
+Created directory: results
+Created directory: results\11-46-59_seg10_alpha1.0
+Created directory: results\11-46-59_seg10_alpha1.0\features
+Created directory: results\11-46-59_seg10_alpha1.0\clustering_results
+Created directory: results\11-46-59_seg10_alpha1.0\visualizations
+Created directory: results\11-46-59_seg10_alpha1.0\sample_visualizations
+Created directory: results\11-46-59_seg10_alpha1.0\presynapse_analysis
+Created directory: results\11-46-59_seg10_alpha1.0\vesicle_analysis
+Created directory: results\11-46-59_seg10_alpha1.0\csv_outputs
+Running only vesicle size analysis on existing results...
+Created directory: results
+Created directory: results\2025-03-10_11-46-59_vesicle_analysis_seg10_alpha1.0
+Created directory: results\2025-03-10_11-46-59_vesicle_analysis_seg10_alpha1.0\csv_outputs
+Created directory: results\2025-03-10_11-46-59_vesicle_analysis_seg10_alpha1.0\vesicle_analysis
+Searching for feature files in these locations:
+  - results\2025-03-10_11-46-59_vesicle_analysis_seg10_alpha1.0\clustering_results\clustered_features.csv (exists: False)
+  - results\2025-03-10_11-46-59_vesicle_analysis_seg10_alpha1.0\features\features.csv (exists: False)
+  - results\clustering_results_seg10_alpha1.0\clustered_features.csv (exists: True)
+  - results\features_seg10_alpha1.0\features.csv (exists: False)
+  - results\10-41-02_seg10_alpha1.0\clustering_results\clustered_features.csv (exists: True)
+  - results\10-41-02_seg10_alpha1.0\features\features.csv (exists: False)
+  - results\10-48-06_seg10_alpha1.0\clustering_results\clustered_features.csv (exists: True)
+  - results\10-48-06_seg10_alpha1.0\features\features.csv (exists: False)
+  - results\10-50-38_seg10_alpha1.0\clustering_results\clustered_features.csv (exists: True)
+  - results\10-50-38_seg10_alpha1.0\features\features.csv (exists: False)
+  - results\11-42-12_seg10_alpha1.0\clustering_results\clustered_features.csv (exists: True)
+  - results\11-42-12_seg10_alpha1.0\features\features.csv (exists: False)
+  - results\11-46-18_seg10_alpha1.0\clustering_results\clustered_features.csv (exists: False)
+  - results\11-46-18_seg10_alpha1.0\features\features.csv (exists: False)
+  - results\11-46-59_seg10_alpha1.0\clustering_results\clustered_features.csv (exists: False)
+  - results\11-46-59_seg10_alpha1.0\features\features.csv (exists: False)
+  - results\2025-03-10_10-36-32_seg10_alpha1.0\clustering_results\clustered_features.csv (exists: True)
+  - results\2025-03-10_10-36-32_seg10_alpha1.0\features\features.csv (exists: False)
+  - results\2025-03-10_11-46-18_vesicle_analysis_seg10_alpha1.0\clustering_results\clustered_features.csv (exists: False)
+  - results\2025-03-10_11-46-18_vesicle_analysis_seg10_alpha1.0\features\features.csv (exists: False)
+  - results\2025-03-10_11-46-59_vesicle_analysis_seg10_alpha1.0\clustering_results\clustered_features.csv (exists: False)
+  - results\2025-03-10_11-46-59_vesicle_analysis_seg10_alpha1.0\features\features.csv (exists: False)
+  - results\clustering_results_seg10_alpha1.0\clustering_results\clustered_features.csv (exists: False)
+  - results\clustering_results_seg10_alpha1.0\features\features.csv (exists: False)
+  - results\features_seg10_alpha1.0\clustering_results\clustered_features.csv (exists: False)
+  - results\features_seg10_alpha1.0\features\features.csv (exists: False)
+  - results\presynapse_analysis_seg10_alpha1.0\clustering_results\clustered_features.csv (exists: False)
+  - results\presynapse_analysis_seg10_alpha1.0\features\features.csv (exists: False)
+  - results\run_seg10_alpha1.0\clustering_results\clustered_features.csv (exists: True)
+  - results\run_seg10_alpha1.0\features\features.csv (exists: False)
+  - results\sample_visualizations_seg10_alpha1.0\clustering_results\clustered_features.csv (exists: False)
+  - results\sample_visualizations_seg10_alpha1.0\features\features.csv (exists: False)
+  - results\vesicle_analysis_seg10_alpha1.0\clustering_results\clustered_features.csv (exists: False)
+  - results\vesicle_analysis_seg10_alpha1.0\features\features.csv (exists: False)
+  - results\visualizations_seg10_alpha1.0\clustering_results\clustered_features.csv (exists: False)
+  - results\visualizations_seg10_alpha1.0\features\features.csv (exists: False)
+  - results\2025-03-10_11-46-59_vesicle_analysis_seg10_alpha1.0\csv_outputs\features_seg10_alpha1.0_0.csv (exists: False)
+  - results\csv_outputs\features_seg10_alpha1.0_0.csv (exists: False)
+  - csv_outputs/features_seg10_alpha1.0_0.csv (exists: False)
+  - csv_outputs\features_seg1_alpha1.0\features_seg1_alpha1_0.csv (exists: True)
+Found features at results\clustering_results_seg10_alpha1.0\clustered_features.csv
+Error in pipeline: cannot access local variable 'pd' where it is not associated with a value
+Traceback (most recent call last):
+  File "C:\Users\alim9\Documents\synapse2\run_synapse_pipeline.py", line 320, in <module>
+    main()
+  File "C:\Users\alim9\Documents\synapse2\run_synapse_pipeline.py", line 169, in main
+    features_df = pd.read_csv(path)
+                  ^^
+UnboundLocalError: cannot access local variable 'pd' where it is not associated with a value
+
+
+--- Starting pipeline run at 2025-03-10 11:48:32 ---
+Using config with:
+  seg_type: 10
+  alpha: 1.0
+  csv_output_dir: results/csv_outputs
+  skip_feature_extraction: False
+  skip_clustering: False
+  only_vesicle_analysis: False
+Run ID: 11-48-32
+Output directory: results\11-48-32_seg10_alpha1.0
+Created directory: results
+Created directory: results\11-48-32_seg10_alpha1.0
+Created directory: results\11-48-32_seg10_alpha1.0\features
+Created directory: results\11-48-32_seg10_alpha1.0\clustering_results
+Created directory: results\11-48-32_seg10_alpha1.0\visualizations
+Created directory: results\11-48-32_seg10_alpha1.0\sample_visualizations
+Created directory: results\11-48-32_seg10_alpha1.0\presynapse_analysis
+Created directory: results\11-48-32_seg10_alpha1.0\vesicle_analysis
+Created directory: results\11-48-32_seg10_alpha1.0\csv_outputs
+Running synapse analysis pipeline with seg_type=10, alpha=1.0
+Starting data loading...
+Starting model loading...
+Starting feature extraction...
+Starting clustering...
+Starting visualizations...
+
+--- Starting pipeline run at 2025-03-10 11:49:49 ---
+Using config with:
+  seg_type: 10
+  alpha: 1.0
+  csv_output_dir: results/csv_outputs
+  skip_feature_extraction: False
+  skip_clustering: False
+  only_vesicle_analysis: True
+Run ID: 11-49-49
+Output directory: results\11-49-49_seg10_alpha1.0
+Created directory: results
+Created directory: results\11-49-49_seg10_alpha1.0
+Created directory: results\11-49-49_seg10_alpha1.0\features
+Created directory: results\11-49-49_seg10_alpha1.0\clustering_results
+Created directory: results\11-49-49_seg10_alpha1.0\visualizations
+Created directory: results\11-49-49_seg10_alpha1.0\sample_visualizations
+Created directory: results\11-49-49_seg10_alpha1.0\presynapse_analysis
+Created directory: results\11-49-49_seg10_alpha1.0\vesicle_analysis
+Created directory: results\11-49-49_seg10_alpha1.0\csv_outputs
+Running only vesicle size analysis on existing results...
+Created directory: results
+Created directory: results\2025-03-10_11-49-49_vesicle_analysis_seg10_alpha1.0
+Created directory: results\2025-03-10_11-49-49_vesicle_analysis_seg10_alpha1.0\csv_outputs
+Created directory: results\2025-03-10_11-49-49_vesicle_analysis_seg10_alpha1.0\vesicle_analysis
+Searching for feature files in these locations:
+  - results\2025-03-10_11-49-49_vesicle_analysis_seg10_alpha1.0\clustering_results\clustered_features.csv (exists: False)
+  - results\2025-03-10_11-49-49_vesicle_analysis_seg10_alpha1.0\features\features.csv (exists: False)
+  - results\clustering_results_seg10_alpha1.0\clustered_features.csv (exists: True)
+  - results\features_seg10_alpha1.0\features.csv (exists: False)
+  - results\10-41-02_seg10_alpha1.0\clustering_results\clustered_features.csv (exists: True)
+  - results\10-41-02_seg10_alpha1.0\features\features.csv (exists: False)
+  - results\10-48-06_seg10_alpha1.0\clustering_results\clustered_features.csv (exists: True)
+  - results\10-48-06_seg10_alpha1.0\features\features.csv (exists: False)
+  - results\10-50-38_seg10_alpha1.0\clustering_results\clustered_features.csv (exists: True)
+  - results\10-50-38_seg10_alpha1.0\features\features.csv (exists: False)
+  - results\11-42-12_seg10_alpha1.0\clustering_results\clustered_features.csv (exists: True)
+  - results\11-42-12_seg10_alpha1.0\features\features.csv (exists: False)
+  - results\11-46-18_seg10_alpha1.0\clustering_results\clustered_features.csv (exists: False)
+  - results\11-46-18_seg10_alpha1.0\features\features.csv (exists: False)
+  - results\11-46-59_seg10_alpha1.0\clustering_results\clustered_features.csv (exists: False)
+  - results\11-46-59_seg10_alpha1.0\features\features.csv (exists: False)
+  - results\11-48-32_seg10_alpha1.0\clustering_results\clustered_features.csv (exists: True)
+  - results\11-48-32_seg10_alpha1.0\features\features.csv (exists: False)
+  - results\11-49-49_seg10_alpha1.0\clustering_results\clustered_features.csv (exists: False)
+  - results\11-49-49_seg10_alpha1.0\features\features.csv (exists: False)
+  - results\2025-03-10_10-36-32_seg10_alpha1.0\clustering_results\clustered_features.csv (exists: True)
+  - results\2025-03-10_10-36-32_seg10_alpha1.0\features\features.csv (exists: False)
+  - results\2025-03-10_11-46-18_vesicle_analysis_seg10_alpha1.0\clustering_results\clustered_features.csv (exists: False)
+  - results\2025-03-10_11-46-18_vesicle_analysis_seg10_alpha1.0\features\features.csv (exists: False)
+  - results\2025-03-10_11-46-59_vesicle_analysis_seg10_alpha1.0\clustering_results\clustered_features.csv (exists: False)
+  - results\2025-03-10_11-46-59_vesicle_analysis_seg10_alpha1.0\features\features.csv (exists: False)
+  - results\2025-03-10_11-49-49_vesicle_analysis_seg10_alpha1.0\clustering_results\clustered_features.csv (exists: False)
+  - results\2025-03-10_11-49-49_vesicle_analysis_seg10_alpha1.0\features\features.csv (exists: False)
+  - results\clustering_results_seg10_alpha1.0\clustering_results\clustered_features.csv (exists: False)
+  - results\clustering_results_seg10_alpha1.0\features\features.csv (exists: False)
+  - results\features_seg10_alpha1.0\clustering_results\clustered_features.csv (exists: False)
+  - results\features_seg10_alpha1.0\features\features.csv (exists: False)
+  - results\presynapse_analysis_seg10_alpha1.0\clustering_results\clustered_features.csv (exists: False)
+  - results\presynapse_analysis_seg10_alpha1.0\features\features.csv (exists: False)
+  - results\run_seg10_alpha1.0\clustering_results\clustered_features.csv (exists: True)
+  - results\run_seg10_alpha1.0\features\features.csv (exists: False)
+  - results\sample_visualizations_seg10_alpha1.0\clustering_results\clustered_features.csv (exists: False)
+  - results\sample_visualizations_seg10_alpha1.0\features\features.csv (exists: False)
+  - results\vesicle_analysis_seg10_alpha1.0\clustering_results\clustered_features.csv (exists: False)
+  - results\vesicle_analysis_seg10_alpha1.0\features\features.csv (exists: False)
+  - results\visualizations_seg10_alpha1.0\clustering_results\clustered_features.csv (exists: False)
+  - results\visualizations_seg10_alpha1.0\features\features.csv (exists: False)
+  - results\2025-03-10_11-49-49_vesicle_analysis_seg10_alpha1.0\csv_outputs\features_seg10_alpha1.0_0.csv (exists: False)
+  - results\csv_outputs\features_seg10_alpha1.0_0.csv (exists: False)
+  - csv_outputs/features_seg10_alpha1.0_0.csv (exists: False)
+  - csv_outputs\features_seg1_alpha1.0\features_seg1_alpha1_0.csv (exists: True)
+Found features at results\clustering_results_seg10_alpha1.0\clustered_features.csv
+Loaded 8 rows of feature data
+Feature columns: ['bbox', 'Var1', 'central_coord_1', 'central_coord_2', 'central_coord_3', 'side_1_coord_1', 'side_1_coord_2', 'side_1_coord_3', 'side_2_coord_1', 'side_2_coord_2', 'side_2_coord_3', 'bbox_name', 'feat_1', 'feat_2', 'feat_3', 'feat_4', 'feat_5', 'feat_6', 'feat_7', 'feat_8', 'feat_9', 'feat_10', 'feat_11', 'feat_12', 'feat_13', 'feat_14', 'feat_15', 'feat_16', 'feat_17', 'feat_18', 'feat_19', 'feat_20', 'feat_21', 'feat_22', 'feat_23', 'feat_24', 'feat_25', 'feat_26', 'feat_27', 'feat_28', 'feat_29', 'feat_30', 'feat_31', 'feat_32', 'feat_33', 'feat_34', 'feat_35', 'feat_36', 'feat_37', 'feat_38', 'feat_39', 'feat_40', 'feat_41', 'feat_42', 'feat_43', 'feat_44', 'feat_45', 'feat_46', 'feat_47', 'feat_48', 'feat_49', 'feat_50', 'feat_51', 'feat_52', 'feat_53', 'feat_54', 'feat_55', 'feat_56', 'feat_57', 'feat_58', 'feat_59', 'feat_60', 'feat_61', 'feat_62', 'feat_63', 'feat_64', 'feat_65', 'feat_66', 'feat_67', 'feat_68', 'feat_69', 'feat_70', 'feat_71', 'feat_72', 'feat_73', 'feat_74', 'feat_75', 'feat_76', 'feat_77', 'feat_78', 'feat_79', 'feat_80', 'feat_81', 'feat_82', 'feat_83', 'feat_84', 'feat_85', 'feat_86', 'feat_87', 'feat_88', 'feat_89', 'feat_90', 'feat_91', 'feat_92', 'feat_93', 'feat_94', 'feat_95', 'feat_96', 'feat_97', 'feat_98', 'feat_99', 'feat_100', 'feat_101', 'feat_102', 'feat_103', 'feat_104', 'feat_105', 'feat_106', 'feat_107', 'feat_108', 'feat_109', 'feat_110', 'feat_111', 'feat_112', 'feat_113', 'feat_114', 'feat_115', 'feat_116', 'feat_117', 'feat_118', 'feat_119', 'feat_120', 'feat_121', 'feat_122', 'feat_123', 'feat_124', 'feat_125', 'feat_126', 'feat_127', 'feat_128', 'feat_129', 'feat_130', 'feat_131', 'feat_132', 'feat_133', 'feat_134', 'feat_135', 'feat_136', 'feat_137', 'feat_138', 'feat_139', 'feat_140', 'feat_141', 'feat_142', 'feat_143', 'feat_144', 'feat_145', 'feat_146', 'feat_147', 'feat_148', 'feat_149', 'feat_150', 'feat_151', 'feat_152', 'feat_153', 'feat_154', 'feat_155', 'feat_156', 'feat_157', 'feat_158', 'feat_159', 'feat_160', 'feat_161', 'feat_162', 'feat_163', 'feat_164', 'feat_165', 'feat_166', 'feat_167', 'feat_168', 'feat_169', 'feat_170', 'feat_171', 'feat_172', 'feat_173', 'feat_174', 'feat_175', 'feat_176', 'feat_177', 'feat_178', 'feat_179', 'feat_180', 'feat_181', 'feat_182', 'feat_183', 'feat_184', 'feat_185', 'feat_186', 'feat_187', 'feat_188', 'feat_189', 'feat_190', 'feat_191', 'feat_192', 'umap_x', 'umap_y', 'segmentation_type', 'alpha', 'umap_1', 'umap_2', 'cluster']
+Found vesicle CSVs at results\csv_outputs\bbox*.csv: 1 files
+Loaded 8 rows of vesicle data
+Creating UMAP with vesicle sizes...
+Analyzing vesicle sizes by cluster...
+Analyzing bounding box distribution in clusters...
+Vesicle analysis completed. Results saved to results\2025-03-10_11-49-49_vesicle_analysis_seg10_alpha1.0\vesicle_analysis
+
+--- Starting pipeline run at 2025-03-10 11:50:33 ---
+Using config with:
+  seg_type: 10
+  alpha: 1.0
+  csv_output_dir: results/csv_outputs
+  skip_feature_extraction: False
+  skip_clustering: False
+  only_vesicle_analysis: False
+Run ID: 11-50-33
+Output directory: results\11-50-33_seg10_alpha1.0
+Created directory: results
+Created directory: results\11-50-33_seg10_alpha1.0
+Created directory: results\11-50-33_seg10_alpha1.0\features
+Created directory: results\11-50-33_seg10_alpha1.0\clustering_results
+Created directory: results\11-50-33_seg10_alpha1.0\visualizations
+Created directory: results\11-50-33_seg10_alpha1.0\sample_visualizations
+Created directory: results\11-50-33_seg10_alpha1.0\presynapse_analysis
+Created directory: results\11-50-33_seg10_alpha1.0\vesicle_analysis
+Created directory: results\11-50-33_seg10_alpha1.0\csv_outputs
+Running synapse analysis pipeline with seg_type=10, alpha=1.0
+Starting data loading...
+Starting model loading...
+Starting feature extraction...
+Starting clustering...
+Starting visualizations...
+Starting presynapse analysis...
+Starting vesicle size analysis...
+Analyzing bounding box distribution in clusters...
+Pipeline completed successfully!
+Results saved to results\11-50-33_seg10_alpha1.0
+--- Pipeline run completed at 2025-03-10 11:52:29 ---
+
+
+--- Starting pipeline run at 2025-03-10 11:53:15 ---
+Using config with:
+  seg_type: 10
+  alpha: 1.0
+  csv_output_dir: results/csv_outputs
+  skip_feature_extraction: False
+  skip_clustering: False
+  only_vesicle_analysis: False
+Run ID: 11-53-15
+Output directory: results\11-53-15_seg10_alpha1.0
+Created directory: results
+Created directory: results\11-53-15_seg10_alpha1.0
+Created directory: results\11-53-15_seg10_alpha1.0\features
+Created directory: results\11-53-15_seg10_alpha1.0\clustering_results
+Created directory: results\11-53-15_seg10_alpha1.0\visualizations
+Created directory: results\11-53-15_seg10_alpha1.0\sample_visualizations
+Created directory: results\11-53-15_seg10_alpha1.0\presynapse_analysis
+Created directory: results\11-53-15_seg10_alpha1.0\vesicle_analysis
+Created directory: results\11-53-15_seg10_alpha1.0\csv_outputs
+Running synapse analysis pipeline with seg_type=10, alpha=1.0
+Starting data loading...
+Starting model loading...
+Starting feature extraction...
+Starting clustering...
+Starting visualizations...
+Starting presynapse analysis...
+Starting vesicle size analysis...
+Analyzing bounding box distribution in clusters...
+Pipeline completed successfully!
+Results saved to results\11-53-15_seg10_alpha1.0
+--- Pipeline run completed at 2025-03-10 12:02:15 ---
+
