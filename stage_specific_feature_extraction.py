@@ -238,6 +238,135 @@ def extract_all_stages_features(model, dataset, output_dir, batch_size=2):
     
     return results
 
+def load_model_and_extract_stage_specific_features(dataset, features_df, device="cuda", layer_num=20):
+    """
+    Load the VGG3D model and extract stage-specific features (primarily layer 20)
+    
+    Args:
+        dataset: The dataset to extract features from
+        features_df: DataFrame to add features to
+        device: Device to run the model on ("cuda" or "cpu")
+        layer_num: The specific layer to extract features from (default: 20)
+        
+    Returns:
+        DataFrame with extracted features and metadata
+    """
+    # Initialize the VGG3D model
+    model = Vgg3D(
+        input_size=(16, 80, 80),  # Adjust dimensions based on your dataset
+        fmaps=24,
+        downsample_factors=[(1, 2, 2), (2, 2, 2), (2, 2, 2), (2, 2, 2)],
+        fmap_inc=(2, 2, 2, 2),
+        n_convolutions=(4, 2, 2, 2),
+        output_classes=2,  # Adjust based on your classes
+        input_fmaps=1
+    )
+    
+    # Find the checkpoint path
+    checkpoint_path = config.checkpoint_path
+    if not checkpoint_path or not os.path.exists(checkpoint_path):
+        # Try to find a checkpoint file
+        possible_checkpoint_paths = [
+            os.path.join("checkpoints", "vgg3d_model.pth"),
+            os.path.join("models", "vgg3d_model.pth"),
+            os.path.join("models", "checkpoint.pth"),
+            os.path.join(os.path.dirname(os.path.dirname(__file__)), "models", "vgg3d_model.pth"),
+            os.path.join(os.path.dirname(os.path.dirname(__file__)), "checkpoints", "vgg3d_model.pth")
+        ]
+        
+        for cp_path in possible_checkpoint_paths:
+            if os.path.exists(cp_path):
+                checkpoint_path = cp_path
+                break
+    
+    if not checkpoint_path or not os.path.exists(checkpoint_path):
+        raise FileNotFoundError("Checkpoint file not found. Please provide a valid checkpoint path.")
+    
+    # Load model from checkpoint
+    model = load_model_from_checkpoint(model, checkpoint_path)
+    print(f"Model loaded successfully from {checkpoint_path}")
+    
+    # Set up the device
+    device = torch.device(device if torch.cuda.is_available() and device == "cuda" else "cpu")
+    model = model.to(device).eval()
+    
+    # Create the stage extractor
+    extractor = VGG3DStageExtractor(model)
+    
+    # Create dataloader
+    dataloader = DataLoader(
+        dataset,
+        batch_size=2,
+        num_workers=0,
+        collate_fn=lambda b: (
+            torch.stack([item[0] for item in b]),
+            [item[1] for item in b],
+            [item[2] for item in b]
+        )
+    )
+    
+    # Extract features from the specified layer
+    features = []
+    bbox_names = []
+    
+    with torch.no_grad():
+        for batch in dataloader:
+            pixels, info, names = batch
+            inputs = pixels.permute(0, 2, 1, 3, 4).to(device)
+            
+            # Extract features using the specified layer
+            if layer_num == 20:
+                batch_features = extractor.extract_layer_20(inputs)
+            else:
+                # For other layers, add code here or raise an error
+                raise ValueError(f"Feature extraction for layer {layer_num} is not implemented")
+            
+            # Global average pooling to get a feature vector
+            batch_size = batch_features.shape[0]
+            num_channels = batch_features.shape[1]
+            
+            # Reshape to (batch_size, channels, -1) for easier processing
+            batch_features_reshaped = batch_features.reshape(batch_size, num_channels, -1)
+            
+            # Global average pooling across spatial dimensions
+            pooled_features = torch.mean(batch_features_reshaped, dim=2)
+            
+            # Convert to numpy
+            features_np = pooled_features.cpu().numpy()
+            
+            features.append(features_np)
+            bbox_names.extend(names)
+    
+    # Concatenate all features
+    features_array = np.concatenate(features, axis=0) if features else np.array([])
+    
+    if len(features_array) == 0:
+        print("No features extracted")
+        return features_df
+    
+    # Create feature columns
+    feature_columns = [f"feature_{i}" for i in range(features_array.shape[1])]
+    
+    # Create a DataFrame with the extracted features
+    feature_df = pd.DataFrame(features_array, columns=feature_columns)
+    
+    # Add a column for bbox names to use for joining
+    feature_df['bbox'] = bbox_names
+    
+    # Merge with the existing features DataFrame
+    if 'bbox' in features_df.columns:
+        # Use bbox column for merging if available
+        merged_df = pd.merge(features_df, feature_df, on='bbox', how='left')
+    else:
+        # Otherwise, just append the features (assuming same order)
+        assert len(feature_df) == len(features_df), "Feature count mismatch"
+        for col in feature_columns:
+            features_df[col] = feature_df[col].values
+        merged_df = features_df
+    
+    print(f"Extracted {features_array.shape[1]} features from layer {layer_num}")
+    return merged_df
+
 def main():
     # Parse command line arguments
     parser = argparse.ArgumentParser(description="Stage-Specific Feature Extraction")

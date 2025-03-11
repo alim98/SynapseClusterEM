@@ -11,6 +11,8 @@ from plotly.subplots import make_subplots
 import umap
 import imageio
 import shutil
+import torch
+from sklearn.preprocessing import StandardScaler
 
 from presynapse_distance_analysis import compare_intra_inter_presynapse_distances, add_distance_comparison_to_report
 
@@ -38,123 +40,286 @@ def identify_synapses_with_same_presynapse(seg_vol_dict, features_df):
     
     presynapse_groups = {}
     
+    # Ensure presynapse_id and postsynapse_id columns are initialized as object dtype (string compatible)
     if 'presynapse_id' not in features_df.columns:
-        features_df['presynapse_id'] = -1
+        features_df['presynapse_id'] = pd.Series(dtype='object').reindex_like(features_df).fillna(-1)
+    else:
+        # Convert existing column to object type if it's not already
+        features_df['presynapse_id'] = features_df['presynapse_id'].astype('object')
+        
     if 'postsynapse_id' not in features_df.columns:
-        features_df['postsynapse_id'] = -1
+        features_df['postsynapse_id'] = pd.Series(dtype='object').reindex_like(features_df).fillna(-1)
+    else:
+        # Convert existing column to object type if it's not already
+        features_df['postsynapse_id'] = features_df['postsynapse_id'].astype('object')
     
     presynapse_count = 0
     postsynapse_count = 0
+    
+    # Check for required coordinate columns
+    required_cols = ['side_1_coord_1', 'side_1_coord_2', 'side_1_coord_3', 
+                     'side_2_coord_1', 'side_2_coord_2', 'side_2_coord_3']
+                     
+    if not all(col in features_df.columns for col in required_cols):
+        print(f"Error: Missing required coordinate columns in features DataFrame. Available columns: {features_df.columns.tolist()}")
+        return presynapse_groups, features_df
+    
+    # Check if we have center coordinates directly, or need to calculate them
+    has_center_coords = all(col in features_df.columns for col in ['center_coord_1', 'center_coord_2', 'center_coord_3'])
+    
+    if not has_center_coords:
+        print("Center coordinates not found in features file. Calculating them from side coordinates.")
+        # Calculate center coordinates as the midpoint between side1 and side2
+        features_df['center_coord_1'] = (features_df['side_1_coord_1'] + features_df['side_2_coord_1']) / 2
+        features_df['center_coord_2'] = (features_df['side_1_coord_2'] + features_df['side_2_coord_2']) / 2
+        features_df['center_coord_3'] = (features_df['side_1_coord_3'] + features_df['side_2_coord_3']) / 2
     
     for idx, row in features_df.iterrows():
         bbox_name = row['bbox_name']
         
         if bbox_name not in seg_vol_dict:
+            print(f"Warning: bbox '{bbox_name}' not found in segmentation volumes.")
             continue
         
         _, seg_vol, add_mask_vol = seg_vol_dict[bbox_name]
         
-        required_cols = ['side_1_coord_1', 'side_1_coord_2', 'side_1_coord_3', 
-                        'side_2_coord_1', 'side_2_coord_2', 'side_2_coord_3']
-        if not all(col in row for col in required_cols):
-            print(f"Warning: Missing coordinate columns for synapse at index {idx}")
-            continue
-        
         try:
-            x1, y1, z1 = int(row['side_1_coord_1']), int(row['side_1_coord_2']), int(row['side_1_coord_3'])
-            x2, y2, z2 = int(row['side_2_coord_1']), int(row['side_2_coord_2']), int(row['side_2_coord_3'])
+            # Get global coordinates from the feature row
+            x1_global, y1_global, z1_global = int(float(row['side_1_coord_1'])), int(float(row['side_1_coord_2'])), int(float(row['side_1_coord_3']))
+            x2_global, y2_global, z2_global = int(float(row['side_2_coord_1'])), int(float(row['side_2_coord_2'])), int(float(row['side_2_coord_3']))
             
-            if (0 <= z1 < seg_vol.shape[0] and 0 <= y1 < seg_vol.shape[1] and 0 <= x1 < seg_vol.shape[2] and
-                0 <= z2 < seg_vol.shape[0] and 0 <= y2 < seg_vol.shape[1] and 0 <= x2 < seg_vol.shape[2]):
+            # Get the central coordinates to determine the subvolume offsets
+            cx_global, cy_global, cz_global = int(float(row['center_coord_1'])), int(float(row['center_coord_2'])), int(float(row['center_coord_3']))
+            
+            # Calculate local coordinates within the subvolume (80x80x80)
+            subvolume_size = 80
+            half_size = subvolume_size // 2
+            
+            # Calculate the subvolume boundaries
+            x_start = max(cx_global - half_size, 0)
+            y_start = max(cy_global - half_size, 0)
+            z_start = max(cz_global - half_size, 0)
+            
+            # Convert global coordinates to local coordinates in the subvolume
+            x1_local = x1_global - x_start
+            y1_local = y1_global - y_start
+            z1_local = z1_global - z_start
+            
+            x2_local = x2_global - x_start
+            y2_local = y2_global - y_start
+            z2_local = z2_global - z_start
+            
+            # Check if the coordinates are within the synapse volume bounds
+            if (0 <= z1_local < seg_vol.shape[0] and 0 <= y1_local < seg_vol.shape[1] and 0 <= x1_local < seg_vol.shape[2] and
+                0 <= z2_local < seg_vol.shape[0] and 0 <= y2_local < seg_vol.shape[1] and 0 <= x2_local < seg_vol.shape[2]):
                 
-                seg_id_1 = seg_vol[z1, y1, x1]
-                seg_id_2 = seg_vol[z2, y2, x2]
+                # Get segmentation IDs from the local coordinates
+                seg_id_1 = seg_vol[z1_local, y1_local, x1_local]
+                seg_id_2 = seg_vol[z2_local, y2_local, x2_local]
                 
-                if seg_id_1 > 0 and features_df.at[idx, 'segmentation_type'] == 1:
-                    features_df.at[idx, 'presynapse_id'] = int(seg_id_1)
+                # Store the global segmentation ID along with the bbox_name as a unique identifier
+                # This ensures we don't confuse the same segmentation ID across different bounding boxes
+                unique_seg_id_1 = f"{bbox_name}_{seg_id_1}"
+                unique_seg_id_2 = f"{bbox_name}_{seg_id_2}"
+                
+                # Ensure segmentation_type is properly interpreted as an integer
+                seg_type = -1
+                try:
+                    if 'segmentation_type' in features_df.columns:
+                        seg_type = int(float(features_df.at[idx, 'segmentation_type']))
+                except (ValueError, TypeError):
+                    print(f"Warning: Could not convert segmentation_type to integer for synapse at index {idx}")
+                
+                # Determine presynapse and postsynapse based on segmentation type if available
+                if seg_id_1 > 0 and seg_type == 1:
+                    # Segmentation type 1: side1 is presynaptic
+                    features_df.at[idx, 'presynapse_id'] = unique_seg_id_1
                     if seg_id_2 > 0:
-                        features_df.at[idx, 'postsynapse_id'] = int(seg_id_2)
+                        features_df.at[idx, 'postsynapse_id'] = unique_seg_id_2
                     presynapse_count += 1
                     
-                elif seg_id_2 > 0 and features_df.at[idx, 'segmentation_type'] == 2:
-                    features_df.at[idx, 'postsynapse_id'] = int(seg_id_1)
+                elif seg_id_2 > 0 and seg_type == 2:
+                    # Segmentation type 2: side2 is presynaptic
+                    features_df.at[idx, 'postsynapse_id'] = unique_seg_id_1
                     if seg_id_2 > 0:
-                        features_df.at[idx, 'presynapse_id'] = int(seg_id_2)
-                    postsynapse_count += 1
+                        features_df.at[idx, 'presynapse_id'] = unique_seg_id_2
+                    presynapse_count += 1
+                
+                # Special handling for segmentation type 10
+                elif seg_type == 10:
+                    # For segmentation type 10, we'll use both segmentation IDs if available
+                    if seg_id_1 > 0:
+                        features_df.at[idx, 'presynapse_id'] = unique_seg_id_1
+                        presynapse_count += 1
                     
+                    if seg_id_2 > 0:
+                        # If both sides have valid IDs, we'll make side1 the presynapse and side2 the postsynapse
+                        if seg_id_1 > 0:
+                            features_df.at[idx, 'postsynapse_id'] = unique_seg_id_2
+                        else:
+                            # If only side2 has a valid ID, make it the presynapse
+                            features_df.at[idx, 'presynapse_id'] = unique_seg_id_2
+                            presynapse_count += 1
+                    
+                    print(f"Assigned presynapse ID for type 10 segmentation at index {idx}: {features_df.at[idx, 'presynapse_id']}")
+                    
+                # If segmentation type doesn't determine pre/post, use vesicle presence
                 elif add_mask_vol is not None:
                     if add_mask_vol.ndim >= 4 and add_mask_vol.shape[3] > 0:
                         vesicle_mask = add_mask_vol[:, :, :, 0]
-                        if 0 <= z1 < vesicle_mask.shape[0] and 0 <= y1 < vesicle_mask.shape[1] and 0 <= x1 < vesicle_mask.shape[2]:
-                            vesicle_at_side1 = vesicle_mask[z1, y1, x1] > 0
+                        
+                        # Check vesicle presence at side 1
+                        if 0 <= z1_local < vesicle_mask.shape[0] and 0 <= y1_local < vesicle_mask.shape[1] and 0 <= x1_local < vesicle_mask.shape[2]:
+                            vesicle_at_side1 = vesicle_mask[z1_local, y1_local, x1_local] > 0
                         else:
                             vesicle_at_side1 = False
-                            
-                        if 0 <= z2 < vesicle_mask.shape[0] and 0 <= y2 < vesicle_mask.shape[1] and 0 <= x2 < vesicle_mask.shape[2]:
-                            vesicle_at_side2 = vesicle_mask[z2, y2, x2] > 0
+                        
+                        # Check vesicle presence at side 2    
+                        if 0 <= z2_local < vesicle_mask.shape[0] and 0 <= y2_local < vesicle_mask.shape[1] and 0 <= x2_local < vesicle_mask.shape[2]:
+                            vesicle_at_side2 = vesicle_mask[z2_local, y2_local, x2_local] > 0
                         else:
                             vesicle_at_side2 = False
                         
+                        # Determine pre/post based on vesicle presence
                         if vesicle_at_side1 and seg_id_1 > 0:
-                            features_df.at[idx, 'presynapse_id'] = int(seg_id_1)
+                            # Vesicles at side 1 indicate it's presynaptic
+                            features_df.at[idx, 'presynapse_id'] = unique_seg_id_1
                             if seg_id_2 > 0:
-                                features_df.at[idx, 'postsynapse_id'] = int(seg_id_2)
+                                features_df.at[idx, 'postsynapse_id'] = unique_seg_id_2
                             presynapse_count += 1
+                            
                         elif vesicle_at_side2 and seg_id_2 > 0:
-                            features_df.at[idx, 'presynapse_id'] = int(seg_id_2)
+                            # Vesicles at side 2 indicate it's presynaptic
+                            features_df.at[idx, 'presynapse_id'] = unique_seg_id_2
                             if seg_id_1 > 0:
-                                features_df.at[idx, 'postsynapse_id'] = int(seg_id_1)
-                            presynapse_count += 1
-                        elif seg_id_1 > 0:
-                            features_df.at[idx, 'presynapse_id'] = int(seg_id_1)
-                            if seg_id_2 > 0:
-                                features_df.at[idx, 'postsynapse_id'] = int(seg_id_2)
-                            presynapse_count += 1
-                    else:
-                        if seg_id_1 > 0:
-                            features_df.at[idx, 'presynapse_id'] = int(seg_id_1)
-                            if seg_id_2 > 0:
-                                features_df.at[idx, 'postsynapse_id'] = int(seg_id_2)
+                                features_df.at[idx, 'postsynapse_id'] = unique_seg_id_1
                             presynapse_count += 1
             else:
-                print(f"Warning: Coordinates out of bounds for synapse at index {idx}")
-                
-        except (ValueError, IndexError, KeyError) as e:
+                print(f"Warning: Local coordinates out of bounds for synapse at index {idx}.")
+                print(f"  Global coordinates: ({x1_global},{y1_global},{z1_global}) and ({x2_global},{y2_global},{z2_global})")
+                print(f"  Local coordinates: ({x1_local},{y1_local},{z1_local}) and ({x2_local},{y2_local},{z2_local})")
+                print(f"  Segmentation volume shape: {seg_vol.shape}")
+        except Exception as e:
             print(f"Error processing synapse at index {idx}: {e}")
+            continue  # Continue to the next synapse instead of stopping
     
     print(f"Identified {presynapse_count} synapses with presynapse IDs and {postsynapse_count} with postsynapse IDs")
     
+    # Group synapses by presynapse_id
+    seg_type = -1
+    try:
+        if 'segmentation_type' in features_df.columns and len(features_df) > 0:
+            # Get the segmentation type of the first row (assuming all rows have the same segmentation type)
+            seg_type = int(float(features_df['segmentation_type'].iloc[0]))
+    except (ValueError, TypeError):
+        print("Warning: Could not determine segmentation type from the features DataFrame")
+    
+    # For most segmentation types, only include groups with multiple synapses
+    # For segmentation type 10, include all synapses to enable analysis
+    include_single_synapse = (seg_type == 10)
+    
     for pre_id, group_df in features_df.groupby('presynapse_id'):
-        if pre_id > 0 and len(group_df) > 1:
+        # Skip entries with -1 or '-1' (meaning no presynapse ID)
+        if pre_id == -1 or pre_id == '-1':
+            continue
+        
+        # Include groups with multiple synapses, or single synapses if include_single_synapse is True
+        if len(group_df) > 1 or include_single_synapse:
             presynapse_groups[pre_id] = group_df.index.tolist()
     
-    print(f"Found {len(presynapse_groups)} presynapse IDs with multiple synapses")
+    print(f"Found {len(presynapse_groups)} presynapse IDs with {'at least one synapse' if include_single_synapse else 'multiple synapses'}")
     return presynapse_groups, features_df
+
+
+def detect_feature_columns(features_df):
+    """
+    Helper function to detect feature columns in a DataFrame.
+    Returns a list of column names that are likely to be feature columns.
+    """
+    feature_cols = []
+    
+    # Standard feature columns (feat_XXX)
+    std_feature_cols = [c for c in features_df.columns if c.startswith('feat_')]
+    if std_feature_cols:
+        feature_cols = std_feature_cols
+        print(f"Using {len(feature_cols)} standard feature columns")
+        return feature_cols
+    
+    # Stage-specific feature columns (feature_XXX)
+    if any(c.startswith('feature_') for c in features_df.columns):
+        feature_cols = [c for c in features_df.columns if c.startswith('feature_')]
+        print(f"Using {len(feature_cols)} stage-specific feature columns")
+        return feature_cols
+    
+    # VGG3D feature columns (fc_XXX)
+    if any(c.startswith('fc_') for c in features_df.columns):
+        feature_cols = [c for c in features_df.columns if c.startswith('fc_')]
+        print(f"Using {len(feature_cols)} VGG3D feature columns")
+        return feature_cols
+    
+    # Try any numerical columns as a fallback
+    potential_feature_cols = features_df.select_dtypes(include=np.number).columns.tolist()
+    # Exclude known non-feature columns
+    exclude_cols = ['cluster', 'x', 'y', 'z', 'segmentation_type', 'alpha', 
+                     'umap_x', 'umap_y', 'index', 'bbox_id', 'layer_num']
+    feature_cols = [c for c in potential_feature_cols if c not in exclude_cols 
+                     and not c.startswith('coord_')]
+    
+    if feature_cols:
+        print(f"Using {len(feature_cols)} numerical columns as features")
+        return feature_cols
+    
+    # Still no feature columns? Raise an error
+    raise ValueError("No feature columns detected in the DataFrame. Feature columns should start with 'feat_', 'feature_', or 'fc_'.")
 
 
 def calculate_feature_distances(features_df, presynapse_groups):
     print("Calculating feature distances")
     
     distance_matrices = {}
-    feature_cols = [c for c in features_df.columns if c.startswith('feat_')]
+    
+    # Detect feature columns
+    feature_cols = detect_feature_columns(features_df)
+    print(f"Feature columns for distance calculation: {feature_cols[:5]}{'...' if len(feature_cols) > 5 else ''}")
     
     for pre_id, synapse_indices in presynapse_groups.items():
+        if len(synapse_indices) <= 1:
+            # For single-synapse groups, set distance as zero
+            distance_matrices[pre_id] = {
+                'indices': synapse_indices,
+                'distances': np.array([[0]]) if len(synapse_indices) == 1 else np.array([]),
+                'mean_distance': 0,
+                'max_distance': 0,
+                'min_distance': 0
+            }
+            continue
+        
+        # Get the feature values for these synapses
         synapse_features = features_df.loc[synapse_indices, feature_cols].values
         
-        distances = euclidean_distances(synapse_features)
-        
-        triu_indices = np.triu_indices_from(distances, k=1)
-        
-        triu_values = distances[triu_indices]
-        
-        if len(triu_values) > 0:
-            mean_distance = np.mean(triu_values)
-            max_distance = np.max(triu_values)
-            min_distance = np.min(triu_values)
-        else:
+        # Catch the case where features might be empty
+        if synapse_features.shape[1] == 0:
+            print(f"Warning: No features found for presynapse {pre_id} with indices {synapse_indices}")
+            distances = np.zeros((len(synapse_indices), len(synapse_indices)))
             mean_distance = 0
             max_distance = 0
             min_distance = 0
+        else:
+            # Calculate pairwise Euclidean distances
+            distances = euclidean_distances(synapse_features)
+            
+            # Get the upper triangular part (excluding diagonal)
+            triu_indices = np.triu_indices_from(distances, k=1)
+            triu_values = distances[triu_indices]
+            
+            if len(triu_values) > 0:
+                mean_distance = np.mean(triu_values)
+                max_distance = np.max(triu_values)
+                min_distance = np.min(triu_values)
+            else:
+                mean_distance = 0
+                max_distance = 0
+                min_distance = 0
         
         distance_matrices[pre_id] = {
             'indices': synapse_indices,
@@ -226,45 +391,6 @@ def create_distance_heatmaps(output_dir, distance_matrices, features_df):
         plt.close()
     
     print(f"Saved distance heatmaps to {heatmap_dir}")
-
-
-def create_connected_umap(features_df, presynapse_groups, output_dir):
-    print("Creating connected UMAP visualization for synapses sharing the same presynapse ID")
-    
-    if 'umap_x' not in features_df.columns or 'umap_y' not in features_df.columns:
-        print("No UMAP coordinates found in features data")
-        
-        feature_cols = [c for c in features_df.columns if c.startswith('feat_')]
-        if len(feature_cols) > 0:
-            print("Computing UMAP from feature data")
-            features = features_df[feature_cols].values
-            features_scaled = StandardScaler().fit_transform(features)
-            
-            reducer = umap.UMAP(random_state=42)
-            umap_results = reducer.fit_transform(features_scaled)
-            
-            features_df['umap_x'] = umap_results[:, 0]
-            features_df['umap_y'] = umap_results[:, 1]
-            print("Added UMAP coordinates to features data")
-        else:
-            print("No feature columns found, cannot compute UMAP")
-            return None
-    
-    # Create standard connected UMAP visualization (improved version)
-    create_standard_connected_umap(features_df, presynapse_groups, output_dir)
-    
-    # Create a dedicated bbox-colored UMAP visualization
-    create_bbox_colored_umap(features_df, output_dir)
-    
-    # Create a dedicated cluster-colored UMAP visualization (if cluster info available)
-    if 'cluster' in features_df.columns:
-        create_cluster_colored_umap(features_df, output_dir)
-    
-    # Create an interactive version with all information
-    create_interactive_umap(features_df, presynapse_groups, output_dir)
-    
-    # Return the path to the main visualization
-    return os.path.join(output_dir, "connected_umap_visualization.png")
 
 
 def create_standard_connected_umap(features_df, presynapse_groups, output_dir):
@@ -581,12 +707,17 @@ def create_interactive_umap(features_df, presynapse_groups, output_dir):
             if 'cluster' in row:
                 hover_info += f"Cluster: {row['cluster']}<br>"
                 
-            hover_info += f"Presynapse ID: {int(row['presynapse_id'])}"
+            hover_info += f"Presynapse ID: {row['presynapse_id']}"
             hover_text.append(hover_info)
         
         fig = go.Figure()
         
+        # Identify background points (those without a presynapse group)
         background_points = plot_df[plot_df['presynapse_id'] == -1]
+        # Also catch any points where presynapse_id might be a string '-1'
+        if isinstance(plot_df['presynapse_id'].iloc[0], str):
+            background_points = plot_df[plot_df['presynapse_id'].isin([-1, '-1'])]
+        
         if len(background_points) > 0:
             fig.add_trace(go.Scatter(
                 x=background_points['umap_x'],
@@ -717,7 +848,7 @@ def create_cluster_visualizations(output_dir, cluster_info, features_df):
     if not presynapse_groups:
         if 'presynapse_id' in features_df.columns:
             for pre_id, group_df in features_df.groupby('presynapse_id'):
-                if pre_id > 0 and len(group_df) > 1:
+                if pre_id != -1 and len(group_df) > 1:
                     presynapse_groups[pre_id] = group_df.index.tolist()
     
     if presynapse_groups:
@@ -727,13 +858,23 @@ def create_cluster_visualizations(output_dir, cluster_info, features_df):
 
 
 def compare_intra_inter_presynapse_distances(features_df, presynapse_groups, output_dir):
+    """
+    Compare distances between synapses within the same presynapse group vs between different groups.
+    
+    Args:
+        features_df: DataFrame with feature data
+        presynapse_groups: Dictionary mapping presynapse IDs to lists of synapse indices
+        output_dir: Directory to save outputs
+        
+    Returns:
+        Dictionary with distance comparison results
+    """
     print("Comparing intra-presynapse and inter-presynapse distances")
     
-    feature_cols = [c for c in features_df.columns if c.startswith('feat_')]
-    if not feature_cols:
-        print("No feature columns found, cannot compute distances")
-        return None
+    # Detect feature columns
+    feature_cols = detect_feature_columns(features_df)
     
+    # Get all feature vectors
     features = features_df[feature_cols].values
     
     index_to_presynapse = {}
@@ -1223,7 +1364,23 @@ def generate_report(output_dir, presynapse_groups, distance_matrices, cluster_in
 
 
 def create_gif_from_volume(volume, output_path, fps=10, loop=0):
-    volume = (volume - volume.min()) / (volume.max() - volume.min()) * 255
+    # Convert PyTorch tensor to numpy if needed
+    if hasattr(volume, 'numpy'):
+        # It's a PyTorch tensor
+        volume = volume.cpu().detach().numpy()
+    elif hasattr(volume, 'detach'):
+        # It's a PyTorch tensor but no numpy method (older version)
+        volume = volume.cpu().detach().numpy()
+    elif hasattr(volume, 'cpu'):
+        # Just in case
+        volume = volume.cpu().numpy() if hasattr(volume.cpu(), 'numpy') else volume
+    
+    # Ensure volume is numpy array
+    if not isinstance(volume, np.ndarray):
+        raise TypeError(f"Volume must be a numpy array or convertible to numpy, got {type(volume)}")
+    
+    # Normalize for visualization
+    volume = (volume - volume.min()) / (volume.max() - volume.min() + 1e-8) * 255
     volume = volume.astype(np.uint8)
     
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
@@ -1244,7 +1401,9 @@ def create_gifs_for_presynapse_groups(dataset, presynapse_groups, features_df, o
     gif_count = 0
     
     for pre_id, indices in presynapse_groups.items():
-        pre_dir = os.path.join(gifs_dir, f"presynapse_{pre_id}")
+        # Create a safe directory name from the presynapse ID
+        safe_pre_id = str(pre_id).replace('/', '_').replace('\\', '_').replace(':', '_')
+        pre_dir = os.path.join(gifs_dir, f"presynapse_{safe_pre_id}")
         os.makedirs(pre_dir, exist_ok=True)
         
         group_synapses = features_df.loc[indices]
@@ -1252,30 +1411,67 @@ def create_gifs_for_presynapse_groups(dataset, presynapse_groups, features_df, o
         print(f"Creating GIFs for {len(indices)} synapses with presynapse ID {pre_id}")
         
         for idx, row in group_synapses.iterrows():
-            bbox_name = row.get('bbox_name', '')
-            var1 = row.get('Var1', f"synapse_{idx}")
-            
             try:
-                if isinstance(dataset, dict):
-                    if bbox_name in dataset:
-                        pixel_values, syn_info, _ = dataset[bbox_name][idx]
-                    else:
-                        print(f"Warning: No data for bbox {bbox_name}")
-                        continue
+                # Get the dataset index that corresponds to this row in features_df
+                syn_df_idx = -1
+                
+                if 'synapse_idx' in row:
+                    # If we have a direct index into the syn_df
+                    syn_df_idx = row['synapse_idx']
                 else:
-                    pixel_values, syn_info, _ = dataset[idx]
+                    # Otherwise, try to match by bbox_name and coordinates
+                    bbox_name = row['bbox_name']
+                    # Find matching rows in the dataset by coordinates
+                    for i in range(len(dataset)):
+                        try:
+                            sample = dataset[i]
+                            # If sample is returned as a tuple with syn_info
+                            if not isinstance(sample, dict) and len(sample) > 1:
+                                _, syn_info, _ = sample
+                                if syn_info['bbox_name'] == bbox_name:
+                                    # Check if coordinates match
+                                    coords_match = True
+                                    for coord_col in ['central_coord_1', 'central_coord_2', 'central_coord_3']:
+                                        if coord_col in row and coord_col in syn_info:
+                                            if abs(float(row[coord_col]) - float(syn_info[coord_col])) > 1e-5:
+                                                coords_match = False
+                                                break
+                                    if coords_match:
+                                        syn_df_idx = i
+                                        break
+                        except Exception as e:
+                            print(f"Error checking sample {i}: {e}")
+                            continue
                 
-                if hasattr(pixel_values, 'squeeze'):
-                    pixel_values = pixel_values.squeeze().numpy() if hasattr(pixel_values, 'numpy') else pixel_values.squeeze()
+                if syn_df_idx == -1:
+                    print(f"Warning: Could not find matching synapse in dataset for row {idx}")
+                    continue
                 
-                if hasattr(var1, 'replace'):
-                    clean_var1 = var1.replace('/', '_').replace('\\', '_').replace(':', '_')
+                # Get the sample from the dataset
+                sample = dataset[syn_df_idx]
+                
+                # Extract raw volume
+                if isinstance(sample, dict):
+                    raw_vol = sample.get("raw_volume")
+                else:
+                    raw_vol, _, _ = sample
+                
+                if raw_vol is None:
+                    print(f"Warning: No raw volume data for synapse at index {syn_df_idx}")
+                    continue
+                
+                # Format filename
+                if 'Var1' in row:
+                    var1 = row['Var1']
+                    clean_var1 = str(var1).replace('/', '_').replace('\\', '_').replace(':', '_')
                 else:
                     clean_var1 = f"synapse_{idx}"
                 
+                bbox_name = row['bbox_name']
                 output_path = os.path.join(pre_dir, f"{bbox_name}_{clean_var1}.gif")
                 
-                create_gif_from_volume(pixel_values, output_path)
+                # Create the GIF
+                create_gif_from_volume(raw_vol, output_path)
                 gif_count += 1
                 
             except Exception as e:
@@ -1298,11 +1494,58 @@ def run_presynapse_analysis(config):
         add_mask_base_dir=config.add_mask_base_dir
     )
     
-    seg_vol_dict = {}
+    # Load data in the correct format for SynapseDataset
+    vol_data_dict = {}
     for bbox_name in config.bbox_name:
         raw_vol, seg_vol, add_mask_vol = data_loader.load_volumes(bbox_name)
         if raw_vol is not None:
-            seg_vol_dict[bbox_name] = (raw_vol, seg_vol, add_mask_vol)
+            vol_data_dict[bbox_name] = (raw_vol, seg_vol, add_mask_vol)
+    
+    # Load synapse information from Excel files
+    try:
+        syn_df = pd.concat([
+            pd.read_excel(os.path.join(config.excel_file, f"{bbox}.xlsx")).assign(bbox_name=bbox)
+            for bbox in config.bbox_name if os.path.exists(os.path.join(config.excel_file, f"{bbox}.xlsx"))
+        ])
+        print(f"Loaded {len(syn_df)} synapse entries from Excel files")
+    except Exception as e:
+        print(f"Error loading Excel files: {e}")
+        return
+    
+    # Initialize processor
+    processor = Synapse3DProcessor()
+    
+    # Properly initialize SynapseDataset with the correct parameters
+    dataset = SynapseDataset(
+        vol_data_dict=vol_data_dict, 
+        synapse_df=syn_df, 
+        processor=processor,
+        segmentation_type=config.segmentation_type,
+        subvol_size=config.subvol_size,
+        num_frames=config.num_frames,
+        alpha=config.alpha
+    )
+    
+    # Create dictionary of volumes for analysis
+    seg_vol_dict = {}
+    for idx in range(len(dataset)):
+        try:
+            sample = dataset[idx]
+            syn_info = syn_df.iloc[idx]
+            bbox_name = syn_info['bbox_name']
+            
+            # Extract volumes from the sample
+            if isinstance(sample, dict):
+                raw_vol = sample.get("raw_volume")
+                seg_vol = sample.get("segmentation_volume")
+                add_mask_vol = sample.get("additional_mask_volume")
+            else:
+                raw_vol, _, _ = sample
+            
+            if raw_vol is not None:
+                seg_vol_dict[bbox_name] = (raw_vol, seg_vol, add_mask_vol)
+        except Exception as e:
+            print(f"Error loading sample {idx}: {e}")
     
     if isinstance(config.segmentation_type, list):
         segmentation_types = config.segmentation_type
@@ -1326,30 +1569,181 @@ def run_presynapse_analysis(config):
             seg_output_dir = os.path.join(output_dir, f"seg{seg_type}_alpha{str(alpha).replace('.', '_')}")
             os.makedirs(seg_output_dir, exist_ok=True)
             
-            clustered_path = os.path.join(config.csv_output_dir, "combined_analysis", "clustered_features.csv")
             features_df = None
             
-            if os.path.exists(clustered_path):
-                print(f"Loading clustered data from {clustered_path}")
-                clustered_df = load_feature_data(clustered_path)
+            # Try multiple locations for the features file
+            possible_feature_paths = [
+                # 1. Check in combined_analysis directory
+                os.path.join(config.csv_output_dir, "combined_analysis", "clustered_features.csv"),
                 
-                if 'segmentation_type' in clustered_df.columns:
-                    features_df = clustered_df[clustered_df['segmentation_type'] == seg_type]
-                    if len(features_df) > 0:
-                        print(f"Extracted {len(features_df)} rows for segmentation type {seg_type} from clustered data")
-                    else:
-                        features_df = None
-                        print(f"No data for segmentation type {seg_type} found in clustered data")
-                else:
-                    print("No segmentation_type column found in clustered data")
+                # 2. Check in main csv_output_dir for standard features
+                os.path.join(config.csv_output_dir, f"features_seg{seg_type}_alpha{str(alpha).replace('.', '_')}.csv"),
+                
+                # 3. Check in main csv_output_dir for stage-specific features
+                os.path.join(config.csv_output_dir, f"features_layer{config.layer_num}_seg{seg_type}_alpha{str(alpha).replace('.', '_')}.csv"),
+                
+                # 4. Check in folder with stage-specific features
+                os.path.join(config.csv_output_dir, f"features_layer{config.layer_num}_seg{seg_type}_alpha{alpha}", 
+                           f"features_layer{config.layer_num}_seg{seg_type}_alpha{str(alpha).replace('.', '_')}.csv"),
+                
+                # 5. Check in folder with standard features
+                os.path.join(config.csv_output_dir, f"features_seg{seg_type}_alpha{alpha}", 
+                           f"features_seg{seg_type}_alpha{str(alpha).replace('.', '_')}.csv"),
+                
+                # 6. Check in parent directory
+                os.path.join(os.path.dirname(config.csv_output_dir), "csv_outputs", 
+                            f"features_seg{seg_type}_alpha{str(alpha).replace('.', '_')}.csv"),
+                
+                # 7. Check in parent directory for stage-specific features
+                os.path.join(os.path.dirname(config.csv_output_dir), "csv_outputs", 
+                           f"features_layer{config.layer_num}_seg{seg_type}_alpha{str(alpha).replace('.', '_')}.csv"),
+                
+                # 8. Check in results directory
+                os.path.join("results", "csv_outputs", 
+                            f"features_seg{seg_type}_alpha{str(alpha).replace('.', '_')}.csv"),
+                
+                # 9. Check in results directory for stage-specific features
+                os.path.join("results", "csv_outputs", 
+                           f"features_layer{config.layer_num}_seg{seg_type}_alpha{str(alpha).replace('.', '_')}.csv"),
+                
+                # 10. Try a more generic path without decimal replacement
+                os.path.join(config.csv_output_dir, f"features_seg{seg_type}_alpha{alpha}.csv"),
+                
+                # 11. Try a more generic path without decimal replacement for stage-specific features
+                os.path.join(config.csv_output_dir, f"features_layer{config.layer_num}_seg{seg_type}_alpha{alpha}.csv"),
+                
+                # 12. Try looking for any features file with this segmentation type
+                *[os.path.join(dirpath, f) for dirpath, _, filenames in os.walk(config.csv_output_dir) 
+                  for f in filenames if (f.startswith(f"features_seg{seg_type}_") or 
+                                       f.startswith(f"features_layer{config.layer_num}_seg{seg_type}_")) 
+                                      and f.endswith(".csv")]
+            ]
             
-            if features_df is None:
-                features_path = os.path.join(
-                    config.csv_output_dir, 
-                    f"features_seg{seg_type}_alpha{str(alpha).replace('.', '_')}.csv"
-                )
+            # Try each path
+            for feature_path in possible_feature_paths:
+                print(f"Trying to load features from: {feature_path}")
+                if os.path.exists(feature_path):
+                    loaded_df = load_feature_data(feature_path)
+                    
+                    # If the path has clustered_features.csv, filter by segmentation type
+                    if "clustered_features.csv" in feature_path and loaded_df is not None:
+                        if 'segmentation_type' in loaded_df.columns:
+                            features_df = loaded_df[loaded_df['segmentation_type'] == seg_type].copy()
+                            if len(features_df) > 0:
+                                print(f"Extracted {len(features_df)} rows for segmentation type {seg_type} from {feature_path}")
+                                break
+                    else:
+                        features_df = loaded_df
+                        print(f"Loaded {len(features_df)} rows from {feature_path}")
+                        break
+            
+            # If still can't find features, try to generate them from the dataset
+            if features_df is None and len(vol_data_dict) > 0:
+                print(f"No existing feature file found. Attempting to generate features from loaded dataset.")
                 
-                features_df = load_feature_data(features_path)
+                try:
+                    # Import necessary function for feature extraction
+                    from inference import extract_features
+                    
+                    # Create a basic features DataFrame from synapse coordinates
+                    features_df = syn_df.copy()
+                    
+                    # Add segmentation type column
+                    features_df['segmentation_type'] = seg_type
+                    
+                    # Add alpha column
+                    features_df['alpha'] = alpha
+                    
+                    print("Attempting to extract features using VGG3D model...")
+                    
+                    # Load model and extract features
+                    try:
+                        # Import model loading function with correct signature
+                        if config.extraction_method == "stage_specific":
+                            # For stage-specific extraction
+                            from stage_specific_feature_extraction import load_model_and_extract_stage_specific_features
+                            
+                            features_df = load_model_and_extract_stage_specific_features(
+                                dataset=dataset,
+                                features_df=features_df,
+                                device="cuda" if torch.cuda.is_available() else "cpu",
+                                layer_num=config.layer_num
+                            )
+                        else:
+                            # For standard extraction
+                            from inference import load_model_from_checkpoint
+                            
+                            # Load model
+                            from synapse.models.vgg3d import Vgg3D
+                            
+                            # Create a new VGG3D model instance
+                            model = Vgg3D(
+                                input_size=(16, 80, 80),  # Adjust dimensions based on your dataset
+                                fmaps=24,
+                                downsample_factors=[(1, 2, 2), (2, 2, 2), (2, 2, 2), (2, 2, 2)],
+                                fmap_inc=(2, 2, 2, 2),
+                                n_convolutions=(4, 2, 2, 2),
+                                output_classes=2,  # Adjust based on your classes
+                                input_fmaps=1
+                            )
+                            
+                            # Find the checkpoint path
+                            checkpoint_path = config.checkpoint_path
+                            if not checkpoint_path or not os.path.exists(checkpoint_path):
+                                # Try to find a checkpoint file
+                                possible_checkpoint_paths = [
+                                    os.path.join("checkpoints", "vgg3d_model.pth"),
+                                    os.path.join("models", "vgg3d_model.pth"),
+                                    os.path.join("models", "checkpoint.pth"),
+                                    os.path.join(os.path.dirname(os.path.dirname(__file__)), "models", "vgg3d_model.pth"),
+                                    os.path.join(os.path.dirname(os.path.dirname(__file__)), "checkpoints", "vgg3d_model.pth")
+                                ]
+                                
+                                for cp_path in possible_checkpoint_paths:
+                                    if os.path.exists(cp_path):
+                                        checkpoint_path = cp_path
+                                        break
+                            
+                            if not checkpoint_path or not os.path.exists(checkpoint_path):
+                                raise FileNotFoundError("Checkpoint file not found. Please provide a valid checkpoint path.")
+                            
+                            # Load model from checkpoint
+                            model = load_model_from_checkpoint(model, checkpoint_path)
+                            print("Model loaded successfully")
+                            
+                            from inference import extract_features
+                            
+                            features_df = extract_features(
+                                model=model,
+                                dataset=dataset,
+                                features_df=features_df,
+                                device="cuda" if torch.cuda.is_available() else "cpu"
+                            )
+                        
+                        # Save the generated features
+                        if config.extraction_method == "stage_specific":
+                            features_path = os.path.join(
+                                seg_output_dir, 
+                                f"generated_features_layer{config.layer_num}_seg{seg_type}_alpha{str(alpha).replace('.', '_')}.csv"
+                            )
+                        else:
+                            features_path = os.path.join(
+                                seg_output_dir, 
+                                f"generated_features_seg{seg_type}_alpha{str(alpha).replace('.', '_')}.csv"
+                            )
+                        
+                        features_df.to_csv(features_path, index=False)
+                        print(f"Generated features saved to {features_path}")
+                        
+                    except Exception as e:
+                        print(f"Error extracting features: {e}")
+                        import traceback
+                        traceback.print_exc()
+                        features_df = None
+                        
+                except ImportError as ie:
+                    print(f"Could not import feature extraction utilities: {ie}")
+                    features_df = None
             
             if features_df is None:
                 print(f"No feature data found for segmentation type {seg_type} with alpha {alpha}. Skipping.")
@@ -1382,7 +1776,29 @@ def run_presynapse_analysis(config):
             )
             
             if not presynapse_groups:
-                print(f"No synapses with the same presynapse ID found for segmentation type {seg_type} with alpha {alpha}. Skipping.")
+                print(f"No synapses with the same presynapse ID found for segmentation type {seg_type} with alpha {alpha}.")
+                # Check if there are any presynapse IDs at all
+                if 'presynapse_id' in updated_features_df.columns:
+                    pre_ids = updated_features_df['presynapse_id'].unique()
+                    pre_ids = [pid for pid in pre_ids if pid != -1]
+                    if len(pre_ids) > 0:
+                        print(f"Found {len(pre_ids)} presynapse IDs, but none with multiple synapses. Try including single-synapse groups.")
+                        # Write diagnostic information to a file
+                        diagnostic_path = os.path.join(seg_output_dir, "diagnostic_info.txt")
+                        with open(diagnostic_path, 'w') as f:
+                            f.write(f"Segmentation type: {seg_type}, Alpha: {alpha}\n")
+                            f.write(f"Number of presynapse IDs: {len(pre_ids)}\n")
+                            f.write(f"Presynapse IDs: {pre_ids}\n")
+                            f.write(f"Number of synapses: {len(updated_features_df)}\n")
+                            f.write("\nPresynapse counts:\n")
+                            pre_counts = updated_features_df['presynapse_id'].value_counts().to_dict()
+                            for pre_id, count in pre_counts.items():
+                                if pre_id != -1:
+                                    f.write(f"  {pre_id}: {count} synapses\n")
+                        print(f"Diagnostic information written to {diagnostic_path}")
+                    else:
+                        print("No presynapse IDs assigned. Check the segmentation data and coordinate mapping.")
+                print("Skipping further analysis.")
                 continue
             
             distance_matrices = calculate_feature_distances(updated_features_df, presynapse_groups)
@@ -1412,9 +1828,63 @@ def run_presynapse_analysis(config):
             if distance_comparison:
                 add_distance_comparison_to_report(report_path, distance_comparison, seg_output_dir)
             
+            # Create GIFs for visualizing presynapse groups
+            create_gifs_for_presynapse_groups(
+                dataset, 
+                presynapse_groups, 
+                updated_features_df, 
+                seg_output_dir
+            )
+            
             print(f"Analysis complete for segmentation type {seg_type} with alpha {alpha}")
     
     print(f"Presynapse analysis complete for all segmentation types and alpha values. Results saved to {output_dir}")
+
+
+def create_connected_umap(features_df, presynapse_groups, output_dir):
+    """Creates a connected UMAP visualization showing synapses with the same presynapse ID."""
+    print("Creating connected UMAP visualization for synapses sharing the same presynapse ID")
+    
+    if 'umap_x' not in features_df.columns or 'umap_y' not in features_df.columns:
+        print("No UMAP coordinates found in features data")
+        
+        # Detect feature columns using the helper function
+        try:
+            feature_cols = detect_feature_columns(features_df)
+            
+            if len(feature_cols) > 0:
+                print("Computing UMAP from feature data")
+                features = features_df[feature_cols].values
+                features_scaled = StandardScaler().fit_transform(features)
+                
+                reducer = umap.UMAP(random_state=42)
+                umap_results = reducer.fit_transform(features_scaled)
+                
+                features_df['umap_x'] = umap_results[:, 0]
+                features_df['umap_y'] = umap_results[:, 1]
+                print("Added UMAP coordinates to features data")
+            else:
+                print("No feature columns found, cannot compute UMAP")
+                return None
+        except ValueError as e:
+            print(f"Error detecting feature columns: {e}")
+            return None
+    
+    # Create standard connected UMAP visualization (improved version)
+    create_standard_connected_umap(features_df, presynapse_groups, output_dir)
+    
+    # Create a dedicated bbox-colored UMAP visualization
+    create_bbox_colored_umap(features_df, output_dir)
+    
+    # Create a dedicated cluster-colored UMAP visualization (if cluster info available)
+    if 'cluster' in features_df.columns:
+        create_cluster_colored_umap(features_df, output_dir)
+    
+    # Create an interactive version with all information
+    create_interactive_umap(features_df, presynapse_groups, output_dir)
+    
+    # Return the path to the main visualization
+    return os.path.join(output_dir, "connected_umap_visualization.png")
 
 
 if __name__ == "__main__":
