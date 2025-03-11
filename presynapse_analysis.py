@@ -1678,7 +1678,7 @@ def run_presynapse_analysis(config):
                             
                             # Create a new VGG3D model instance
                             model = Vgg3D(
-                                input_size=(16, 80, 80),  # Adjust dimensions based on your dataset
+                                input_size=(80, 80, 80),  # Adjust dimensions based on your dataset
                                 fmaps=24,
                                 downsample_factors=[(1, 2, 2), (2, 2, 2), (2, 2, 2), (2, 2, 2)],
                                 fmap_inc=(2, 2, 2, 2),

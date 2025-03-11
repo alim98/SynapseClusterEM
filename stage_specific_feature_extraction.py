@@ -253,7 +253,7 @@ def load_model_and_extract_stage_specific_features(dataset, features_df, device=
     """
     # Initialize the VGG3D model
     model = Vgg3D(
-        input_size=(16, 80, 80),  # Adjust dimensions based on your dataset
+        input_size=(80, 80, 80),  # Adjust dimensions based on your dataset
         fmaps=24,
         downsample_factors=[(1, 2, 2), (2, 2, 2), (2, 2, 2), (2, 2, 2)],
         fmap_inc=(2, 2, 2, 2),
