@@ -19,6 +19,12 @@ from synapse.clustering import (
     save_tsne_plots,
     save_cluster_samples
 )
+# Import GUI components (optional import to avoid tkinter dependency when not needed)
+try:
+    from synapse.gui import SynapseGUI
+except ImportError:
+    # GUI components may not be available if tkinter is not installed
+    pass
 
 # Export the most commonly used components
 __all__ = [
@@ -38,5 +44,7 @@ __all__ = [
     'find_closest_samples_in_clusters',
     'apply_tsne',
     'save_tsne_plots',
-    'save_cluster_samples'
+    'save_cluster_samples',
+    # GUI exports (will be None if tkinter is not available)
+    'SynapseGUI'
 ] 

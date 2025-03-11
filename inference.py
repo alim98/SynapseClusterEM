@@ -580,7 +580,7 @@ def load_and_prepare_data(config):
     )
     
     vol_data_dict = {}
-    for bbox_name in config.bbox_name:
+    for bbox_name in tqdm(config.bbox_name, desc="Loading volumes"):
         raw_vol, seg_vol, add_mask_vol = data_loader.load_volumes(bbox_name)
         if raw_vol is not None:
             vol_data_dict[bbox_name] = (raw_vol, seg_vol, add_mask_vol)

@@ -119,6 +119,35 @@ def main():
     # Create timestamp for this run
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     
+    # Create a parent results directory with timestamp
+    results_base_dir = os.path.join("results", f"run_{timestamp}")
+    os.makedirs(results_base_dir, exist_ok=True)
+    
+    # Create a log file in the results directory
+    global log_file
+    log_file.close()  # Close the default log file
+    log_file = open(os.path.join(results_base_dir, "pipeline_log.txt"), "w")
+    
+    # Store original paths
+    original_csv_dir = config.csv_output_dir
+    original_clustering_dir = config.clustering_output_dir
+    original_gifs_dir = config.save_gifs_dir
+    
+    # Update paths to use subdirectories within the timestamped parent directory
+    config.csv_output_dir = os.path.join(results_base_dir, "csv_outputs")
+    config.clustering_output_dir = os.path.join(results_base_dir, "clustering_results")
+    config.save_gifs_dir = os.path.join(results_base_dir, "gifs")
+    
+    # Make sure report directory also uses the timestamp
+    config.report_output_dir = os.path.join(results_base_dir, "reports")
+    
+    log_print(f"Creating parent results directory with timestamp: {timestamp}")
+    log_print(f"  Parent directory: {results_base_dir}")
+    log_print(f"  CSV output: {config.csv_output_dir}")
+    log_print(f"  Clustering output: {config.clustering_output_dir}")
+    log_print(f"  GIFs output: {config.save_gifs_dir}")
+    log_print(f"  Reports output: {config.report_output_dir}")
+    
     if hasattr(config, 'only_vesicle_analysis') and config.only_vesicle_analysis:
         log_print("Running only vesicle analysis on existing results...")
         run_vesicle_analysis()
@@ -127,19 +156,27 @@ def main():
         
         # Initialize and run the pipeline
         pipeline = SynapsePipeline(config)
-        result = pipeline.run_full_pipeline(
-            seg_type=config.segmentation_type,
-            alpha=config.alpha,
-            extraction_method=extraction_method,
-            layer_num=layer_num
-        )
-        
-        # Continue with vesicle analysis
-        if result is not None and 'features_df' in result:
-            vesicle_analysis_results = analyze_vesicle_sizes(pipeline, result['features_df'])
-            log_print("Pipeline and vesicle analysis completed successfully!")
-        else:
-            log_print("Pipeline failed to return usable results.")
+        try:
+            log_print("Starting pipeline.run_full_pipeline...")
+            result = pipeline.run_full_pipeline(
+                seg_type=config.segmentation_type,
+                alpha=config.alpha,
+                extraction_method=extraction_method,
+                layer_num=layer_num
+            )
+            log_print("Pipeline.run_full_pipeline completed")
+            
+            # Continue with vesicle analysis
+            if result is not None and 'features_df' in result:
+                log_print("Starting vesicle analysis...")
+                vesicle_analysis_results = analyze_vesicle_sizes(pipeline, result['features_df'])
+                log_print("Pipeline and vesicle analysis completed successfully!")
+            else:
+                log_print("Pipeline failed to return usable results.")
+        except Exception as e:
+            log_print(f"Error during pipeline execution: {str(e)}")
+            import traceback
+            log_print(traceback.format_exc())
     
     log_print(f"--- Pipeline run completed at {time.strftime('%Y-%m-%d %H:%M:%S')} ---\n")
     log_file.close()

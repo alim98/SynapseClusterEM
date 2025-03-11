@@ -1158,3 +1158,205 @@ Running with configuration:
   Alpha: 1.0
   Feature Extraction Method: standard
 Running full pipeline...
+
+--- Starting pipeline run at 2025-03-11 11:16:13 ---
+Running with configuration:
+  Segmentation Type: 10
+  Alpha: 1.0
+  Feature Extraction Method: standard
+Running full pipeline...
+
+--- Starting pipeline run at 2025-03-11 11:17:18 ---
+Running with configuration:
+  Segmentation Type: 10
+  Alpha: 1.0
+  Feature Extraction Method: stage_specific
+  Layer Number: 20
+Running full pipeline...
+Vesicle size analysis functionality will be implemented soon.
+Pipeline and vesicle analysis completed successfully!
+--- Pipeline run completed at 2025-03-11 11:18:17 ---
+
+
+--- Starting pipeline run at 2025-03-11 11:19:59 ---
+Running with configuration:
+  Segmentation Type: 10
+  Alpha: 1.0
+  Feature Extraction Method: stage_specific
+  Layer Number: 20
+Running full pipeline...
+Vesicle size analysis functionality will be implemented soon.
+Pipeline and vesicle analysis completed successfully!
+--- Pipeline run completed at 2025-03-11 11:20:58 ---
+
+
+--- Starting pipeline run at 2025-03-11 12:10:37 ---
+Running with configuration:
+  Segmentation Type: 10
+  Alpha: 1.0
+  Feature Extraction Method: standard
+Running full pipeline...
+Vesicle size analysis functionality will be implemented soon.
+Pipeline and vesicle analysis completed successfully!
+--- Pipeline run completed at 2025-03-11 12:12:07 ---
+
+
+--- Starting pipeline run at 2025-03-11 12:16:15 ---
+Running with configuration:
+  Segmentation Type: 10
+  Alpha: 1.0
+  Feature Extraction Method: standard
+Creating parent results directory with timestamp: 20250311_121615
+  Parent directory: results\run_20250311_121615
+  CSV output: results\run_20250311_121615\csv_outputs
+  Clustering output: results\run_20250311_121615\clustering_results
+  GIFs output: results\run_20250311_121615\gifs
+  Reports output: results\run_20250311_121615\reports
+Running full pipeline...
+
+--- Starting pipeline run at 2025-03-11 12:20:30 ---
+Running with configuration:
+  Segmentation Type: 10
+  Alpha: 1.0
+  Feature Extraction Method: standard
+Creating parent results directory with timestamp: 20250311_122030
+  Parent directory: results\run_20250311_122030
+  CSV output: results\run_20250311_122030\csv_outputs
+  Clustering output: results\run_20250311_122030\clustering_results
+  GIFs output: results\run_20250311_122030\gifs
+  Reports output: results\run_20250311_122030\reports
+Running full pipeline...
+
+--- Starting pipeline run at 2025-03-11 12:24:59 ---
+Running with configuration:
+  Segmentation Type: 10
+  Alpha: 1.0
+  Feature Extraction Method: standard
+
+--- Starting pipeline run at 2025-03-11 12:26:47 ---
+Running with configuration:
+  Segmentation Type: 10
+  Alpha: 1.0
+  Feature Extraction Method: standard
+
+--- Starting pipeline run at 2025-03-11 12:33:21 ---
+Running with configuration:
+  Segmentation Type: 10
+  Alpha: 1.0
+  Feature Extraction Method: standard
+
+--- Starting pipeline run at 2025-03-11 12:35:20 ---
+Running with configuration:
+  Segmentation Type: 10
+  Alpha: 1.0
+  Feature Extraction Method: standard
+
+--- Starting pipeline run at 2025-03-11 12:36:59 ---
+Running with configuration:
+  Segmentation Type: 10
+  Alpha: 1.0
+  Feature Extraction Method: standard
+
+--- Starting pipeline run at 2025-03-11 12:39:04 ---
+Running with configuration:
+  Segmentation Type: 10
+  Alpha: 1.0
+  Feature Extraction Method: standard
+
+--- Starting pipeline run at 2025-03-11 12:42:00 ---
+Running with configuration:
+  Segmentation Type: 10
+  Alpha: 1.0
+  Feature Extraction Method: standard
+
+--- Starting pipeline run at 2025-03-11 12:44:43 ---
+Running with configuration:
+  Segmentation Type: 10
+  Alpha: 1.0
+  Feature Extraction Method: standard
+
+--- Starting pipeline run at 2025-03-11 12:46:24 ---
+Running with configuration:
+  Segmentation Type: 10
+  Alpha: 1.0
+  Feature Extraction Method: standard
+
+--- Starting pipeline run at 2025-03-11 12:48:01 ---
+Running with configuration:
+  Segmentation Type: 10
+  Alpha: 1.0
+  Feature Extraction Method: standard
+
+--- Starting pipeline run at 2025-03-11 12:50:26 ---
+Running with configuration:
+  Segmentation Type: 10
+  Alpha: 1.0
+  Feature Extraction Method: stage_specific
+  Layer Number: 20
+
+--- Starting pipeline run at 2025-03-11 12:56:52 ---
+Running with configuration:
+  Segmentation Type: 10
+  Alpha: 1.0
+  Feature Extraction Method: stage_specific
+  Layer Number: 20
+
+--- Starting pipeline run at 2025-03-11 18:16:10 ---
+Running with configuration:
+  Segmentation Type: 10
+  Alpha: 1.0
+  Feature Extraction Method: stage_specific
+  Layer Number: 20
+
+--- Starting pipeline run at 2025-03-11 18:19:32 ---
+Running with configuration:
+  Segmentation Type: 10
+  Alpha: 1.0
+  Feature Extraction Method: stage_specific
+  Layer Number: 20
+
+--- Starting pipeline run at 2025-03-11 18:26:09 ---
+Running with configuration:
+  Segmentation Type: 10
+  Alpha: 1.0
+  Feature Extraction Method: stage_specific
+  Layer Number: 20
+
+--- Starting pipeline run at 2025-03-11 18:29:25 ---
+Running with configuration:
+  Segmentation Type: 10
+  Alpha: 1.0
+  Feature Extraction Method: stage_specific
+  Layer Number: 20
+
+--- Starting pipeline run at 2025-03-11 18:30:00 ---
+Running with configuration:
+  Segmentation Type: 10
+  Alpha: 1.0
+  Feature Extraction Method: stage_specific
+  Layer Number: 20
+
+--- Starting pipeline run at 2025-03-11 18:30:55 ---
+Running with configuration:
+  Segmentation Type: 10
+  Alpha: 1.0
+  Feature Extraction Method: stage_specific
+  Layer Number: 20
+
+--- Starting pipeline run at 2025-03-11 18:37:36 ---
+Running with configuration:
+  Segmentation Type: 10
+  Alpha: 1.0
+  Feature Extraction Method: standard
+
+--- Starting pipeline run at 2025-03-11 18:38:17 ---
+Running with configuration:
+  Segmentation Type: 10
+  Alpha: 1.0
+  Feature Extraction Method: standard
+
+--- Starting pipeline run at 2025-03-11 18:40:50 ---
+Running with configuration:
+  Segmentation Type: 10
+  Alpha: 1.0
+  Feature Extraction Method: standard
