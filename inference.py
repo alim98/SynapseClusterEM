@@ -37,12 +37,20 @@ from synapse import (
     config
 )
 
-from synapse.utils.clusterhelper import (
+# Import VGG3DStageExtractor for stage-specific feature extraction
+from vgg3d_stage_extractor import VGG3DStageExtractor
+
+# Import clustering utilities from the new clustering module
+from synapse.clustering import (
     load_and_cluster_features,
-    apply_tsne,
     find_random_samples_in_clusters,
+    find_closest_samples_in_clusters,
+    apply_tsne,
     save_tsne_plots,
-    save_cluster_samples
+    save_cluster_samples,
+    get_center_slice,
+    visualize_slice,
+    plot_synapse_samples
 )
 
 from presynapse_analysis import run_presynapse_analysis
@@ -108,6 +116,94 @@ def extract_features(model, dataset, config):
 
     combined_df = pd.concat([metadata_df, features_df], axis=1)
 
+    return combined_df
+
+def extract_stage_specific_features(model, dataset, config, layer_num=20):
+    """
+    Extract features from a specific layer or stage of the VGG3D model.
+    
+    Args:
+        model: The VGG3D model
+        dataset: The dataset to extract features from
+        config: Configuration object
+        layer_num: Layer number to extract features from (default: 20 for best attention)
+        
+    Returns:
+        DataFrame with extracted features and metadata
+    """
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = model.to(device).eval()
+    
+    # Create the stage extractor
+    extractor = VGG3DStageExtractor(model)
+    
+    # Get information about the model stages
+    stage_info = extractor.get_stage_info()
+    print(f"Extracting features from layer {layer_num}")
+    
+    # Find which stage contains this layer (for reference)
+    for stage_num, info in stage_info.items():
+        start_idx, end_idx = info['range']
+        if start_idx <= layer_num <= end_idx:
+            print(f"Layer {layer_num} is in Stage {stage_num}")
+            break
+    
+    # Create dataloader
+    dataloader = DataLoader(
+        dataset,
+        batch_size=2,
+        num_workers=0,
+        collate_fn=lambda b: (
+            torch.stack([item[0] for item in b]),
+            [item[1] for item in b],
+            [item[2] for item in b]
+        )
+    )
+    
+    # Extract features from specified layer
+    features = []
+    metadata = []
+    
+    with torch.no_grad():
+        for batch in tqdm(dataloader, desc=f"Extracting layer {layer_num} features", unit="batch"):
+            pixels, info, names = batch
+            inputs = pixels.permute(0, 2, 1, 3, 4).to(device)
+            
+            # Extract features from specified layer
+            batch_features = extractor.extract_layer(layer_num, inputs)
+            
+            # Global average pooling to get a feature vector
+            batch_size = batch_features.shape[0]
+            num_channels = batch_features.shape[1]
+            
+            # Reshape to (batch_size, channels, -1) for easier processing
+            batch_features_reshaped = batch_features.reshape(batch_size, num_channels, -1)
+            
+            # Global average pooling across spatial dimensions
+            pooled_features = torch.mean(batch_features_reshaped, dim=2)
+            
+            # Convert to numpy
+            features_np = pooled_features.cpu().numpy()
+            
+            features.append(features_np)
+            metadata.extend(zip(names, info))
+    
+    # Concatenate all features
+    features = np.concatenate(features, axis=0)
+    
+    # Create metadata DataFrame
+    metadata_df = pd.DataFrame([
+        {"bbox": name, **info.to_dict()}
+        for name, info in metadata
+    ])
+    
+    # Create feature DataFrame
+    feature_columns = [f'layer{layer_num}_feat_{i+1}' for i in range(features.shape[1])]
+    features_df = pd.DataFrame(features, columns=feature_columns)
+    
+    # Combine metadata and features
+    combined_df = pd.concat([metadata_df, features_df], axis=1)
+    
     return combined_df
 
 def create_plots(features_df, seg_type, alpha, fixed_samples):
@@ -218,21 +314,55 @@ def create_plots(features_df, seg_type, alpha, fixed_samples):
     print("Returning figure from create_plots")
     return fig
 
-def extract_and_save_features(model, dataset, config, seg_type, alpha, output_dir):
-    print("Extracting features for SegType", seg_type, "and Alpha", alpha)
-    features_df = extract_features(model, dataset, config)
-    print("Features extracted for SegType", seg_type, "and Alpha", alpha)
+def extract_and_save_features(model, dataset, config, seg_type, alpha, output_dir, extraction_method='standard', layer_num=20):
+    """
+    Extract and save features using the specified extraction method.
+    
+    Args:
+        model: The VGG3D model
+        dataset: The dataset to extract features from
+        config: Configuration object
+        seg_type: Segmentation type
+        alpha: Alpha value for segmentation
+        output_dir: Directory to save features
+        extraction_method: Feature extraction method ('standard' or 'stage_specific')
+        layer_num: Layer number to extract features from if using stage_specific method
+        
+    Returns:
+        Path to the saved features CSV file
+    """
+    print(f"Extracting features for SegType {seg_type} and Alpha {alpha} using {extraction_method} method")
+    
+    # Extract features based on the chosen method
+    if extraction_method == 'stage_specific':
+        features_df = extract_stage_specific_features(model, dataset, config, layer_num)
+        method_suffix = f"_layer{layer_num}"
+        feat_prefix = f"layer{layer_num}_feat_"
+    else:  # standard method
+        features_df = extract_features(model, dataset, config)
+        method_suffix = ""
+        feat_prefix = "feat_"
+    
+    print(f"Features extracted for SegType {seg_type} and Alpha {alpha}")
+    
+    # Format alpha value for filename
     alpha_str = str(alpha).replace('.', '_')
-    csv_filename = f"features_seg{seg_type}_alpha{alpha_str}.csv"
+    
+    # Create filename with method information
+    csv_filename = f"features{method_suffix}_seg{seg_type}_alpha{alpha_str}.csv"
     csv_filepath = os.path.join(output_dir, csv_filename)
+    
+    # Create output directory if it doesn't exist
     os.makedirs(output_dir, exist_ok=True)
-    print("Saving features to", csv_filepath)
+    
+    print(f"Saving features to {csv_filepath}")
     features_df.to_csv(csv_filepath, index=False)
     
     print("Processing features for UMAP")
-    feature_cols = [c for c in features_df.columns if c.startswith('feat_')]
+    feature_cols = [c for c in features_df.columns if c.startswith(feat_prefix)]
     features = features_df[feature_cols].values
     print(f"Features shape: {features.shape}")
+    
     features_scaled = StandardScaler().fit_transform(features)
     print("Features scaled")
     
@@ -247,7 +377,11 @@ def extract_and_save_features(model, dataset, config, seg_type, alpha, output_di
     
     features_df['segmentation_type'] = seg_type
     features_df['alpha'] = alpha
+    features_df['extraction_method'] = extraction_method
+    if extraction_method == 'stage_specific':
+        features_df['layer_num'] = layer_num
     
+    # Save the updated features DataFrame with UMAP coordinates and metadata
     features_df.to_csv(csv_filepath, index=False)
     print(f"Updated features saved to {csv_filepath}")
     
@@ -285,7 +419,18 @@ def run_full_analysis(config, vol_data_dict, syn_df, processor, model):
     
     segmentation_types = [config.segmentation_type] if isinstance(config.segmentation_type, int) else config.segmentation_type
     alpha_values = [config.alpha] if isinstance(config.alpha, (int, float)) else config.alpha
+    
+    # Feature extraction method - default to standard if not specified
+    extraction_method = getattr(config, 'extraction_method', 'standard')
+    
+    # Layer number for stage-specific extraction (only used if extraction_method is 'stage_specific')
+    layer_num = getattr(config, 'layer_num', 20)
+    
     combined_features = []
+    
+    print(f"Using feature extraction method: {extraction_method}")
+    if extraction_method == 'stage_specific':
+        print(f"Extracting features from layer {layer_num}")
     
     for seg_type in segmentation_types:
         for alpha in alpha_values:
@@ -301,11 +446,26 @@ def run_full_analysis(config, vol_data_dict, syn_df, processor, model):
             
             # Step 1: Extract and save features if not skipped
             if not hasattr(config, 'skip_feature_extraction') or not config.skip_feature_extraction:
-                features_path = extract_and_save_features(model, current_dataset, config, seg_type, alpha, output_dir)
+                features_path = extract_and_save_features(
+                    model, 
+                    current_dataset, 
+                    config, 
+                    seg_type, 
+                    alpha, 
+                    output_dir,
+                    extraction_method=extraction_method,
+                    layer_num=layer_num
+                )
             else:
                 # Load existing features
                 alpha_str = str(alpha).replace('.', '_')
-                features_path = os.path.join(output_dir, f"features_seg{seg_type}_alpha{alpha_str}.csv")
+                
+                # Create appropriate filename based on extraction method
+                if extraction_method == 'stage_specific':
+                    features_path = os.path.join(output_dir, f"features_layer{layer_num}_seg{seg_type}_alpha{alpha_str}.csv")
+                else:
+                    features_path = os.path.join(output_dir, f"features_seg{seg_type}_alpha{alpha_str}.csv")
+                
                 if not os.path.exists(features_path):
                     print(f"Error: Feature file not found at {features_path}")
                     print("Please run without --skip_feature_extraction first")
@@ -440,8 +600,20 @@ def run_clustering_analysis(features_df, output_dir):
         features_df: DataFrame with features
         output_dir: Directory to save results
     """
-    # Extract feature columns
-    feature_cols = [col for col in features_df.columns if col.startswith('feat_')]
+    # Extract feature columns - handle both standard and stage-specific feature column names
+    standard_feature_cols = [col for col in features_df.columns if col.startswith('feat_')]
+    layer_feature_cols = [col for col in features_df.columns if 'layer' in col and 'feat_' in col]
+    
+    if layer_feature_cols and not standard_feature_cols:
+        # Using stage-specific features
+        feature_cols = layer_feature_cols
+        print(f"Using {len(feature_cols)} stage-specific feature columns")
+    elif standard_feature_cols:
+        # Using standard features
+        feature_cols = standard_feature_cols
+        print(f"Using {len(feature_cols)} standard feature columns")
+    else:
+        raise ValueError("No feature columns found in DataFrame")
     
     # Apply UMAP dimensionality reduction
     umap_results = apply_umap(features_df[feature_cols])

@@ -13,6 +13,8 @@ SynapseClusterEM is a powerful tool designed to analyze 3D synapse morphology us
 - Intuitive graphical user interface (GUI) for easy configuration and operation
 - 3D synapse image data processing from electron microscopy datasets
 - Feature extraction using a custom VGG3D convolutional neural network
+  - Standard feature extraction from the entire network
+  - Stage-specific feature extraction from targeted layers (e.g., layer 20) for optimal attention on important structures
 - Multiple segmentation types (0-10) and alpha blending options
 - UMAP and t-SNE dimensionality reduction for feature visualization
 - K-means clustering for synaptic structure classification
@@ -22,6 +24,19 @@ SynapseClusterEM is a powerful tool designed to analyze 3D synapse morphology us
   - GIF visualization of 3D synapse volumes
 - Automatic report generation with HTML-based comprehensive reports
 - Presynapse connectivity analysis
+
+## Feature Extraction Methods
+
+The system supports two methods for feature extraction:
+
+1. **Standard Method**: Extracts features from the entire network after the last convolutional layer
+2. **Stage-Specific Method**: Extracts features from a specific layer (like layer 20), which can capture the most informative features for certain structures
+
+To specify the feature extraction method, use the following command-line arguments:
+```
+--extraction_method standard|stage_specific  # Choose feature extraction method
+--layer_num 20                              # Layer to extract features from when using stage_specific
+```
 
 ## Segmentation Types
 

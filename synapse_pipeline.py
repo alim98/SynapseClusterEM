@@ -103,26 +103,47 @@ class SynapsePipeline:
         self.model = VGG3D()
         return self.model
     
-    def extract_features(self, seg_type=None, alpha=None):
+    def extract_features(self, seg_type=None, alpha=None, extraction_method=None, layer_num=None):
         """
         Extract features using inference.py
         
         Args:
             seg_type: Segmentation type to use
             alpha: Alpha value for feature extraction
+            extraction_method: Method to extract features ('standard' or 'stage_specific')
+            layer_num: Layer number to extract features from if using stage_specific method
         """
         print("Extracting features...")
-        output_dir = os.path.join(self.config.csv_output_dir, f"features_seg{seg_type}_alpha{alpha}")
+        
+        # Use config values if parameters not provided
+        if extraction_method is None:
+            extraction_method = getattr(self.config, 'extraction_method', 'standard')
+        
+        if layer_num is None and extraction_method == 'stage_specific':
+            layer_num = getattr(self.config, 'layer_num', 20)
+        
+        # Create appropriate output directory name based on extraction method
+        if extraction_method == 'stage_specific':
+            output_dir = os.path.join(self.config.csv_output_dir, f"features_layer{layer_num}_seg{seg_type}_alpha{alpha}")
+        else:
+            output_dir = os.path.join(self.config.csv_output_dir, f"features_seg{seg_type}_alpha{alpha}")
+        
         os.makedirs(output_dir, exist_ok=True)
         
-        # Extract features using the existing function
+        print(f"Using {extraction_method} feature extraction method")
+        if extraction_method == 'stage_specific':
+            print(f"Extracting features from layer {layer_num}")
+        
+        # Extract features using the existing function with the new parameters
         features_path = extract_and_save_features(
             self.model, 
             self.dataset, 
             self.config, 
             seg_type, 
             alpha, 
-            output_dir
+            output_dir,
+            extraction_method=extraction_method,
+            layer_num=layer_num
         )
         
         # Make sure we have a DataFrame, not just a path
@@ -281,7 +302,7 @@ class SynapsePipeline:
         
         return output_dir
     
-    def run_full_pipeline(self, seg_type=1, alpha=1, num_samples=4, attention_layer=20):
+    def run_full_pipeline(self, seg_type=1, alpha=1, num_samples=4, attention_layer=20, extraction_method=None, layer_num=None):
         """
         Run the full analysis pipeline from data loading to visualization
         
@@ -290,8 +311,22 @@ class SynapsePipeline:
             alpha: Alpha value for feature extraction
             num_samples: Number of samples to show from each cluster
             attention_layer: Layer to use for attention map visualization
+            extraction_method: Method to extract features ('standard' or 'stage_specific')
+            layer_num: Layer number to extract features from if using stage_specific method
         """
         print(f"Running full pipeline with seg_type={seg_type}, alpha={alpha}")
+        
+        # Use config values if parameters not provided
+        if extraction_method is None:
+            extraction_method = getattr(self.config, 'extraction_method', 'standard')
+        
+        if layer_num is None and extraction_method == 'stage_specific':
+            layer_num = getattr(self.config, 'layer_num', 20)
+            
+        if extraction_method == 'stage_specific':
+            print(f"Using stage-specific feature extraction from layer {layer_num}")
+        else:
+            print("Using standard feature extraction")
         
         # Setup directories
         os.makedirs(self.config.csv_output_dir, exist_ok=True)
@@ -300,7 +335,7 @@ class SynapsePipeline:
         # Run each stage of the pipeline
         self.load_data()
         self.load_model()
-        self.extract_features(seg_type, alpha)
+        self.extract_features(seg_type, alpha, extraction_method, layer_num)
         self.cluster_features()
         self.create_dimension_reduction_visualizations()
         self.create_cluster_sample_visualizations(num_samples, attention_layer)
@@ -321,9 +356,20 @@ def main():
     # Parse command line arguments
     config.parse_args()
     
+    # Get feature extraction parameters from config
+    seg_type = config.segmentation_type
+    alpha = config.alpha
+    extraction_method = getattr(config, 'extraction_method', 'standard')
+    layer_num = getattr(config, 'layer_num', 20)
+    
     # Create and run the pipeline
     pipeline = SynapsePipeline(config)
-    pipeline.run_full_pipeline()
+    pipeline.run_full_pipeline(
+        seg_type=seg_type,
+        alpha=alpha,
+        extraction_method=extraction_method,
+        layer_num=layer_num
+    )
 
 
 if __name__ == "__main__":

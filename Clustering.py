@@ -14,7 +14,7 @@ from synapse import (
     SynapseDataset, 
     config
 )
-from synapse.utils.clusterhelper import (
+from synapse.clustering import (
     load_and_cluster_features, 
     apply_tsne, 
     save_tsne_plots,

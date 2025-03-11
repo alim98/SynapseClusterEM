@@ -25,8 +25,21 @@ def load_and_cluster_features(csv_path, n_clusters=10, random_state=42):
     # Load features from CSV
     features_df = pd.read_csv(csv_path)
     
-    # Get features from DataFrame
-    feature_cols = [col for col in features_df.columns if col.startswith('feat_')]
+    # Get features from DataFrame - handle both standard and stage-specific feature naming
+    standard_feature_cols = [col for col in features_df.columns if col.startswith('feat_')]
+    layer_feature_cols = [col for col in features_df.columns if 'layer' in col and 'feat_' in col]
+    
+    if layer_feature_cols and not standard_feature_cols:
+        # Using stage-specific features
+        feature_cols = layer_feature_cols
+        print(f"Using {len(feature_cols)} stage-specific feature columns")
+    elif standard_feature_cols:
+        # Using standard features
+        feature_cols = standard_feature_cols
+        print(f"Using {len(feature_cols)} standard feature columns")
+    else:
+        raise ValueError(f"No feature columns found in DataFrame with columns: {features_df.columns.tolist()}")
+    
     features = features_df[feature_cols].values
     
     # Ensure n_clusters is less than or equal to n_samples

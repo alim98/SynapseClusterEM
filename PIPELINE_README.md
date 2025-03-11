@@ -44,11 +44,13 @@ python run_synapse_pipeline.py --only_vesicle_analysis
 
 ### Pipeline Options
 
-The pipeline adds the following option to your existing configuration:
+The pipeline adds the following options to your existing configuration:
 
 | Option | Type | Description |
 |--------|------|-------------|
 | `--only_vesicle_analysis` | flag | Only run vesicle size analysis on existing results |
+| `--extraction_method` | string | Feature extraction method ('standard' or 'stage_specific') |
+| `--layer_num` | integer | Layer number to extract features from when using stage_specific method |
 
 The pipeline also integrates with your existing flags:
 
@@ -58,6 +60,21 @@ The pipeline also integrates with your existing flags:
 | `--skip_clustering` | Skip clustering stage (use existing clusters) |
 | `--skip_visualization` | Skip visualization stage |
 | `--skip_presynapse_analysis` | Skip presynapse analysis stage |
+
+### Feature Extraction Methods
+
+The pipeline supports two different methods for feature extraction:
+
+1. **Standard Method**: Extracts features from the entire network after the last convolutional layer (default)
+2. **Stage-Specific Method**: Extracts features from a specific layer, such as layer 20, which can be more effective for capturing certain features
+
+To use stage-specific feature extraction:
+
+```bash
+python run_synapse_pipeline.py --extraction_method stage_specific --layer_num 20
+```
+
+Layer 20 is recommended as it has been found to provide the most attention on important structures in many cases.
 
 ### Example Commands
 

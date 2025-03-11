@@ -1107,3 +1107,54 @@ Pipeline completed successfully!
 Results saved to results\20-00-48_seg10_alpha1.0
 --- Pipeline run completed at 2025-03-10 20:01:42 ---
 
+
+--- Starting pipeline run at 2025-03-11 10:54:55 ---
+Running with configuration:
+  Segmentation Type: 10
+  Alpha: 1.0
+  Feature Extraction Method: stage_specific
+  Layer Number: 20
+Running full pipeline...
+Error in pipeline: at least one array or dtype is required
+Traceback (most recent call last):
+  File "C:\Users\alim9\Documents\codes\synapse2\run_synapse_pipeline.py", line 150, in <module>
+    main()
+  File "C:\Users\alim9\Documents\codes\synapse2\run_synapse_pipeline.py", line 130, in main
+    result = pipeline.run_full_pipeline(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\alim9\Documents\codes\synapse2\synapse_pipeline.py", line 339, in run_full_pipeline
+    self.cluster_features()
+  File "C:\Users\alim9\Documents\codes\synapse2\synapse_pipeline.py", line 175, in cluster_features
+    result = run_clustering_analysis(self.features_df, output_dir)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\alim9\Documents\codes\synapse2\inference.py", line 602, in run_clustering_analysis
+    umap_results = apply_umap(features_df[feature_cols])
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\alim9\Documents\codes\synapse2\inference.py", line 748, in apply_umap
+    embedding = reducer.fit_transform(features)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\alim9\AppData\Local\Programs\Python\Python312\Lib\site-packages\umap\umap_.py", line 2928, in fit_transform
+    self.fit(X, y, force_all_finite, **kwargs)
+  File "C:\Users\alim9\AppData\Local\Programs\Python\Python312\Lib\site-packages\umap\umap_.py", line 2372, in fit
+    X = check_array(
+        ^^^^^^^^^^^^
+  File "C:\Users\alim9\AppData\Local\Programs\Python\Python312\Lib\site-packages\sklearn\utils\validation.py", line 931, in check_array
+    dtype_orig = np.result_type(*dtypes_orig)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ValueError: at least one array or dtype is required
+
+
+--- Starting pipeline run at 2025-03-11 10:59:16 ---
+Running with configuration:
+  Segmentation Type: 10
+  Alpha: 1.0
+  Feature Extraction Method: stage_specific
+  Layer Number: 20
+Running full pipeline...
+
+--- Starting pipeline run at 2025-03-11 11:00:29 ---
+Running with configuration:
+  Segmentation Type: 10
+  Alpha: 1.0
+  Feature Extraction Method: standard
+Running full pipeline...
