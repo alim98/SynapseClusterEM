@@ -20,6 +20,36 @@ The original system cropped synapses based solely on the center of the cleft. Th
 - Ensures the cleft remains within the bounding box
 - Configurable via weight parameter to adjust for different analysis needs
 
+## 1.1 Presynapse Size Normalization
+
+### Purpose
+Presynapses in the dataset can vary significantly in size. Some occupy a large portion of the cube while others are small, making comparisons difficult. The size normalization feature adjusts presynapses to have more consistent relative sizes.
+
+### Implementation Details
+- **Normalization Parameters**:
+  - `normalize_presynapse_size`: Boolean to enable/disable size normalization
+  - `target_percentage`: Target percentage of cube volume for presynapse (None = use mean)
+  - `size_tolerance`: Tolerance range (±%) for acceptable sizes
+
+- **Size Calculation**:
+  - Computes the percentage of voxels occupied by the presynapse in each cube
+  - Determines if a presynapse is larger or smaller than the target size
+
+- **Resizing Algorithm**:
+  - **For Large Presynapses**: Shrinks by removing outer voxels (furthest from centroid)
+  - **For Small Presynapses**: Grows by adding adjacent voxels through controlled dilation
+  - Preserves structural integrity by adding/removing voxels based on distance from centroid
+
+- **Integration with Segmentation**:
+  - Updates the segmentation mask with the normalized presynapse
+  - Maintains structural relationships with other elements (cleft, postsynapse)
+
+### Benefits
+- More consistent presynapse proportions across samples
+- Facilitates better comparison between different synapses
+- Reduces bias from outlier presynapse sizes in analysis
+- Retains structural integrity of the presynaptic region
+
 ## 2. Visualization Improvements
 
 ### Purpose
@@ -73,6 +103,35 @@ Created a tool to directly compare the effects of different presynapse weights.
 - Easier parameter tuning
 - Better understanding of how weight affects the cropping behavior
 
+## 3.1 Size Normalization Comparison Tool
+
+### Purpose
+Created a tool to directly compare the effects of presynapse size normalization on both standard and intelligent cropping methods.
+
+### Implementation Details
+- **Four-Panel Display**:
+  - Created a new function `create_size_normalization_comparison`
+  - Shows four versions in a 2x2 grid:
+    - Standard cropping without normalization
+    - Standard cropping with size normalization
+    - Intelligent cropping without normalization
+    - Intelligent cropping with size normalization
+
+- **Visual Organization**:
+  - Clear panel headers indicating normalization status
+  - Main title showing sample information
+  - Consistent layout with borders and spacing
+  - Frame counter for animation tracking
+
+- **Automatic Processing**:
+  - Generates all variants with a single configuration
+  - Creates the comparison visualization automatically
+
+### Benefits
+- Direct visual assessment of size normalization effects
+- Easy comparison of how normalization affects both cropping methods
+- Better understanding of size variation impact on feature visibility
+
 ## 4. Performance and Quality Improvements
 
 ### Purpose
@@ -101,19 +160,21 @@ Enhanced the overall quality and user experience.
 ## 5. Technical Implementation
 
 ### Code Structure
-- `create_segmented_cube`: Modified to support intelligent cropping
+- `create_segmented_cube`: Modified to support intelligent cropping and size normalization
 - `visualize_comparison`: Enhanced for better visualization and metadata
 - `create_combined_frames`: Improved layout and appearance
-- `create_multi_weight_comparison`: New function for multi-weight comparison
+- `create_multi_weight_comparison`: Function for multi-weight comparison
+- `create_size_normalization_comparison`: Function for size normalization comparison
 - `main`: Updated to orchestrate the generation of all comparison types
 
 ### Workflow
 1. Load volume data and synapse information
-2. Generate standard and intelligent crop cubes
+2. Generate cubes with different cropping and normalization settings
 3. Process frames with consistent normalization
-4. Create comparison visualizations
+4. Create comparison visualizations (standard vs. intelligent)
 5. Generate multi-weight comparisons
-6. Save detailed metadata for analysis
+6. Generate size normalization comparisons
+7. Save detailed metadata for analysis
 
 ## Usage Examples
 
@@ -128,14 +189,26 @@ To experiment with different weight values, modify the following line in the mai
 presynapse_weights = [0.3, 0.5, 0.7]  # Different weights to compare
 ```
 
+### Controlling Size Normalization
+To adjust size normalization parameters, update these values in the `visualize_comparison` call:
+```python
+normalize_presynapse_size=True,
+target_percentage=0.15,  # Target 15% of cube volume
+size_tolerance=0.1  # Accept ±10% variation
+```
+
 ### Output Files
 The script generates the following types of output files:
 - `bbox_name_var1_standard.gif` - Standard cropping
+- `bbox_name_var1_standard_normalized.gif` - Standard cropping with size normalization
 - `bbox_name_var1_intelligent_w{weight}.gif` - Intelligent cropping with specific weight
+- `bbox_name_var1_intelligent_w{weight}_normalized.gif` - Intelligent cropping with size normalization
 - `bbox_name_var1_comparison_w{weight}.gif` - Side-by-side comparison
+- `bbox_name_var1_comparison_w{weight}_normalized.gif` - Side-by-side comparison with size normalization
 - `bbox_name_var1_multi_weight_comparison.gif` - Multi-weight comparison
+- `bbox_name_var1_size_normalization_comparison.gif` - Four-panel size normalization comparison
 - `bbox_name_var1_info.txt` - Metadata about the comparison
 
 ## Conclusion
 
-These enhancements significantly improve the functionality and usability of the synapse visualization system. The intelligent cropping provides better feature extraction by considering presynapse positioning, while the improved visualization tools make it easier to analyze and compare different cropping strategies. The multi-weight comparison offers a powerful way to tune parameters and understand the impact of different settings. 
+These enhancements significantly improve the functionality and usability of the synapse visualization system. The intelligent cropping provides better feature extraction by considering presynapse positioning, while size normalization ensures more consistent presynapse proportions across samples. The improved visualization tools make it easier to analyze and compare different cropping strategies and normalization effects. The multi-weight and size normalization comparisons offer powerful ways to tune parameters and understand the impact of different settings. 

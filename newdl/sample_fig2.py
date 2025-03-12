@@ -7,6 +7,10 @@ from torch.utils.data import Dataset, DataLoader
 import logging
 from pathlib import Path
 
+from newdl.dataset2 import SynapseDataset
+from newdl.dataloader2 import SynapseDataLoader, Synapse3DProcessor
+from synapse.utils.config import config
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -18,10 +22,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger("sample_fig")
 
-# Import custom modules
-from dataset import SynapseDataset
-from dataloader import SynapseDataLoader, Synapse3DProcessor
-from config import config
 
 # Configuration - Global variables
 USE_ALL_BBOXES = False  # Set to True to use all bboxes

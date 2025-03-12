@@ -1,7 +1,7 @@
 Sample: non_spine_synapse_026 from bbox6
-Segmentation Type: 10
+Segmentation Type: 5
 Presynapse Weight: 0.7
 Size Normalization: Disabled
 Original Center: (116, 308, 172)
-Standard Range: min=0.0000, max=0.8774
-Intelligent Range: min=0.0000, max=0.8643
+Standard Range: min=0.0000, max=1.0000
+Intelligent Range: min=0.0000, max=0.9593
