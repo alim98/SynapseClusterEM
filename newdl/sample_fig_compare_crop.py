@@ -499,6 +499,13 @@ def create_all_combinations_comparison(sample_key, frame_paths, save_gifs_dir, w
     # Create colored border function with improved visibility
     def add_colored_border(img, color, width=4):
         """Add a colored border to an image with a smooth gradient effect."""
+        # Check if the image has an alpha channel
+        has_alpha = img.mode == 'RGBA'
+        
+        # Convert RGB images to RGBA if opacity gradient is needed
+        if not has_alpha:
+            img = img.convert('RGBA')
+            
         draw = ImageDraw.Draw(img)
         img_width, img_height = img.size
         
@@ -512,6 +519,11 @@ def create_all_combinations_comparison(sample_key, frame_paths, save_gifs_dir, w
                 outline=border_color,
                 width=2 if i == 0 else 1
             )
+        
+        # Convert back to RGB if original was RGB
+        if not has_alpha:
+            img = img.convert('RGB')
+            
         return img
     
     # Create composite frames
@@ -937,6 +949,13 @@ def create_size_normalization_comparison(sample_key, frame_paths, save_gifs_dir,
     # Create a function to add a colored border to an image
     def add_colored_border(img, color, width=2):
         """Add a colored border to an image."""
+        # Check if the image has an alpha channel
+        has_alpha = img.mode == 'RGBA'
+        
+        # Convert RGB images to RGBA if needed
+        if not has_alpha and len(color) == 4:  # If color has alpha component
+            img = img.convert('RGBA')
+        
         draw = ImageDraw.Draw(img)
         img_width, img_height = img.size
         
@@ -947,6 +966,11 @@ def create_size_normalization_comparison(sample_key, frame_paths, save_gifs_dir,
                 outline=color,
                 width=1
             )
+        
+        # Convert back to RGB if original was RGB
+        if not has_alpha and len(color) == 4:
+            img = img.convert('RGB')
+        
         return img
     
     # Create composite frames
@@ -1178,6 +1202,13 @@ def create_comprehensive_comparison(sample_key, frame_paths, save_gifs_dir, weig
     # Create colored border function with improved visibility
     def add_colored_border(img, color, width=4):
         """Add a colored border to an image with a smooth gradient effect."""
+        # Check if the image has an alpha channel
+        has_alpha = img.mode == 'RGBA'
+        
+        # Convert RGB images to RGBA if opacity gradient is needed
+        if not has_alpha:
+            img = img.convert('RGBA')
+            
         draw = ImageDraw.Draw(img)
         img_width, img_height = img.size
         
@@ -1191,6 +1222,11 @@ def create_comprehensive_comparison(sample_key, frame_paths, save_gifs_dir, weig
                 outline=border_color,
                 width=2 if i == 0 else 1
             )
+        
+        # Convert back to RGB if original was RGB
+        if not has_alpha:
+            img = img.convert('RGB')
+            
         return img
     
     # Create composite frames
@@ -1387,7 +1423,7 @@ def main():
     config.parse_args()
     
     # Select a few bboxes for demo
-    BBOX_NAMES = [ 'bbox6']
+    BBOX_NAMES = [ 'bbox6'  ,  'bbox3', 'bbox4']
     
     # Parameters for intelligent cropping
     presynapse_weights = [0.3, 0.5, 0.7]  # Different weights to compare

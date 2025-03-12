@@ -57,3 +57,11 @@ results/
 # DO NOT ignore assets directory and its contents
 !assets/
 !assets/* 
+newdl/crop_comparison/bbox3_non_spine_synapse_008_info.txt
+newdl/crop_comparison/bbox3_non_spine_synapse_008_info_normalized.txt
+newdl/crop_comparison/bbox3_non_spine_synapse_009_info.txt
+newdl/crop_comparison/bbox3_non_spine_synapse_009_info_normalized.txt
+newdl/crop_comparison/final/
+newdl/crop_comparison/final2/
+newdl/crop_comparison/preprocessing.7z
+newdl/crop_comparison/preprocessing/
