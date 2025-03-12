@@ -212,3 +212,44 @@ The script generates the following types of output files:
 ## Conclusion
 
 These enhancements significantly improve the functionality and usability of the synapse visualization system. The intelligent cropping provides better feature extraction by considering presynapse positioning, while size normalization ensures more consistent presynapse proportions across samples. The improved visualization tools make it easier to analyze and compare different cropping strategies and normalization effects. The multi-weight and size normalization comparisons offer powerful ways to tune parameters and understand the impact of different settings. 
+
+## 6. Bug Fixes and Improvements
+
+### 6.1 Segmentation Type 10 Size Normalization Fix
+
+#### Issue
+When using segmentation type 10 (which combines both cleft and presynapse structures) with size normalization enabled, only a circular region was displayed instead of the expected combined visualization of both structures.
+
+#### Root Cause
+The bug occurred because the size normalization process was completely replacing the combined mask (which should include both cleft and presynapse) with just the normalized presynapse mask. This caused the visualization to show only the normalized presynapse portion without the cleft.
+
+#### Implementation Fix
+Updated the handling of segmentation type 10 in the dataloader to:
+1. Preserve the cleft part from the original mask
+2. Update only the presynapse part with the normalized version 
+3. Recombine both structures correctly after normalization
+
+```python
+# Updated code for segmentation type 10 handling
+elif segmentation_type == 10:  # Special handling for type 10 which combines cleft and presynapse
+    # For segmentation type 10, we need to preserve the cleft part and update only the presynapse part
+    print(f"Segmentation type 10 combines cleft and presynapse - preserving cleft while updating presynapse")
+    
+    # Get the original combined mask from the full volume
+    orig_combined_mask = combined_mask_full[z_start:z_end, y_start:y_end, x_start:x_end]
+    
+    # Extract just the cleft part by subtracting the original presynapse mask
+    # First, get the presynapse mask before normalization
+    orig_presynapse = presynapse_mask_full[z_start:z_end, y_start:y_end, x_start:x_end]
+    
+    # Then, extract just the cleft part (everything in combined mask that's not in the presynapse)
+    cleft_only = np.logical_and(orig_combined_mask, ~orig_presynapse)
+    
+    # Now combine the cleft part with the normalized presynapse
+    sub_combined_mask = np.logical_or(cleft_only, sub_presynapse_mask)
+```
+
+#### Benefits
+- Correctly visualizes both cleft and presynapse structures when size normalization is enabled
+- Maintains the structural relationship between cleft and presynapse components
+- Ensures consistent visualization across all segmentation types 
