@@ -17,6 +17,60 @@ from PIL import Image, ImageSequence
 import io
 import seaborn as sns
 import base64  # For image encoding
+# TODO: 
+# make balance in gif sampling across clusters,
+# make sure that dataloader is same as in clustering
+
+
+def ensure_gif_autoplay(gif_paths, loop=0):
+    """
+    Ensures all GIFs are set to autoplay by modifying their loop parameter.
+    
+    Args:
+        gif_paths: Dictionary mapping sample indices to GIF paths
+        loop: Loop parameter (0 = infinite, -1 = no loop, n = number of loops)
+    
+    Returns:
+        Dictionary with paths to modified GIFs
+    """
+    from PIL import Image, ImageSequence
+    import os
+    
+    modified_gif_paths = {}
+    
+    for idx, path in gif_paths.items():
+        try:
+            # Open the original GIF
+            img = Image.open(path)
+            
+            # Create a new file path for the modified GIF
+            dir_path = os.path.dirname(path)
+            file_name = os.path.basename(path)
+            new_path = os.path.join(dir_path, f"autoloop_{file_name}")
+            
+            # Extract frames
+            frames = [frame.copy() for frame in ImageSequence.Iterator(img)]
+            
+            # Save with the loop parameter
+            frames[0].save(
+                new_path,
+                save_all=True,
+                append_images=frames[1:],
+                optimize=False,
+                loop=loop,  # 0 means infinite loop
+                duration=img.info.get('duration', 100)  # Use original duration or default to 100ms
+            )
+            
+            # Store the new path
+            modified_gif_paths[idx] = new_path
+            print(f"Modified GIF for sample {idx} to auto-loop")
+            
+        except Exception as e:
+            print(f"Error modifying GIF for sample {idx}: {e}")
+            # Keep the original path if modification fails
+            modified_gif_paths[idx] = path
+            
+    return modified_gif_paths
 
 # Add the parent directory to the path so we can import the synapse module
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -838,42 +892,79 @@ def create_umap_with_gifs(features_df, dataset, output_path, num_samples=10, ran
         print("Assuming all feature indices are valid.")
         valid_indices = features_df.index.tolist()
     
-    # Select random samples, making sure they cover different clusters if possible
+    # Select balanced samples across clusters
     np.random.seed(random_seed)
     random_samples = []
     
-    if valid_indices:
-        # If there are clusters, get samples from each
-        if 'cluster' in features_df.columns:
-            # Get all cluster IDs
-            clusters = features_df['cluster'].unique()
+    if valid_indices and 'cluster' in features_df.columns:
+        # Get all cluster IDs
+        clusters = features_df['cluster'].unique()
+        
+        print(f"Found {len(clusters)} clusters. Selecting balanced samples...")
+        
+        # Calculate samples per cluster to achieve balance
+        samples_per_cluster = max(1, num_samples // len(clusters))
+        remaining_samples = num_samples - (samples_per_cluster * len(clusters))
+        
+        # Dictionary to track how many samples we've selected from each cluster
+        cluster_counts = {cluster: 0 for cluster in clusters}
+        
+        # First, try to get the target number from each cluster
+        for cluster in clusters:
+            # Get samples that are both in this cluster AND in valid_indices
+            cluster_df = features_df[features_df['cluster'] == cluster]
+            valid_cluster_indices = [i for i in cluster_df.index if i in valid_indices]
             
-            # Get approximately even samples from each cluster (limited to valid indices)
-            samples_per_cluster = max(1, num_samples // len(clusters))
-            remaining_samples = num_samples - (samples_per_cluster * len(clusters))
+            if valid_cluster_indices:
+                # Select random indices from this cluster
+                sample_count = min(samples_per_cluster, len(valid_cluster_indices))
+                selected_indices = np.random.choice(valid_cluster_indices, size=sample_count, replace=False)
+                random_samples.extend(selected_indices)
+                cluster_counts[cluster] = sample_count
+        
+        # Distribute any remaining samples to clusters with fewer than target
+        # Starting with the clusters that have the fewest samples
+        if remaining_samples > 0:
+            # Sort clusters by how many samples they have
+            sorted_clusters = sorted(cluster_counts.items(), key=lambda x: x[1])
             
-            for cluster in clusters:
-                # Get samples that are both in this cluster AND in valid_indices
-                cluster_df = features_df[features_df['cluster'] == cluster]
-                valid_cluster_indices = [i for i in cluster_df.index if i in valid_indices]
-                
-                if valid_cluster_indices:
-                    # Select random indices from this cluster
-                    sample_count = min(samples_per_cluster, len(valid_cluster_indices))
-                    selected_indices = np.random.choice(valid_cluster_indices, size=sample_count, replace=False)
-                    random_samples.extend(selected_indices)
-            
-            # Add any remaining samples from random clusters
+            for cluster, count in sorted_clusters:
+                if count < samples_per_cluster and remaining_samples > 0:
+                    # Try to add more from this cluster
+                    cluster_df = features_df[features_df['cluster'] == cluster]
+                    valid_cluster_indices = [i for i in cluster_df.index if i in valid_indices and i not in random_samples]
+                    
+                    if valid_cluster_indices:
+                        # How many more can we add
+                        additional = min(samples_per_cluster - count, remaining_samples, len(valid_cluster_indices))
+                        if additional > 0:
+                            additional_indices = np.random.choice(valid_cluster_indices, size=additional, replace=False)
+                            random_samples.extend(additional_indices)
+                            remaining_samples -= additional
+        
+        # If we still have remaining samples, add them randomly
+        if remaining_samples > 0:
             remaining_valid = [i for i in valid_indices if i not in random_samples]
-            if remaining_samples > 0 and remaining_valid:
+            if remaining_valid:
                 extra_samples = np.random.choice(remaining_valid, 
                                                size=min(remaining_samples, len(remaining_valid)), 
                                                replace=False)
                 random_samples.extend(extra_samples)
-        else:
-            # No clusters, just select random samples from valid indices
-            sample_count = min(num_samples, len(valid_indices))
-            random_samples = np.random.choice(valid_indices, size=sample_count, replace=False)
+        
+        # Summarize the balance achieved
+        final_counts = {}
+        for idx in random_samples:
+            cluster = features_df.loc[idx, 'cluster']
+            final_counts[cluster] = final_counts.get(cluster, 0) + 1
+        
+        print(f"Final distribution of samples across clusters:")
+        for cluster, count in final_counts.items():
+            print(f"  Cluster {cluster}: {count} samples")
+            
+    elif valid_indices:
+        # No clusters, just select random samples from valid indices
+        sample_count = min(num_samples, len(valid_indices))
+        random_samples = np.random.choice(valid_indices, size=sample_count, replace=False)
     
     # Create GIFs for selected samples
     print(f"Creating GIFs for {len(random_samples)} samples...")
@@ -927,6 +1018,11 @@ def create_umap_with_gifs(features_df, dataset, output_path, num_samples=10, ran
             
         except Exception as e:
             print(f"Error creating GIF for sample {idx}: {str(e)}")
+    
+    # Ensure GIFs autoplay by setting loop parameter to infinite (0)
+    if gif_paths:
+        print("Making GIFs auto-loop...")
+        gif_paths = ensure_gif_autoplay(gif_paths, loop=0)
     
     # Create the plotly figure
     print("Creating Plotly visualization...")
@@ -1802,6 +1898,7 @@ def create_animated_gif_visualization(features_df, gif_paths, output_dir):
     """
     Create a simple HTML page that displays animated GIFs directly at their UMAP coordinates.
     The GIFs are embedded directly in the HTML as base64 data to avoid file:// protocol issues.
+    GIFs are made draggable so users can rearrange them.
     
     Args:
         features_df: DataFrame with features and UMAP coordinates
@@ -1813,20 +1910,32 @@ def create_animated_gif_visualization(features_df, gif_paths, output_dir):
     """
     import base64
     
+    # First ensure all GIFs are set to auto-loop
+    print("Ensuring GIFs are set to auto-loop...")
+    gif_paths = ensure_gif_autoplay(gif_paths, loop=0)
+    
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     
     # Extract UMAP coordinates and other info for samples with GIFs
     samples_with_gifs = []
+    
+    # Track how many GIFs we have from each cluster for reporting
+    cluster_counts = {}
+    
     for idx in gif_paths:
         if idx in features_df.index:
             sample = features_df.loc[idx]
             if 'umap_x' in sample and 'umap_y' in sample:
                 x, y = sample['umap_x'], sample['umap_y']
                 
-                # Extract cluster and bbox information if available (but not displayed)
+                # Extract cluster and bbox information if available
                 cluster = sample.get('cluster', 'N/A') if 'cluster' in sample else 'N/A'
                 bbox = sample.get('bbox_name', 'unknown') if 'bbox_name' in sample else 'unknown'
+                
+                # Count samples per cluster
+                if cluster != 'N/A':
+                    cluster_counts[cluster] = cluster_counts.get(cluster, 0) + 1
                 
                 # Convert numpy/pandas types to Python native types for JSON serialization
                 if hasattr(idx, 'item'):
@@ -1854,6 +1963,12 @@ def create_animated_gif_visualization(features_df, gif_paths, output_dir):
                         })
                 except Exception as e:
                     print(f"Error encoding GIF for sample {idx}: {e}")
+    
+    # Print distribution of GIFs across clusters
+    if cluster_counts:
+        print("\nDistribution of GIFs across clusters:")
+        for cluster, count in sorted(cluster_counts.items()):
+            print(f"  Cluster {cluster}: {count} GIFs")
     
     # Compute the bounds of the UMAP coordinates
     all_x_values = features_df['umap_x'].values
@@ -1944,7 +2059,7 @@ def create_animated_gif_visualization(features_df, gif_paths, output_dir):
                 background-color: #f5f5f5;
             }}
             .container {{
-                max-width: 1800px;
+                max-width: 1800px; /* Increased from 1200px */
                 margin: 0 auto;
                 background-color: white;
                 box-shadow: 0 4px 6px rgba(0,0,0,0.1);
@@ -1961,13 +2076,13 @@ def create_animated_gif_visualization(features_df, gif_paths, output_dir):
                 border: 1px solid #ddd;
                 background-color: #fff;
                 overflow: hidden;
-                width: 1600px;
-                height: 1200px;
+                width: 1600px; /* Increased from 1000px */
+                height: 1200px; /* Increased from 800px */
             }}
             .point {{
                 position: absolute;
-                width: 8px;
-                height: 8px;
+                width: 6px;
+                height: 6px;
                 border-radius: 50%;
                 transform: translate(-50%, -50%);
             }}
@@ -1980,6 +2095,7 @@ def create_animated_gif_visualization(features_df, gif_paths, output_dir):
                 transform: translate(-50%, -50%);
                 z-index: 10;
                 box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+                cursor: move; /* Show move cursor to indicate draggability */
             }}
             .gif-container img {{
                 width: 100%;
@@ -1992,21 +2108,25 @@ def create_animated_gif_visualization(features_df, gif_paths, output_dir):
             }}
             .controls button {{
                 padding: 8px 15px;
-                margin: 0 10px;
+                margin: 0 5px;
                 background-color: #4CAF50;
                 color: white;
                 border: none;
                 border-radius: 4px;
                 cursor: pointer;
-                font-size: 16px;
+                font-size: 14px;
             }}
             .controls button:hover {{
                 background-color: #45a049;
             }}
             .gif-size-slider {{
-                width: 300px;
-                margin: 0 15px;
+                width: 200px;
+                margin: 0 10px;
                 vertical-align: middle;
+            }}
+            .dragging {{
+                opacity: 0.8;
+                z-index: 1000;
             }}
         </style>
     </head>
@@ -2017,8 +2137,9 @@ def create_animated_gif_visualization(features_df, gif_paths, output_dir):
             <div class="controls">
                 <button id="toggle-gifs">Show/Hide GIFs</button>
                 <button id="resize-gifs">Resize All GIFs</button>
-                <input type="range" min="100" max="300" value="200" id="gif-size-slider" class="gif-size-slider">
-                <span id="size-value">200px</span>
+                <input type="range" min="10" max="200" value="50" id="gif-size-slider" class="gif-size-slider">
+                <span id="size-value">100px</span>
+                <button id="reset-positions">Reset GIF Positions</button>
             </div>
             
             <div class="plot-container" id="plot">
@@ -2047,6 +2168,9 @@ def create_animated_gif_visualization(features_df, gif_paths, output_dir):
             const plotWidth = plot.clientWidth;
             const plotHeight = plot.clientHeight;
             
+            // Store original positions of GIFs for reset functionality
+            const originalPositions = {{}};
+            
             // Add background points for all samples
             function addBackgroundPoints() {{
                 // Samples from features_df
@@ -2065,9 +2189,9 @@ def create_animated_gif_visualization(features_df, gif_paths, output_dir):
                     
                     // Make points with GIFs larger
                     if (sample.hasGif) {{
-                        pointElem.style.width = '12px';
-                        pointElem.style.height = '12px';
-                        pointElem.style.border = '3px solid black';
+                        pointElem.style.width = '10px';
+                        pointElem.style.height = '10px';
+                        pointElem.style.border = '2px solid black';
                         pointElem.style.zIndex = '5';
                     }}
                     
@@ -2085,22 +2209,29 @@ def create_animated_gif_visualization(features_df, gif_paths, output_dir):
                 samplesWithGifs.forEach(sample => {{
                     const [plotX, plotY] = mapToPlot(sample.x, sample.y, plotWidth, plotHeight);
                     
+                    // Store original position for reset functionality
+                    originalPositions[sample.id] = {{ x: plotX, y: plotY }};
+                    
                     // Create GIF container
                     const gifContainer = document.createElement('div');
                     gifContainer.className = 'gif-container';
+                    gifContainer.id = `gif-${{sample.id}}`;
                     gifContainer.style.left = `${{plotX}}px`;
                     gifContainer.style.top = `${{plotY}}px`;
-                    gifContainer.style.width = '200px';
-                    gifContainer.style.height = '200px';
+                    gifContainer.style.width = '100px';
+                    gifContainer.style.height = '100px';
                     
-                    // Create GIF image using base64 data - set loop attribute to make it play continuously
+                    // Create GIF image using base64 data
                     const gifImg = document.createElement('img');
                     gifImg.src = `data:image/gif;base64,${{sample.gifData}}`;
                     gifImg.alt = `Sample ${{sample.id}}`;
                     gifImg.setAttribute('loop', 'infinite');
                     
-                    // Add to container (no label div for cleaner display)
+                    // Add to container
                     gifContainer.appendChild(gifImg);
+                    
+                    // Make the GIF container draggable
+                    makeDraggable(gifContainer);
                     
                     // Add to plot
                     plot.appendChild(gifContainer);
@@ -2108,6 +2239,69 @@ def create_animated_gif_visualization(features_df, gif_paths, output_dir):
                 
                 // Store all gif containers for later use
                 window.gifContainers = document.querySelectorAll('.gif-container');
+            }}
+            
+            // Make an element draggable
+            function makeDraggable(element) {{
+                let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
+                
+                element.onmousedown = dragMouseDown;
+                
+                function dragMouseDown(e) {{
+                    e = e || window.event;
+                    e.preventDefault();
+                    // Get the mouse cursor position at startup
+                    pos3 = e.clientX;
+                    pos4 = e.clientY;
+                    
+                    // Add dragging class
+                    element.classList.add('dragging');
+                    
+                    // Bring the element to the front
+                    element.style.zIndex = "1000";
+                    
+                    document.onmouseup = closeDragElement;
+                    document.onmousemove = elementDrag;
+                }}
+                
+                function elementDrag(e) {{
+                    e = e || window.event;
+                    e.preventDefault();
+                    
+                    // Calculate the new cursor position
+                    pos1 = pos3 - e.clientX;
+                    pos2 = pos4 - e.clientY;
+                    pos3 = e.clientX;
+                    pos4 = e.clientY;
+                    
+                    // Set the element's new position
+                    const newTop = (element.offsetTop - pos2);
+                    const newLeft = (element.offsetLeft - pos1);
+                    
+                    // Constrain to plot boundaries
+                    const elemWidth = parseInt(element.style.width);
+                    const elemHeight = parseInt(element.style.height);
+                    
+                    const boundedTop = Math.max(elemHeight/2, Math.min(newTop, plotHeight - elemHeight/2));
+                    const boundedLeft = Math.max(elemWidth/2, Math.min(newLeft, plotWidth - elemWidth/2));
+                    
+                    element.style.top = boundedTop + "px";
+                    element.style.left = boundedLeft + "px";
+                }}
+                
+                function closeDragElement() {{
+                    // Stop moving when mouse button is released
+                    document.onmouseup = null;
+                    document.onmousemove = null;
+                    
+                    // Remove dragging class
+                    element.classList.remove('dragging');
+                    
+                    // Reset z-index to normal
+                    setTimeout(() => {{
+                        element.style.zIndex = "10";
+                    }}, 200);
+                }}
             }}
             
             // Initialize the visualization
@@ -2152,6 +2346,18 @@ def create_animated_gif_visualization(features_df, gif_paths, output_dir):
                     window.gifContainers.forEach(container => {{
                         container.style.width = `${{size}}px`;
                         container.style.height = `${{size}}px`;
+                    }});
+                }});
+                
+                // Set up reset positions button
+                const resetButton = document.getElementById('reset-positions');
+                resetButton.addEventListener('click', () => {{
+                    window.gifContainers.forEach(container => {{
+                        const id = container.id.replace('gif-', '');
+                        if (originalPositions[id]) {{
+                            container.style.left = `${{originalPositions[id].x}}px`;
+                            container.style.top = `${{originalPositions[id].y}}px`;
+                        }}
                     }});
                 }});
             }}
@@ -2276,7 +2482,7 @@ if __name__ == "__main__":
             random_samples = []
             
             # Set number of samples to 40 as requested
-            num_samples = 40  # User requested 40 samples
+            num_samples = 80  # User requested 40 samples
             
             if 'cluster' in features_df.columns:
                 # Get all cluster IDs
