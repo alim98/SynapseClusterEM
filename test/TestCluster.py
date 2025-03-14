@@ -1824,7 +1824,7 @@ def create_animated_gif_visualization(features_df, gif_paths, output_dir):
             if 'umap_x' in sample and 'umap_y' in sample:
                 x, y = sample['umap_x'], sample['umap_y']
                 
-                # Extract cluster and bbox information if available
+                # Extract cluster and bbox information if available (but not displayed)
                 cluster = sample.get('cluster', 'N/A') if 'cluster' in sample else 'N/A'
                 bbox = sample.get('bbox_name', 'unknown') if 'bbox_name' in sample else 'unknown'
                 
@@ -1944,7 +1944,7 @@ def create_animated_gif_visualization(features_df, gif_paths, output_dir):
                 background-color: #f5f5f5;
             }}
             .container {{
-                max-width: 1200px;
+                max-width: 1800px;
                 margin: 0 auto;
                 background-color: white;
                 box-shadow: 0 4px 6px rgba(0,0,0,0.1);
@@ -1961,13 +1961,13 @@ def create_animated_gif_visualization(features_df, gif_paths, output_dir):
                 border: 1px solid #ddd;
                 background-color: #fff;
                 overflow: hidden;
-                width: 1000px;
-                height: 800px;
+                width: 1600px;
+                height: 1200px;
             }}
             .point {{
                 position: absolute;
-                width: 6px;
-                height: 6px;
+                width: 8px;
+                height: 8px;
                 border-radius: 50%;
                 transform: translate(-50%, -50%);
             }}
@@ -1986,36 +1986,26 @@ def create_animated_gif_visualization(features_df, gif_paths, output_dir):
                 height: 100%;
                 object-fit: contain;
             }}
-            .gif-label {{
-                position: absolute;
-                bottom: 0;
-                left: 0;
-                right: 0;
-                background-color: rgba(0,0,0,0.7);
-                color: white;
-                font-size: 10px;
-                padding: 2px 5px;
-                text-align: center;
-            }}
             .controls {{
                 margin-top: 10px;
                 text-align: center;
             }}
             .controls button {{
-                padding: 5px 10px;
-                margin: 0 5px;
+                padding: 8px 15px;
+                margin: 0 10px;
                 background-color: #4CAF50;
                 color: white;
                 border: none;
                 border-radius: 4px;
                 cursor: pointer;
+                font-size: 16px;
             }}
             .controls button:hover {{
                 background-color: #45a049;
             }}
             .gif-size-slider {{
-                width: 200px;
-                margin: 0 10px;
+                width: 300px;
+                margin: 0 15px;
                 vertical-align: middle;
             }}
         </style>
@@ -2027,8 +2017,8 @@ def create_animated_gif_visualization(features_df, gif_paths, output_dir):
             <div class="controls">
                 <button id="toggle-gifs">Show/Hide GIFs</button>
                 <button id="resize-gifs">Resize All GIFs</button>
-                <input type="range" min="50" max="200" value="100" id="gif-size-slider" class="gif-size-slider">
-                <span id="size-value">100px</span>
+                <input type="range" min="100" max="300" value="200" id="gif-size-slider" class="gif-size-slider">
+                <span id="size-value">200px</span>
             </div>
             
             <div class="plot-container" id="plot">
@@ -2075,9 +2065,9 @@ def create_animated_gif_visualization(features_df, gif_paths, output_dir):
                     
                     // Make points with GIFs larger
                     if (sample.hasGif) {{
-                        pointElem.style.width = '10px';
-                        pointElem.style.height = '10px';
-                        pointElem.style.border = '2px solid black';
+                        pointElem.style.width = '12px';
+                        pointElem.style.height = '12px';
+                        pointElem.style.border = '3px solid black';
                         pointElem.style.zIndex = '5';
                     }}
                     
@@ -2100,24 +2090,17 @@ def create_animated_gif_visualization(features_df, gif_paths, output_dir):
                     gifContainer.className = 'gif-container';
                     gifContainer.style.left = `${{plotX}}px`;
                     gifContainer.style.top = `${{plotY}}px`;
-                    gifContainer.style.width = '100px';
-                    gifContainer.style.height = '100px';
+                    gifContainer.style.width = '200px';
+                    gifContainer.style.height = '200px';
                     
-                    // Create GIF image using base64 data
+                    // Create GIF image using base64 data - set loop attribute to make it play continuously
                     const gifImg = document.createElement('img');
                     gifImg.src = `data:image/gif;base64,${{sample.gifData}}`;
                     gifImg.alt = `Sample ${{sample.id}}`;
+                    gifImg.setAttribute('loop', 'infinite');
                     
-                    // Create label
-                    const label = document.createElement('div');
-                    label.className = 'gif-label';
-                    label.textContent = `ID: ${{sample.id}}` + 
-                                      (sample.cluster !== 'N/A' ? `, Cluster: ${{sample.cluster}}` : '') +
-                                      (sample.bbox !== 'unknown' ? `, BBox: ${{sample.bbox}}` : '');
-                    
-                    // Add to container
+                    // Add to container (no label div for cleaner display)
                     gifContainer.appendChild(gifImg);
-                    gifContainer.appendChild(label);
                     
                     // Add to plot
                     plot.appendChild(gifContainer);
@@ -2292,8 +2275,8 @@ if __name__ == "__main__":
             np.random.seed(42)
             random_samples = []
             
-            # If there are clusters, get samples from each
-            num_samples = 10  # Reduced number of samples to show with GIFs
+            # Set number of samples to 40 as requested
+            num_samples = 40  # User requested 40 samples
             
             if 'cluster' in features_df.columns:
                 # Get all cluster IDs
@@ -2324,8 +2307,17 @@ if __name__ == "__main__":
             else:
                 # No clusters, just select random samples from valid indices
                 sample_count = min(num_samples, len(valid_indices))
-                sample_count = 40
                 random_samples = np.random.choice(valid_indices, size=sample_count, replace=False)
+                
+            # Ensure we have up to 40 samples as requested by the user
+            if len(random_samples) < num_samples and len(valid_indices) > len(random_samples):
+                additional_indices = [i for i in valid_indices if i not in random_samples]
+                additional_count = min(num_samples - len(random_samples), len(additional_indices))
+                if additional_count > 0:
+                    additional_samples = np.random.choice(additional_indices, size=additional_count, replace=False)
+                    random_samples.extend(additional_samples)
+            
+            print(f"Selected {len(random_samples)} samples for GIF creation")
             
             # Create GIFs for selected samples
             print(f"Creating GIFs for {len(random_samples)} samples...")
@@ -2381,7 +2373,7 @@ if __name__ == "__main__":
                     print(f"Error creating GIF for sample {idx}: {str(e)}")
             
             # Skip the original visualization that takes longer
-            # html_path = create_umap_with_gifs(features_df, dataset, output_path, num_samples=25, random_seed=42)
+            # html_path = create_umap_with_gifs(features_df, dataset, output_path, num_samples=40, random_seed=42)
             
             # Now create visualizations with our simpler methods if we have GIFs
             if gif_paths:
