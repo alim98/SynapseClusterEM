@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import umap
+import datetime
 from pathlib import Path
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from multi_layer_cam import visualize_cluster_attention
@@ -65,6 +66,32 @@ class SynapsePipeline:
         self.vol_data_dict = None
         self.syn_df = None
         self.features_df = None
+        self.run_timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        self.results_parent_dir = None
+        
+    def create_results_directory(self):
+        """
+        Create a timestamped parent directory for all results from this run.
+        """
+        # First, try to extract the results base directory from config
+        # Assuming config might have a results_dir attribute or similar
+        if hasattr(self.config, 'results_dir') and self.config.results_dir:
+            results_base_dir = self.config.results_dir
+        else:
+            # Check if csv_output_dir has 'csv_outputs' in it, and use its parent if so
+            if hasattr(self.config, 'csv_output_dir') and 'csv_outputs' in self.config.csv_output_dir:
+                results_base_dir = os.path.dirname(self.config.csv_output_dir)
+            else:
+                # Fallback to using workspace path
+                workspace_dir = os.path.abspath(os.path.join(os.path.dirname(__file__)))
+                results_base_dir = os.path.join(workspace_dir, "results")
+        
+        # Create parent directory with timestamp directly under results base
+        self.results_parent_dir = os.path.join(results_base_dir, f"run_{self.run_timestamp}")
+        os.makedirs(self.results_parent_dir, exist_ok=True)
+        
+        print(f"Created results directory: {self.results_parent_dir}")
+        return self.results_parent_dir
         
     def load_data(self):
         """
@@ -124,9 +151,9 @@ class SynapsePipeline:
         
         # Create appropriate output directory name based on extraction method
         if extraction_method == 'stage_specific':
-            output_dir = os.path.join(self.config.csv_output_dir, f"features_layer{layer_num}_seg{seg_type}_alpha{alpha}")
+            output_dir = os.path.join(self.results_parent_dir, f"features_layer{layer_num}_seg{seg_type}_alpha{alpha}")
         else:
-            output_dir = os.path.join(self.config.csv_output_dir, f"features_seg{seg_type}_alpha{alpha}")
+            output_dir = os.path.join(self.results_parent_dir, f"features_seg{seg_type}_alpha{alpha}")
         
         os.makedirs(output_dir, exist_ok=True)
         
@@ -168,7 +195,7 @@ class SynapsePipeline:
             output_dir: Directory to save clustering results
         """
         if output_dir is None:
-            output_dir = os.path.join(self.config.csv_output_dir, "clustering_results")
+            output_dir = os.path.join(self.results_parent_dir, "clustering_results")
         os.makedirs(output_dir, exist_ok=True)
         
         print("Clustering features...")
@@ -198,7 +225,7 @@ class SynapsePipeline:
             output_dir: Directory to save visualization results
         """
         if output_dir is None:
-            output_dir = os.path.join(self.config.csv_output_dir, "visualizations")
+            output_dir = os.path.join(self.results_parent_dir, "visualizations")
         os.makedirs(output_dir, exist_ok=True)
         
         print("Creating dimension reduction visualizations...")
@@ -219,7 +246,7 @@ class SynapsePipeline:
             output_dir: Directory to save visualization results
         """
         if output_dir is None:
-            output_dir = os.path.join(self.config.csv_output_dir, "sample_visualizations")
+            output_dir = os.path.join(self.results_parent_dir, "sample_visualizations")
         os.makedirs(output_dir, exist_ok=True)
         
         print(f"Creating sample visualizations with attention maps for layer {attention_layer}...")
@@ -294,11 +321,35 @@ class SynapsePipeline:
             output_dir: Directory to save analysis results
         """
         if output_dir is None:
-            output_dir = os.path.join(self.config.csv_output_dir, "presynapse_analysis")
+            output_dir = os.path.join(self.results_parent_dir, "presynapse_analysis")
         os.makedirs(output_dir, exist_ok=True)
         
         print("Running presynapse analysis...")
+        
+        # Save the original output directories
+        orig_csv_output_dir = self.config.csv_output_dir
+        orig_clustering_results = getattr(self.config, 'clustering_results_dir', None)
+        orig_clustering_output_dir = getattr(self.config, 'clustering_output_dir', None)
+        
+        # Temporarily set the directories to use our timestamped parent directory
+        self.config.csv_output_dir = self.results_parent_dir
+        if hasattr(self.config, 'clustering_results_dir'):
+            self.config.clustering_results_dir = os.path.join(self.results_parent_dir, "clustering_results")
+        
+        # This is the key parameter used by presynapse_analysis.py
+        if hasattr(self.config, 'clustering_output_dir'):
+            print(f"Setting clustering_output_dir to {self.results_parent_dir}")
+            self.config.clustering_output_dir = self.results_parent_dir
+        
+        # Run the presynapse analysis with the updated paths
         run_presynapse_analysis(self.config)
+        
+        # Restore the original output directories
+        self.config.csv_output_dir = orig_csv_output_dir
+        if orig_clustering_results is not None:
+            self.config.clustering_results_dir = orig_clustering_results
+        if orig_clustering_output_dir is not None:
+            self.config.clustering_output_dir = orig_clustering_output_dir
         
         return output_dir
     
@@ -328,26 +379,76 @@ class SynapsePipeline:
         else:
             print("Using standard feature extraction")
         
-        # Setup directories
+        # Create the base output directory if it doesn't exist
         os.makedirs(self.config.csv_output_dir, exist_ok=True)
         os.makedirs(self.config.save_gifs_dir, exist_ok=True)
         
-        # Run each stage of the pipeline
-        self.load_data()
-        self.load_model()
-        self.extract_features(seg_type, alpha, extraction_method, layer_num)
-        self.cluster_features()
-        self.create_dimension_reduction_visualizations()
-        self.create_cluster_sample_visualizations(num_samples, attention_layer)
-        self.analyze_bounding_boxes_in_clusters()
-        self.run_presynapse_analysis()
+        # Create timestamped parent directory for all results
+        self.create_results_directory()
         
-        print("Pipeline completed successfully!")
+        # Save original directory values
+        original_dirs = {
+            'gifs_dir': self.config.save_gifs_dir,
+            'csv_output_dir': self.config.csv_output_dir,
+            'clustering_results_dir': getattr(self.config, 'clustering_results_dir', None),
+            'clustering_results_final': getattr(self.config, 'clustering_results_final', None),
+            'clustering_output_dir': getattr(self.config, 'clustering_output_dir', None)
+        }
+        
+        # Update directories to use our timestamped parent directory
+        timestamped_gifs_dir = os.path.join(self.results_parent_dir, "gifs")
+        os.makedirs(timestamped_gifs_dir, exist_ok=True)
+        self.config.save_gifs_dir = timestamped_gifs_dir
+        
+        # Handle clustering_results_final directory if it's configured
+        if hasattr(self.config, 'clustering_results_final'):
+            clustering_results_final_dir = os.path.join(self.results_parent_dir, "clustering_results_final")
+            os.makedirs(clustering_results_final_dir, exist_ok=True)
+            self.config.clustering_results_final = clustering_results_final_dir
+        
+        # Also handle clustering_results_dir if it's configured
+        if hasattr(self.config, 'clustering_results_dir'):
+            clustering_results_dir = os.path.join(self.results_parent_dir, "clustering_results")
+            os.makedirs(clustering_results_dir, exist_ok=True)
+            self.config.clustering_results_dir = clustering_results_dir
+            
+        # Handle clustering_output_dir used by presynapse_analysis
+        if hasattr(self.config, 'clustering_output_dir'):
+            print(f"Setting clustering_output_dir to {self.results_parent_dir}")
+            self.config.clustering_output_dir = self.results_parent_dir
+        
+        try:
+            # Run each stage of the pipeline
+            self.load_data()
+            self.load_model()
+            self.extract_features(seg_type, alpha, extraction_method, layer_num)
+            self.cluster_features()
+            self.create_dimension_reduction_visualizations()
+            self.create_cluster_sample_visualizations(num_samples, attention_layer)
+            self.analyze_bounding_boxes_in_clusters()
+            self.run_presynapse_analysis()
+            
+            print(f"Pipeline completed successfully! All results are in: {self.results_parent_dir}")
+            
+        finally:
+            # Restore all original directory values
+            self.config.save_gifs_dir = original_dirs['gifs_dir']
+            self.config.csv_output_dir = original_dirs['csv_output_dir']
+            
+            if original_dirs['clustering_results_dir'] is not None:
+                self.config.clustering_results_dir = original_dirs['clustering_results_dir']
+            
+            if original_dirs['clustering_results_final'] is not None:
+                self.config.clustering_results_final = original_dirs['clustering_results_final']
+                
+            if original_dirs['clustering_output_dir'] is not None:
+                self.config.clustering_output_dir = original_dirs['clustering_output_dir']
         
         return {
             "features_df": self.features_df,
             "model": self.model,
-            "dataset": self.dataset
+            "dataset": self.dataset,
+            "results_dir": self.results_parent_dir
         }
 
 
@@ -356,20 +457,34 @@ def main():
     # Parse command line arguments
     config.parse_args()
     
+    # Set results_dir if not already set (for consistency with the new structure)
+    if not hasattr(config, 'results_dir') or not config.results_dir:
+        if hasattr(config, 'csv_output_dir') and 'csv_outputs' in config.csv_output_dir:
+            # If csv_output_dir contains 'csv_outputs', use its parent directory
+            config.results_dir = os.path.dirname(config.csv_output_dir)
+        else:
+            # Otherwise, try to find the results directory
+            workspace_dir = os.path.abspath(os.path.join(os.path.dirname(__file__)))
+            config.results_dir = os.path.join(workspace_dir, "results")
+    
     # Get feature extraction parameters from config
     seg_type = config.segmentation_type
     alpha = config.alpha
     extraction_method = getattr(config, 'extraction_method', 'standard')
     layer_num = getattr(config, 'layer_num', 20)
     
+    print(f"Results will be saved in: {config.results_dir}/run_TIMESTAMP")
+    
     # Create and run the pipeline
     pipeline = SynapsePipeline(config)
-    pipeline.run_full_pipeline(
+    results = pipeline.run_full_pipeline(
         seg_type=seg_type,
         alpha=alpha,
         extraction_method=extraction_method,
         layer_num=layer_num
     )
+    
+    print(f"Results saved to: {results['results_dir']}")
 
 
 if __name__ == "__main__":

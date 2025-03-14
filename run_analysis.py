@@ -33,6 +33,8 @@ def parse_arguments():
                       help='Base directory for data')
     parser.add_argument('--output_dir', type=str, default='results',
                       help='Directory to save results')
+    parser.add_argument('--results_dir', type=str, default=None,
+                      help='Explicit directory for results (overrides output_dir/csv_outputs)')
     
     # Model parameters
     parser.add_argument('--checkpoint_path', type=str, default='hemibrain_production.checkpoint',
@@ -57,7 +59,15 @@ def main():
     config.excel_file = os.path.join(args.data_dir, '7_bboxes_plus_seg')
     
     # Set output directory
-    config.csv_output_dir = args.output_dir
+    config.csv_output_dir = os.path.join(args.output_dir, 'csv_outputs')
+    
+    # If results_dir is explicitly provided, use it for the results
+    if args.results_dir:
+        config.results_dir = args.results_dir
+    else:
+        # Otherwise, use the output_dir as the results base directory
+        config.results_dir = args.output_dir
+    
     os.makedirs(config.csv_output_dir, exist_ok=True)
     
     print(f"Running analysis with the following configuration:")
@@ -66,6 +76,7 @@ def main():
     print(f"  Alpha: {config.alpha}")
     print(f"  Data directory: {args.data_dir}")
     print(f"  Output directory: {args.output_dir}")
+    print(f"  Results will be saved in: {config.results_dir}/run_TIMESTAMP")
     print()
     
     # Initialize model
