@@ -19,8 +19,8 @@ logging.basicConfig(
 logger = logging.getLogger("sample_fig")
 
 # Import custom modules
-from dataset import SynapseDataset
-from dataloader import SynapseDataLoader, Synapse3DProcessor
+from newdl.dataset2 import SynapseDataset
+from newdl.dataloader2 import SynapseDataLoader, Synapse3DProcessor
 from config import config
 
 # Configuration - Global variables

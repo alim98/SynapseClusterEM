@@ -18,7 +18,7 @@ import seaborn as sns
 from sklearn.metrics import roc_curve, auc
 
 from synapse import config, SynapseDataset, Synapse3DProcessor
-from synapse.data.dataloader import SynapseDataLoader
+from newdl.dataloader2 import SynapseDataLoader
 from inference import VGG3D, load_and_prepare_data
 # Import classes from multi_layer_cam.py
 from multi_layer_cam import SimpleGradCAM, normalize_globally, process_single_sample
@@ -1075,7 +1075,7 @@ def main():
     
     # Set up
     from synapse import config
-    from synapse.data import SynapseDataset
+    from newdl.dataset2 import SynapseDataset
     from inference import VGG3D, load_and_prepare_data
     from synapse import Synapse3DProcessor
     

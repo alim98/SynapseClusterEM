@@ -18,7 +18,7 @@ from multi_layer_cam import visualize_cluster_attention
 
 # Import necessary modules without implementing their functionality
 from synapse import config, SynapseDataset, Synapse3DProcessor
-from synapse.data.dataloader import SynapseDataLoader
+from newdl.dataloader2 import SynapseDataLoader
 from inference import (
     extract_features, 
     create_plots, 

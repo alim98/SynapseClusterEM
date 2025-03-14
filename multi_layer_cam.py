@@ -10,9 +10,10 @@ import torch
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
-from synapse import config, SynapseDataset, Synapse3DProcessor
+from synapse import config
+from newdl.dataset2 import SynapseDataset
+from newdl.dataloader2 import Synapse3DProcessor, SynapseDataLoader, normalize_cube_globally
 from inference import VGG3D, load_and_prepare_data
-from synapse.data.dataloader import normalize_cube_globally
 
 def normalize_globally(array):
     """Apply global min-max normalization to ensure consistent grayscale values"""
@@ -420,7 +421,7 @@ def main():
     # Further ensure that the dataloader uses volume-wide normalization
     data_loader = dataset.data_loader
     if data_loader is None:
-        from synapse import SynapseDataLoader
+        from newdl.dataloader2 import SynapseDataLoader
         data_loader = SynapseDataLoader("", "", "")
         dataset.data_loader = data_loader
         print("Created new dataloader for the dataset")

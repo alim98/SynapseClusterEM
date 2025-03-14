@@ -8,8 +8,12 @@ It handles configuration and runs the main analysis functions.
 
 import os
 import argparse
+import torch
+import pandas as pd
 # Import from the reorganized modules
-from synapse import config, SynapseDataLoader, Synapse3DProcessor, Vgg3D, load_model_from_checkpoint
+from synapse import config
+from newdl.dataloader2 import SynapseDataLoader, Synapse3DProcessor
+from synapse import Vgg3D, load_model_from_checkpoint
 from inference import run_full_analysis, load_and_prepare_data
 
 def parse_arguments():
