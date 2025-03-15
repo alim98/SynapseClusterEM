@@ -17,11 +17,6 @@ from PIL import Image, ImageSequence
 import io
 import seaborn as sns
 import base64  # For image encoding
-# TODO: 
-# make balance in gif sampling across clusters,
-# make sure that dataloader is same as in clustering
-
-
 def ensure_gif_autoplay(gif_paths, loop=0):
     """
     Ensures all GIFs are set to autoplay by modifying their loop parameter.
@@ -89,9 +84,10 @@ def initialize_dataset_from_newdl():
     try:
         print("Initializing dataset from newdl...")
         # Import required classes from newdl
+
         from newdl.dataset2 import SynapseDataset
         from newdl.dataloader2 import SynapseDataLoader, Synapse3DProcessor
-        
+
         # Initialize data loader
         data_loader = SynapseDataLoader(
             raw_base_dir=config.raw_base_dir,
@@ -178,6 +174,11 @@ def perform_clustering_analysis(config, csv_path, output_path):
     # Apply t-SNE for dimensionality reduction and visualization
     tsne_results_2d = apply_tsne(features_df, feature_cols, 2)
     tsne_results_3d = apply_tsne(features_df, feature_cols, 3)
+    
+    # Add t-SNE results to the features DataFrame
+    features_df['tsne_x'] = tsne_results_2d[:, 0]
+    features_df['tsne_y'] = tsne_results_2d[:, 1]
+    features_df['tsne_z'] = tsne_results_3d[:, 2] if tsne_results_3d.shape[1] > 2 else 0
     
     # Define color mapping for different bounding boxes
     color_mapping = {
@@ -825,9 +826,9 @@ def create_umap_with_embedded_gifs_at_coordinates(features_df, gif_paths, output
     
     return html_path
 
-def create_umap_with_gifs(features_df, dataset, output_path, num_samples=10, random_seed=42):
+def create_umap_with_gifs(features_df, dataset, output_path, num_samples=10, random_seed=42, dim_reduction='umap'):
     """
-    Create a UMAP visualization with GIFs for selected samples.
+    Create a UMAP or t-SNE visualization with GIFs for selected samples.
     
     Args:
         features_df: DataFrame containing features and cluster assignments
@@ -835,18 +836,20 @@ def create_umap_with_gifs(features_df, dataset, output_path, num_samples=10, ran
         output_path: Directory to save results
         num_samples: Number of random samples to show with GIFs
         random_seed: Random seed for reproducibility
+        dim_reduction: Dimensionality reduction method ('umap' or 'tsne')
     
     Returns:
         Path to the HTML file with the visualization
     """
-    print(f"Creating UMAP visualization with GIFs for {num_samples} random samples...")
+    method_name = "UMAP" if dim_reduction == 'umap' else "t-SNE"
+    print(f"Creating {method_name} visualization with GIFs for {num_samples} random samples...")
     
     # Create output directories
     output_dir = Path(output_path)
     gifs_dir = output_dir / "sample_gifs"
     gifs_dir.mkdir(parents=True, exist_ok=True)
     
-    # Get features for UMAP
+    # Get features for dimensionality reduction
     feature_cols = [col for col in features_df.columns if col.startswith('feat_')]
     if not feature_cols:
         feature_cols = [col for col in features_df.columns if 'layer' in col and 'feat_' in col]
@@ -854,17 +857,40 @@ def create_umap_with_gifs(features_df, dataset, output_path, num_samples=10, ran
     if not feature_cols:
         raise ValueError("No feature columns found in the DataFrame")
     
-    # Compute 2D UMAP
-    print("Computing UMAP...")
-    features = features_df[feature_cols].values
-    features_scaled = StandardScaler().fit_transform(features)
+    # Check if t-SNE coordinates already exist
+    tsne_exists = all(col in features_df.columns for col in ['tsne_x', 'tsne_y'])
     
-    # Use UMAP directly instead of apply_tsne
-    reducer = umap.UMAP(n_components=2, random_state=random_seed)
-    umap_results = reducer.fit_transform(features_scaled)
-    
-    features_df['umap_x'] = umap_results[:, 0]
-    features_df['umap_y'] = umap_results[:, 1]
+    # Compute 2D UMAP or use existing t-SNE coordinates
+    if dim_reduction == 'umap' or not tsne_exists:
+        print(f"Computing {method_name}...")
+        features = features_df[feature_cols].values
+        features_scaled = StandardScaler().fit_transform(features)
+        
+        if dim_reduction == 'umap':
+            # Use UMAP
+            reducer = umap.UMAP(n_components=2, random_state=random_seed)
+            umap_results = reducer.fit_transform(features_scaled)
+            
+            features_df['x'] = umap_results[:, 0]
+            features_df['y'] = umap_results[:, 1]
+        else:
+            # Use t-SNE
+            if not tsne_exists:
+                from sklearn.manifold import TSNE
+                tsne = TSNE(n_components=2, random_state=random_seed)
+                tsne_results = tsne.fit_transform(features_scaled)
+                
+                features_df['tsne_x'] = tsne_results[:, 0]
+                features_df['tsne_y'] = tsne_results[:, 1]
+            
+            # Copy to generic x, y columns for consistent referencing
+            features_df['x'] = features_df['tsne_x']
+            features_df['y'] = features_df['tsne_y']
+    else:
+        print(f"Using existing t-SNE coordinates...")
+        # Copy t-SNE coordinates to generic x, y columns
+        features_df['x'] = features_df['tsne_x']
+        features_df['y'] = features_df['tsne_y']
     
     # Define color mapping for different bounding boxes
     color_mapping = {
@@ -1025,28 +1051,28 @@ def create_umap_with_gifs(features_df, dataset, output_path, num_samples=10, ran
         gif_paths = ensure_gif_autoplay(gif_paths, loop=0)
     
     # Create the plotly figure
-    print("Creating Plotly visualization...")
+    print(f"Creating {method_name} visualization...")
     
     # Determine point colors based on cluster or bbox
     if 'cluster' in features_df.columns:
         color_column = 'cluster'
-        title = "UMAP Visualization Colored by Cluster"
+        title = f"{method_name} Visualization Colored by Cluster"
     elif 'bbox_name' in features_df.columns:
         color_column = 'bbox_name'
-        title = "UMAP Visualization Colored by Bounding Box"
+        title = f"{method_name} Visualization Colored by Bounding Box"
         color_discrete_map = color_mapping
     else:
         # No color grouping available
         color_column = None
-        title = "UMAP Visualization"
+        title = f"{method_name} Visualization"
         color_discrete_map = None
     
     # Basic scatter plot for all points
     if color_column:
         fig = px.scatter(
             features_df,
-            x='umap_x',
-            y='umap_y',
+            x='x',
+            y='y',
             color=color_column,
             title=title,
             color_discrete_map=color_discrete_map if color_column == 'bbox_name' else None,
@@ -1055,8 +1081,8 @@ def create_umap_with_gifs(features_df, dataset, output_path, num_samples=10, ran
     else:
         fig = px.scatter(
             features_df,
-            x='umap_x',
-            y='umap_y',
+            x='x',
+            y='y',
             title=title,
             opacity=0.7
         )
@@ -1092,8 +1118,8 @@ def create_umap_with_gifs(features_df, dataset, output_path, num_samples=10, ran
             # Add a trace for samples with GIFs (larger markers)
             fig.add_trace(
                 go.Scatter(
-                    x=gif_samples_df['umap_x'],
-                    y=gif_samples_df['umap_y'],
+                    x=gif_samples_df['x'],
+                    y=gif_samples_df['y'],
                     mode='markers',
                     marker=dict(
                         size=15,
@@ -1120,10 +1146,15 @@ def create_umap_with_gifs(features_df, dataset, output_path, num_samples=10, ran
             create_enhanced_html_with_gifs(features_df, gif_paths, output_dir, enhanced_html_path)
             print(f"Enhanced HTML with embedded GIFs saved to {enhanced_html_path}")
             
-            # Create a new visualization with GIFs positioned at UMAP coordinates
-            print("Creating UMAP visualization with GIFs at coordinates...")
-            coordinate_html_path = create_umap_with_embedded_gifs_at_coordinates(features_df, gif_paths, output_dir)
-            print(f"UMAP with GIFs at coordinates saved to {coordinate_html_path}")
+            # Create a new visualization with GIFs positioned at coordinates
+            print(f"Creating {method_name} visualization with GIFs at coordinates...")
+            coordinate_html_path = create_visualization_with_embedded_gifs_at_coordinates(
+                features_df, 
+                gif_paths, 
+                output_dir,
+                dim_reduction=dim_reduction
+            )
+            print(f"{method_name} with GIFs at coordinates saved to {coordinate_html_path}")
             
         except Exception as e:
             print(f"Error adding GIF sample markers: {e}")
@@ -1142,7 +1173,7 @@ def create_umap_with_gifs(features_df, dataset, output_path, num_samples=10, ran
     )
     
     # Save the visualization (with optimized settings)
-    html_path = output_dir / "umap_with_gifs.html"
+    html_path = output_dir / f"{dim_reduction}_with_gifs.html"
     
     # Custom HTML to reduce file size - embed only necessary libraries and add custom CSS
     html_output = """
@@ -1150,7 +1181,7 @@ def create_umap_with_gifs(features_df, dataset, output_path, num_samples=10, ran
     <html>
     <head>
         <meta charset="utf-8">
-        <title>UMAP Visualization with GIF Samples</title>
+        <title>{method_name} Visualization with GIF Samples</title>
         <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
         <style>
             body {
@@ -1179,7 +1210,7 @@ def create_umap_with_gifs(features_df, dataset, output_path, num_samples=10, ran
             Plotly.newPlot('plot', plotData.data, plotData.layout);
         </script>
         <div style="margin-top: 20px; text-align: center;">
-            <p><b>Note:</b> If GIFs don't appear on hover, try opening the "umap_with_gifs_at_coordinates.html" file for a better visualization where GIFs are positioned directly at their coordinates.</p>
+            <p><b>Note:</b> If GIFs don't appear on hover, try opening the "{dim_reduction}_with_gifs_at_coordinates.html" file for a better visualization where GIFs are positioned directly at their coordinates.</p>
         </div>
     </body>
     </html>
@@ -1195,7 +1226,7 @@ def create_umap_with_gifs(features_df, dataset, output_path, num_samples=10, ran
             f.write(html_output)
     
     # Report results
-    print(f"UMAP visualization with GIFs saved to {html_path}")
+    print(f"{method_name} visualization with GIFs saved to {html_path}")
     print(f"Created {len(gif_paths)} GIFs in {gifs_dir}")
     
     return html_path
@@ -1894,30 +1925,638 @@ def create_plotly_express_visualization(features_df, gif_paths, output_dir):
     print(f"Plotly Express visualization saved to {html_path}")
     return html_path
 
-def create_animated_gif_visualization(features_df, gif_paths, output_dir):
+def create_visualization_with_embedded_gifs_at_coordinates(features_df, gif_paths, output_dir, dim_reduction='umap'):
     """
-    Create a simple HTML page that displays animated GIFs directly at their UMAP coordinates.
-    The GIFs are embedded directly in the HTML as base64 data to avoid file:// protocol issues.
-    GIFs are made draggable so users can rearrange them.
+    Create a custom HTML visualization that displays GIFs directly at their coordinates.
     
     Args:
-        features_df: DataFrame with features and UMAP coordinates
+        features_df: DataFrame with features, cluster assignments, and coordinates
         gif_paths: Dictionary mapping sample indices to GIF paths
         output_dir: Directory to save the HTML file
+        dim_reduction: Dimensionality reduction method ('umap' or 'tsne')
     
     Returns:
         Path to the HTML file
     """
-    import base64
+    method_name = "UMAP" if dim_reduction == 'umap' else "t-SNE"
     
-    # First ensure all GIFs are set to auto-loop
-    print("Ensuring GIFs are set to auto-loop...")
-    gif_paths = ensure_gif_autoplay(gif_paths, loop=0)
+    # Extract coordinates and other info for samples with GIFs
+    samples_with_gifs = []
+    for idx in gif_paths:
+        if idx in features_df.index:
+            sample = features_df.loc[idx]
+            
+            # Use generic x, y columns (which contain either UMAP or t-SNE coordinates)
+            if 'x' in sample and 'y' in sample:
+                x, y = sample['x'], sample['y']
+            elif dim_reduction == 'umap' and 'umap_x' in sample and 'umap_y' in sample:
+                x, y = sample['umap_x'], sample['umap_y']
+            elif dim_reduction == 'tsne' and 'tsne_x' in sample and 'tsne_y' in sample:
+                x, y = sample['tsne_x'], sample['tsne_y']
+            else:
+                print(f"Warning: Sample {idx} does not have {method_name} coordinates. Skipping.")
+                continue
+            
+            # Convert numpy/pandas types to Python native types for JSON serialization
+            if hasattr(idx, 'item'):  # Convert numpy types to Python native types
+                idx = idx.item()
+            if hasattr(x, 'item'):
+                x = x.item()
+            if hasattr(y, 'item'):
+                y = y.item()
+            
+            samples_with_gifs.append({
+                'id': idx,
+                'x': x,
+                'y': y,
+                'cluster': sample.get('cluster', 'N/A') if 'cluster' in sample else 'N/A',
+                'bbox': sample.get('bbox_name', 'unknown') if 'bbox_name' in sample else 'unknown',
+                'gif_path': gif_paths[idx]
+            })
+    
+    # Compute the bounds of the UMAP coordinates to set the canvas size
+    if samples_with_gifs:
+        x_values = [s['x'] for s in samples_with_gifs]
+        y_values = [s['y'] for s in samples_with_gifs]
+        
+        all_x_values = features_df['x'].values
+        all_y_values = features_df['y'].values
+        
+        x_min, x_max = float(min(all_x_values)), float(max(all_x_values))
+        y_min, y_max = float(min(all_y_values)), float(max(all_y_values))
+        
+        # Add padding
+        x_padding = (x_max - x_min) * 0.1
+        y_padding = (y_max - y_min) * 0.1
+        
+        x_min, x_max = x_min - x_padding, x_max + x_padding
+        y_min, y_max = y_min - y_padding, y_max + y_padding
+    else:
+        # Default values if no samples with GIFs
+        x_min, x_max = -10, 10
+        y_min, y_max = -10, 10
+    
+    # Create canvas width and height
+    canvas_width = 1200
+    canvas_height = 900
+    
+    # Function to map UMAP coordinates to canvas positions
+    def map_to_canvas(x, y):
+        canvas_x = ((x - x_min) / (x_max - x_min)) * canvas_width
+        # Invert y-axis (because in canvas, y increases downward)
+        canvas_y = ((y_max - y) / (y_max - y_min)) * canvas_height
+        return canvas_x, canvas_y
+    
+    # Generate points for all samples
+    points = []
+    for idx, row in features_df.iterrows():
+        x, y = row['x'], row['y']
+        canvas_x, canvas_y = map_to_canvas(x, y)
+        
+        # Convert numpy/pandas types to Python native types
+        if hasattr(idx, 'item'):
+            idx = idx.item()
+        if hasattr(canvas_x, 'item'):
+            canvas_x = canvas_x.item()
+        if hasattr(canvas_y, 'item'):
+            canvas_y = canvas_y.item()
+        
+        # Determine color based on cluster or bbox
+        if 'cluster' in features_df.columns:
+            cluster = row['cluster']
+            if hasattr(cluster, 'item'):
+                cluster = cluster.item()
+            # Generate a color based on cluster (using a simple hash function)
+            color = f"hsl({hash(str(cluster)) % 360}, 80%, 60%)"
+            label = f"Cluster {cluster}"
+        elif 'bbox_name' in features_df.columns:
+            bbox = row['bbox_name']
+            # Use predefined colors or generate
+            color_mapping = {
+                'bbox1': '#FF0000', 'bbox2': '#00FFFF', 'bbox3': '#FFA500',
+                'bbox4': '#800080', 'bbox5': '#808080', 'bbox6': '#0000FF', 'bbox7': '#000000'
+            }
+            color = color_mapping.get(bbox, f"hsl({hash(bbox) % 360}, 80%, 60%)")
+            label = bbox
+        else:
+            color = "#666666"
+            label = "Sample"
+        
+        points.append({
+            'x': canvas_x,
+            'y': canvas_y,
+            'color': color,
+            'label': label,
+            'id': idx,
+            'has_gif': idx in gif_paths
+        })
+    
+    # Group points by label for the legend
+    labels = {}
+    for point in points:
+        label = point['label']
+        if label not in labels:
+            labels[label] = {'color': point['color'], 'count': 0}
+        labels[label]['count'] += 1
+    
+    # Convert points and samples_with_gifs to JSON strings for embedding in HTML
+    import json
+    try:
+        points_json = json.dumps(points).replace('"', '\\"')
+        samples_json = json.dumps(samples_with_gifs).replace('"', '\\"')
+    except TypeError as e:
+        print(f"Error serializing data to JSON: {e}")
+        # Try a more robust approach
+        def safe_serialize(obj):
+            if hasattr(obj, 'tolist'):
+                return obj.tolist()
+            elif hasattr(obj, 'item'):
+                return obj.item()
+            elif isinstance(obj, (list, tuple)):
+                return [safe_serialize(item) for item in obj]
+            elif isinstance(obj, dict):
+                return {safe_serialize(k): safe_serialize(v) for k, v in obj.items()}
+            else:
+                return obj
+        
+        # Apply safe serialization
+        safe_points = [safe_serialize(p) for p in points]
+        safe_samples = [safe_serialize(s) for s in samples_with_gifs]
+        
+        # Try again with safe data
+        points_json = json.dumps(safe_points).replace('"', '\\"')
+        samples_json = json.dumps(safe_samples).replace('"', '\\"')
+    
+    # Create the HTML content
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <title>{method_name} Visualization with GIFs at Coordinates</title>
+        <style>
+            body {{
+                font-family: Arial, sans-serif;
+                margin: 0;
+                padding: 20px;
+                background-color: #f5f5f5;
+            }}
+            .container {{
+                max-width: 1300px;
+                margin: 0 auto;
+                background-color: white;
+                box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+                padding: 20px;
+                border-radius: 8px;
+                position: relative;
+            }}
+            h1 {{
+                text-align: center;
+                color: #333;
+                margin-bottom: 30px;
+            }}
+            .canvas-container {{
+                position: relative;
+                width: {canvas_width}px;
+                height: {canvas_height}px;
+                margin: 0 auto;
+                border: 1px solid #ddd;
+                overflow: hidden;
+            }}
+            .point {{
+                position: absolute;
+                width: 6px;
+                height: 6px;
+                border-radius: 50%;
+                transform: translate(-50%, -50%);
+                cursor: pointer;
+            }}
+            .point.with-gif {{
+                width: 10px;
+                height: 10px;
+                border: 2px solid black;
+            }}
+            .gif-container {{
+                position: absolute;
+                width: 150px;
+                height: 150px;
+                transform: translate(-50%, -50%);
+                background-color: white;
+                border: 2px solid #333;
+                border-radius: 8px;
+                overflow: hidden;
+                z-index: 100;
+                display: none;
+            }}
+            .gif-container img {{
+                width: 100%;
+                height: 100%;
+                object-fit: contain;
+            }}
+            .gif-info {{
+                position: absolute;
+                bottom: 0;
+                left: 0;
+                right: 0;
+                background-color: rgba(0,0,0,0.7);
+                color: white;
+                padding: 4px;
+                font-size: 12px;
+                text-align: center;
+            }}
+            .legend {{
+                position: absolute;
+                top: 10px;
+                right: 10px;
+                background-color: rgba(255,255,255,0.8);
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                padding: 10px;
+            }}
+            .legend-item {{
+                margin-bottom: 5px;
+                display: flex;
+                align-items: center;
+            }}
+            .legend-color {{
+                width: 15px;
+                height: 15px;
+                border-radius: 50%;
+                margin-right: 8px;
+            }}
+            .instructions {{
+                text-align: center;
+                margin: 15px 0;
+                color: #666;
+            }}
+            /* Controls for zooming and panning */
+            .controls {{
+                position: absolute;
+                bottom: 10px;
+                left: 10px;
+                display: flex;
+                gap: 10px;
+            }}
+            .control-btn {{
+                background-color: rgba(255,255,255,0.8);
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                padding: 5px 10px;
+                cursor: pointer;
+            }}
+            .control-btn:hover {{
+                background-color: #f0f0f0;
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>{method_name} Visualization with GIFs at Coordinates</h1>
+            
+            <div class="instructions">
+                <p>Hover over points to see details. Click on highlighted points to view GIFs. Use controls to zoom and pan.</p>
+            </div>
+            
+            <div class="canvas-container" id="canvas">
+                <!-- Points will be added here by JavaScript -->
+                
+                <!-- Legend -->
+                <div class="legend">
+                    <h3>Legend</h3>
+                    <div id="legend-content">
+                        <!-- Legend items will be added here by JavaScript -->
+                    </div>
+                    <div style="margin-top: 10px;">
+                        <small><b>•</b> Small points: regular samples</small><br>
+                        <small><b>O</b> Large points: samples with GIFs</small>
+                    </div>
+                </div>
+                
+                <!-- Controls -->
+                <div class="controls">
+                    <button class="control-btn" id="zoom-in">Zoom In</button>
+                    <button class="control-btn" id="zoom-out">Zoom Out</button>
+                    <button class="control-btn" id="reset">Reset View</button>
+                </div>
+            </div>
+        </div>
+        
+        <script>
+            // Data for points
+            const points = JSON.parse("{points_json}");
+            
+            // Data for GIFs
+            const gifSamples = JSON.parse("{samples_json}");
+            
+            // Canvas dimensions
+            const canvasWidth = {canvas_width};
+            const canvasHeight = {canvas_height};
+            
+            // Setup the canvas
+            const canvas = document.getElementById('canvas');
+            
+            // Zoom and pan variables
+            let zoomLevel = 1;
+            let panX = 0;
+            let panY = 0;
+            
+            // Function to apply transformations
+            function applyTransformation() {{
+                const points = document.querySelectorAll('.point');
+                const gifs = document.querySelectorAll('.gif-container');
+                
+                points.forEach(point => {{
+                    const baseX = parseFloat(point.getAttribute('data-x'));
+                    const baseY = parseFloat(point.getAttribute('data-y'));
+                    
+                    const transformedX = baseX * zoomLevel + panX;
+                    const transformedY = baseY * zoomLevel + panY;
+                    
+                    point.style.left = transformedX + 'px';
+                    point.style.top = transformedY + 'px';
+                }});
+                
+                gifs.forEach(gif => {{
+                    if (gif.style.display === 'block') {{
+                        const baseX = parseFloat(gif.getAttribute('data-x'));
+                        const baseY = parseFloat(gif.getAttribute('data-y'));
+                        
+                        const transformedX = baseX * zoomLevel + panX;
+                        const transformedY = baseY * zoomLevel + panY;
+                        
+                        gif.style.left = transformedX + 'px';
+                        gif.style.top = transformedY + 'px';
+                    }}
+                }});
+            }}
+            
+            // Add event listeners for controls
+            document.getElementById('zoom-in').addEventListener('click', () => {{
+                zoomLevel *= 1.2;
+                applyTransformation();
+            }});
+            
+            document.getElementById('zoom-out').addEventListener('click', () => {{
+                zoomLevel /= 1.2;
+                applyTransformation();
+            }});
+            
+            document.getElementById('reset').addEventListener('click', () => {{
+                zoomLevel = 1;
+                panX = 0;
+                panY = 0;
+                applyTransformation();
+            }});
+            
+            // Add event listener for panning
+            let isDragging = false;
+            let lastX, lastY;
+            
+            canvas.addEventListener('mousedown', (e) => {{
+                isDragging = true;
+                lastX = e.clientX;
+                lastY = e.clientY;
+                canvas.style.cursor = 'grabbing';
+            }});
+            
+            document.addEventListener('mousemove', (e) => {{
+                if (isDragging) {{
+                    const deltaX = e.clientX - lastX;
+                    const deltaY = e.clientY - lastY;
+                    
+                    panX += deltaX;
+                    panY += deltaY;
+                    
+                    lastX = e.clientX;
+                    lastY = e.clientY;
+                    
+                    applyTransformation();
+                }}
+            }});
+            
+            document.addEventListener('mouseup', () => {{
+                isDragging = false;
+                canvas.style.cursor = 'default';
+            }});
+            
+            // Function to create a point element
+            function createPoint(point) {{
+                const pointElem = document.createElement('div');
+                pointElem.className = 'point' + (point.has_gif ? ' with-gif' : '');
+                pointElem.id = 'point-' + point.id;
+                pointElem.style.left = point.x + 'px';
+                pointElem.style.top = point.y + 'px';
+                pointElem.style.backgroundColor = point.color;
+                pointElem.setAttribute('data-x', point.x);
+                pointElem.setAttribute('data-y', point.y);
+                pointElem.setAttribute('data-id', point.id);
+                
+                // Add tooltip with basic info
+                pointElem.title = `ID: ${{point.id}}, Label: ${{point.label}}`;
+                
+                // Add click event for points with GIFs
+                if (point.has_gif) {{
+                    pointElem.addEventListener('click', () => {{
+                        // Find the GIF data
+                        const gifData = gifSamples.find(g => g.id === point.id);
+                        if (gifData) {{
+                            // Check if the GIF container already exists
+                            let gifContainer = document.getElementById('gif-' + point.id);
+                            
+                            // Toggle visibility
+                            if (gifContainer) {{
+                                if (gifContainer.style.display === 'none') {{
+                                    // Hide all other GIFs first
+                                    document.querySelectorAll('.gif-container').forEach(container => {{
+                                        container.style.display = 'none';
+                                    }});
+                                    
+                                    // Show this GIF
+                                    gifContainer.style.display = 'block';
+                                }} else {{
+                                    gifContainer.style.display = 'none';
+                                }}
+                            }} else {{
+                                // Create new GIF container
+                                gifContainer = document.createElement('div');
+                                gifContainer.className = 'gif-container';
+                                gifContainer.id = 'gif-' + point.id;
+                                gifContainer.style.left = point.x + 'px';
+                                gifContainer.style.top = point.y + 'px';
+                                gifContainer.setAttribute('data-x', point.x);
+                                gifContainer.setAttribute('data-y', point.y);
+                                
+                                // Create image element
+                                const img = document.createElement('img');
+                                img.src = 'file://' + gifData.gif_path;
+                                img.alt = 'Sample ' + point.id;
+                                
+                                // Create info element
+                                const info = document.createElement('div');
+                                info.className = 'gif-info';
+                                
+                                // Add appropriate info
+                                let infoText = `ID: ${{point.id}}`;
+                                if (gifData.cluster !== 'N/A') {{
+                                    infoText += `, Cluster: ${{gifData.cluster}}`;
+                                }}
+                                if (gifData.bbox !== 'unknown') {{
+                                    infoText += `, BBox: ${{gifData.bbox}}`;
+                                }}
+                                info.textContent = infoText;
+                                
+                                // Add close button
+                                const closeBtn = document.createElement('button');
+                                closeBtn.textContent = 'X';
+                                closeBtn.style.position = 'absolute';
+                                closeBtn.style.top = '5px';
+                                closeBtn.style.right = '5px';
+                                closeBtn.style.zIndex = '101';
+                                closeBtn.style.background = 'rgba(255,255,255,0.7)';
+                                closeBtn.style.border = 'none';
+                                closeBtn.style.borderRadius = '50%';
+                                closeBtn.style.width = '20px';
+                                closeBtn.style.height = '20px';
+                                closeBtn.style.cursor = 'pointer';
+                                
+                                closeBtn.addEventListener('click', (e) => {{
+                                    e.stopPropagation();
+                                    gifContainer.style.display = 'none';
+                                }});
+                                
+                                // Add elements to container
+                                gifContainer.appendChild(img);
+                                gifContainer.appendChild(info);
+                                gifContainer.appendChild(closeBtn);
+                                
+                                // Hide all other GIFs first
+                                document.querySelectorAll('.gif-container').forEach(container => {{
+                                    container.style.display = 'none';
+                                }});
+                                
+                                // Add to canvas and show
+                                canvas.appendChild(gifContainer);
+                                gifContainer.style.display = 'block';
+                            }}
+                        }}
+                    }});
+                }}
+                
+                return pointElem;
+            }}
+            
+            // Function to populate the legend
+            function populateLegend() {{
+                const legendContent = document.getElementById('legend-content');
+                const labels = {{}};
+                
+                // Collect unique labels
+                points.forEach(point => {{
+                    if (!labels[point.label]) {{
+                        labels[point.label] = point.color;
+                    }}
+                }});
+                
+                // Create legend items
+                for (const label in labels) {{
+                    const item = document.createElement('div');
+                    item.className = 'legend-item';
+                    
+                    const colorBox = document.createElement('div');
+                    colorBox.className = 'legend-color';
+                    colorBox.style.backgroundColor = labels[label];
+                    
+                    const text = document.createElement('span');
+                    text.textContent = label;
+                    
+                    item.appendChild(colorBox);
+                    item.appendChild(text);
+                    legendContent.appendChild(item);
+                }}
+            }}
+            
+            // Initialize the visualization
+            function init() {{
+                // Create all points
+                points.forEach(point => {{
+                    const pointElem = createPoint(point);
+                    canvas.appendChild(pointElem);
+                }});
+                
+                // Populate the legend
+                populateLegend();
+            }}
+            
+            // Run initialization
+            window.onload = init;
+        </script>
+    </body>
+    </html>
+    """
+    
+    # Save the HTML file
+    html_path = Path(output_dir) / f"{dim_reduction}_with_gifs_at_coordinates.html"
+    try:
+        with open(html_path, 'w', encoding='utf-8') as f:
+            f.write(html_content)
+        print(f"Created custom {method_name} visualization with GIFs at coordinates: {html_path}")
+    except UnicodeEncodeError:
+        # If utf-8 fails, try with a more compatible encoding
+        with open(html_path, 'w', encoding='ascii', errors='xmlcharrefreplace') as f:
+            f.write(html_content)
+        print(f"Created custom {method_name} visualization with GIFs at coordinates (using ASCII encoding): {html_path}")
+    
+    return html_path
+
+def create_animated_gif_visualization(features_df, gif_paths, output_dir, dim_reduction='umap'):
+    """
+    Create a simple HTML page that displays animated GIFs directly at their coordinates.
+    The GIFs are embedded directly in the HTML as base64 data to avoid file:// protocol issues.
+    GIFs are made draggable so users can rearrange them.
+    
+    Args:
+        features_df: DataFrame with features and coordinates
+        gif_paths: Dictionary mapping sample indices to GIF paths
+        output_dir: Directory to save the HTML file
+        dim_reduction: Dimensionality reduction method ('umap' or 'tsne')
+    
+    Returns:
+        Path to the HTML file
+    """
+    method_name = "UMAP" if dim_reduction == 'umap' else "t-SNE"
+    import base64
     
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    # Extract UMAP coordinates and other info for samples with GIFs
+    print("Ensuring coordinates are available...")
+    
+    # Make sure we have the right coordinate columns
+    coord_columns = {
+        'umap': ['umap_x', 'umap_y'],
+        'tsne': ['tsne_x', 'tsne_y'],
+        'generic': ['x', 'y']
+    }
+    
+    # First priority: check for generic columns
+    if all(col in features_df.columns for col in coord_columns['generic']):
+        x_col, y_col = coord_columns['generic']
+        print(f"Using generic coordinate columns: {x_col}, {y_col}")
+    # Second priority: check for method-specific columns
+    elif all(col in features_df.columns for col in coord_columns[dim_reduction]):
+        x_col, y_col = coord_columns[dim_reduction]
+        print(f"Using {method_name}-specific coordinate columns: {x_col}, {y_col}")
+    # Fall back to the other method if available
+    elif dim_reduction == 'umap' and all(col in features_df.columns for col in coord_columns['tsne']):
+        x_col, y_col = coord_columns['tsne']
+        print(f"Using t-SNE coordinates as fallback: {x_col}, {y_col}")
+    elif dim_reduction == 'tsne' and all(col in features_df.columns for col in coord_columns['umap']):
+        x_col, y_col = coord_columns['umap']
+        print(f"Using UMAP coordinates as fallback: {x_col}, {y_col}")
+    else:
+        raise ValueError(f"No suitable coordinate columns found in DataFrame. Available columns: {features_df.columns.tolist()}")
+    
+    # Extract coordinates and other info for samples with GIFs
     samples_with_gifs = []
     
     # Track how many GIFs we have from each cluster for reporting
@@ -1926,8 +2565,10 @@ def create_animated_gif_visualization(features_df, gif_paths, output_dir):
     for idx in gif_paths:
         if idx in features_df.index:
             sample = features_df.loc[idx]
-            if 'umap_x' in sample and 'umap_y' in sample:
-                x, y = sample['umap_x'], sample['umap_y']
+            
+            # Use the determined coordinate columns
+            if x_col in sample and y_col in sample:
+                x, y = sample[x_col], sample[y_col]
                 
                 # Extract cluster and bbox information if available
                 cluster = sample.get('cluster', 'N/A') if 'cluster' in sample else 'N/A'
@@ -1963,6 +2604,8 @@ def create_animated_gif_visualization(features_df, gif_paths, output_dir):
                         })
                 except Exception as e:
                     print(f"Error encoding GIF for sample {idx}: {e}")
+            else:
+                print(f"Warning: Sample {idx} does not have required coordinates ({x_col}, {y_col}). Skipping.")
     
     # Print distribution of GIFs across clusters
     if cluster_counts:
@@ -1970,9 +2613,12 @@ def create_animated_gif_visualization(features_df, gif_paths, output_dir):
         for cluster, count in sorted(cluster_counts.items()):
             print(f"  Cluster {cluster}: {count} GIFs")
     
-    # Compute the bounds of the UMAP coordinates
-    all_x_values = features_df['umap_x'].values
-    all_y_values = features_df['umap_y'].values
+    if not samples_with_gifs:
+        raise ValueError("No samples with GIFs and valid coordinates found. Cannot create visualization.")
+    
+    # Compute the bounds of the coordinate values
+    all_x_values = features_df[x_col].values
+    all_y_values = features_df[y_col].values
     
     x_min, x_max = float(min(all_x_values)), float(max(all_x_values))
     y_min, y_max = float(min(all_y_values)), float(max(all_y_values))
@@ -1992,7 +2638,11 @@ def create_animated_gif_visualization(features_df, gif_paths, output_dir):
         import matplotlib.pyplot as plt
         
         # Use the new recommended approach to get colormaps
-        cmap = plt.colormaps['tab10']
+        try:
+            cmap = plt.colormaps['tab10']
+        except AttributeError:
+            # Fallback for older matplotlib versions
+            cmap = plt.cm.get_cmap('tab10')
         
         for i, cluster in enumerate(clusters):
             r, g, b, _ = cmap(i % 10)  # Use modulo to handle more than 10 clusters
@@ -2001,8 +2651,8 @@ def create_animated_gif_visualization(features_df, gif_paths, output_dir):
     # Generate HTML content for data points
     points_content = ""
     for idx, row in features_df.iterrows():
-        if 'umap_x' in row and 'umap_y' in row:
-            x, y = row['umap_x'], row['umap_y']
+        if x_col in row and y_col in row:
+            x, y = row[x_col], row[y_col]
             
             # Convert to native Python types
             if hasattr(idx, 'item'):
@@ -2050,7 +2700,7 @@ def create_animated_gif_visualization(features_df, gif_paths, output_dir):
     <html>
     <head>
         <meta charset="utf-8">
-        <title>Animated GIFs at UMAP Coordinates</title>
+        <title>Animated GIFs at {method_name} Coordinates</title>
         <style>
             body {{
                 font-family: Arial, sans-serif;
@@ -2132,7 +2782,7 @@ def create_animated_gif_visualization(features_df, gif_paths, output_dir):
     </head>
     <body>
         <div class="container">
-            <h1>UMAP Visualization with Animated GIFs</h1>
+            <h1>{method_name} Visualization with Animated GIFs</h1>
             
             <div class="controls">
                 <button id="toggle-gifs">Show/Hide GIFs</button>
@@ -2370,7 +3020,7 @@ def create_animated_gif_visualization(features_df, gif_paths, output_dir):
     """
     
     # Save the HTML file
-    html_path = output_dir / "animated_gifs_visualization.html"
+    html_path = output_dir / f"animated_gifs_{dim_reduction}_visualization.html"
     try:
         with open(html_path, 'w', encoding='utf-8') as f:
             f.write(html_content)
@@ -2386,6 +3036,15 @@ def create_animated_gif_visualization(features_df, gif_paths, output_dir):
 if __name__ == "__main__":
     # Parse configuration
     config.parse_args()
+    
+    # Add argument for dimensionality reduction method
+    import argparse
+    parser = argparse.ArgumentParser(description='UMAP and t-SNE Visualization with GIFs')
+    parser.add_argument('--dim-reduction', 
+                       choices=['umap', 'tsne'], 
+                       default='umap',
+                       help='Dimensionality reduction method to use (umap or tsne)')
+    args, unknown = parser.parse_known_args()
     
     # Define paths
     csv_path = r"C:\Users\alim9\Documents\codes\synapse2\results\run_2025-03-14_15-50-53\features_layer20_seg10_alpha1.0\features_layer20_seg10_alpha1_0.csv"  # Replace with your actual CSV path
@@ -2412,8 +3071,9 @@ if __name__ == "__main__":
     
     print(f"Loaded features DataFrame with {len(features_df)} samples")
     print(f"Columns in features_df: {features_df.columns.tolist()}")
+    print(f"Using dimensionality reduction method: {args.dim_reduction.upper()}")
     
-    # Create UMAP visualization with GIFs
+    # Create UMAP or t-SNE visualization with GIFs
     # Try to get dataset from different sources
     dataset = None
     
@@ -2427,8 +3087,9 @@ if __name__ == "__main__":
     
     # If we have a dataset, create the visualization
     if dataset is not None:
-        # First, create GIFs for samples and get paths
-        print("Creating UMAP visualization with GIFs for a few random samples...")
+        # Create visualization with selected dim reduction method
+        print(f"Creating {args.dim_reduction.upper()} visualization with GIFs for a few random samples...")
+        
         # Check dataset length to ensure we only choose valid indices
         try:
             dataset_length = len(dataset)
@@ -2449,8 +3110,8 @@ if __name__ == "__main__":
             print("Assuming all feature indices are valid.")
             valid_indices = features_df.index.tolist()
         
-        # Compute 2D UMAP if not already in the DataFrame
-        if 'umap_x' not in features_df.columns or 'umap_y' not in features_df.columns:
+        # Compute coordinates if not already in the DataFrame
+        if args.dim_reduction == 'umap' and ('x' not in features_df.columns or 'y' not in features_df.columns):
             print("Computing UMAP...")
             feature_cols = [col for col in features_df.columns if col.startswith('feat_')]
             if not feature_cols:
@@ -2464,8 +3125,28 @@ if __name__ == "__main__":
                 reducer = umap.UMAP(n_components=2, random_state=42)
                 umap_results = reducer.fit_transform(features_scaled)
                 
-                features_df['umap_x'] = umap_results[:, 0]
-                features_df['umap_y'] = umap_results[:, 1]
+                features_df['x'] = umap_results[:, 0]
+                features_df['y'] = umap_results[:, 1]
+            else:
+                print("ERROR: No feature columns found in the DataFrame")
+                feature_cols = []
+        elif args.dim_reduction == 'tsne' and ('tsne_x' not in features_df.columns or 'tsne_y' not in features_df.columns):
+            print("Computing t-SNE...")
+            feature_cols = [col for col in features_df.columns if col.startswith('feat_')]
+            if not feature_cols:
+                feature_cols = [col for col in features_df.columns if 'layer' in col and 'feat_' in col]
+                
+            if feature_cols:
+                features = features_df[feature_cols].values
+                features_scaled = StandardScaler().fit_transform(features)
+                
+                # Use t-SNE
+                from sklearn.manifold import TSNE
+                tsne = TSNE(n_components=2, random_state=42)
+                tsne_results = tsne.fit_transform(features_scaled)
+                
+                features_df['tsne_x'] = tsne_results[:, 0]
+                features_df['tsne_y'] = tsne_results[:, 1]
             else:
                 print("ERROR: No feature columns found in the DataFrame")
                 feature_cols = []
@@ -2579,7 +3260,7 @@ if __name__ == "__main__":
                     print(f"Error creating GIF for sample {idx}: {str(e)}")
             
             # Skip the original visualization that takes longer
-            # html_path = create_umap_with_gifs(features_df, dataset, output_path, num_samples=40, random_seed=42)
+            # html_path = create_umap_with_gifs(features_df, dataset, output_path, num_samples=40, random_seed=42, dim_reduction=args.dim_reduction)
             
             # Now create visualizations with our simpler methods if we have GIFs
             if gif_paths:
@@ -2612,9 +3293,9 @@ if __name__ == "__main__":
                 
                 print("\nCreating animated GIF visualization...")
                 try:
-                    animated_path = create_animated_gif_visualization(features_df, gif_paths, output_dir)
+                    animated_path = create_animated_gif_visualization(features_df, gif_paths, output_dir, dim_reduction=args.dim_reduction)
                     print(f"Animated GIF visualization created at {animated_path}")
-                    print(f"Open this in your browser to see animated GIFs directly at their UMAP coordinates.")
+                    print(f"Open this in your browser to see animated GIFs directly at their {args.dim_reduction.upper()} coordinates.")
                 except Exception as e:
                     print(f"Error creating animated GIF visualization: {e}")
             else:
@@ -2622,7 +3303,7 @@ if __name__ == "__main__":
         else:
             print("No valid indices found. Skipping GIF creation and visualizations.")
     else:
-        print("Warning: Could not initialize dataset. Skipping UMAP with GIFs visualization.")
+        print("Warning: Could not initialize dataset. Skipping visualizations with GIFs.")
         print("If you want to create the visualization, please ensure your config has valid paths for:")
         print("- raw_base_dir: The directory containing raw volumes")
         print("- seg_base_dir: The directory containing segmentation volumes")
