@@ -314,7 +314,7 @@ def create_plots(features_df, seg_type, alpha, fixed_samples):
     print("Returning figure from create_plots")
     return fig
 
-def extract_and_save_features(model, dataset, config, seg_type, alpha, output_dir, extraction_method='standard', layer_num=20):
+def extract_and_save_features(model, dataset, config, seg_type, alpha, output_dir, extraction_method='standard', layer_num=20, perform_clustering=False):
     """
     Extract and save features using the specified extraction method.
     
@@ -327,6 +327,7 @@ def extract_and_save_features(model, dataset, config, seg_type, alpha, output_di
         output_dir: Directory to save features
         extraction_method: Feature extraction method ('standard' or 'stage_specific')
         layer_num: Layer number to extract features from if using stage_specific method
+        perform_clustering: Whether to perform clustering analysis (default: False)
         
     Returns:
         Path to the saved features CSV file
@@ -385,32 +386,34 @@ def extract_and_save_features(model, dataset, config, seg_type, alpha, output_di
     features_df.to_csv(csv_filepath, index=False)
     print(f"Updated features saved to {csv_filepath}")
     
-    try:
-        seg_output_dir = os.path.join(output_dir, f"seg{seg_type}_alpha{alpha_str}")
-        os.makedirs(seg_output_dir, exist_ok=True)
-        
-        clustered_df, kmeans, feature_cols = load_and_cluster_features(csv_filepath, n_clusters=10)
-        clustered_csv_path = os.path.join(seg_output_dir, "clustered_features.csv")
-        clustered_df.to_csv(clustered_csv_path, index=False)
-        
-        tsne_results_2d = apply_tsne(clustered_df, feature_cols, 2)
-        tsne_results_3d = apply_tsne(clustered_df, feature_cols, 3)
-        
-        color_mapping = {
-            'bbox1': '#FF0000', 'bbox2': '#00FFFF', 'bbox3': '#FFA500',
-            'bbox4': '#800080', 'bbox5': '#808080', 'bbox6': '#0000FF', 'bbox7': '#000000'
-        }
-        
-        save_tsne_plots(clustered_df, tsne_results_2d, tsne_results_3d, kmeans, color_mapping, seg_output_dir)
-        
-        random_samples_in_clusters = find_random_samples_in_clusters(clustered_df, feature_cols, 4)
-        save_cluster_samples(dataset, random_samples_in_clusters, seg_output_dir)
-        
-        print(f"Clustering analysis completed and saved to {seg_output_dir}")
-    except Exception as e:
-        print(f"Error during clustering analysis: {str(e)}")
-        import traceback
-        traceback.print_exc()
+    # Only perform clustering if explicitly requested
+    if perform_clustering:
+        try:
+            seg_output_dir = os.path.join(output_dir, f"seg{seg_type}_alpha{alpha_str}")
+            os.makedirs(seg_output_dir, exist_ok=True)
+            
+            clustered_df, kmeans, feature_cols = load_and_cluster_features(csv_filepath, n_clusters=10)
+            clustered_csv_path = os.path.join(seg_output_dir, "clustered_features.csv")
+            clustered_df.to_csv(clustered_csv_path, index=False)
+            
+            tsne_results_2d = apply_tsne(clustered_df, feature_cols, 2)
+            tsne_results_3d = apply_tsne(clustered_df, feature_cols, 3)
+            
+            color_mapping = {
+                'bbox1': '#FF0000', 'bbox2': '#00FFFF', 'bbox3': '#FFA500',
+                'bbox4': '#800080', 'bbox5': '#808080', 'bbox6': '#0000FF', 'bbox7': '#000000'
+            }
+            
+            save_tsne_plots(clustered_df, tsne_results_2d, tsne_results_3d, kmeans, color_mapping, seg_output_dir)
+            
+            random_samples_in_clusters = find_random_samples_in_clusters(clustered_df, feature_cols, 4)
+            save_cluster_samples(dataset, random_samples_in_clusters, seg_output_dir)
+            
+            print(f"Clustering analysis completed and saved to {seg_output_dir}")
+        except Exception as e:
+            print(f"Error during clustering analysis: {str(e)}")
+            import traceback
+            traceback.print_exc()
     
     return csv_filepath
 
@@ -454,7 +457,8 @@ def run_full_analysis(config, vol_data_dict, syn_df, processor, model):
                     alpha, 
                     output_dir,
                     extraction_method=extraction_method,
-                    layer_num=layer_num
+                    layer_num=layer_num,
+                    perform_clustering=(not hasattr(config, 'skip_clustering') or not config.skip_clustering)
                 )
             else:
                 # Load existing features

@@ -31,7 +31,8 @@ class SynapseConfig:
         # Feature extraction parameters
         self.extraction_method = "standard"  # Options: "standard" or "stage_specific"
         self.layer_num = 20  # Layer to extract features from when using stage_specific method
-        
+        self.preprocessing = 'intelligent_cropping'  # Options: 'normal' or 'intelligent_cropping'
+        self.preprocessing_weights = 0.7 # it has opitons like 0.3 0.5 and 0.7
     def parse_args(self):
         parser = argparse.ArgumentParser(description="Synapse Dataset Configuration")
         parser.add_argument('--raw_base_dir', type=str, default=self.raw_base_dir)
