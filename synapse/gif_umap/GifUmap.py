@@ -210,7 +210,7 @@ def perform_clustering_analysis(config, csv_path, output_path):
     
     return features_df
 
-def create_gif_from_volume(volume, output_path, fps=10):
+def create_gif_from_volume(volume, output_path, fps=10, loop=0):
     """
     Create a GIF from a volume (3D array).
     
@@ -218,6 +218,7 @@ def create_gif_from_volume(volume, output_path, fps=10):
         volume: 3D array representing volume data
         output_path: Path to save the GIF
         fps: Frames per second
+        loop: Number of times to loop the GIF (0 = infinite, -1 = no loop)
     """
     # Convert PyTorch tensor to numpy if needed
     if isinstance(volume, torch.Tensor):
@@ -252,8 +253,22 @@ def create_gif_from_volume(volume, output_path, fps=10):
     # Create directory if it doesn't exist
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     
-    # Save as GIF with reduced size (lower fps and scale)
-    imageio.mimsave(output_path, enhanced_frames, fps=fps)
+    # Save as GIF with infinite looping
+    if isinstance(enhanced_frames[0], np.ndarray):
+        # For numpy arrays, use PIL for better control over loop parameter
+        from PIL import Image
+        frames_pil = [Image.fromarray(frame) for frame in enhanced_frames]
+        frames_pil[0].save(
+            output_path,
+            save_all=True,
+            append_images=frames_pil[1:],
+            optimize=False,
+            duration=int(1000/fps),  # Convert fps to milliseconds per frame
+            loop=loop  # 0 = infinite loop
+        )
+    else:
+        # Fallback to imageio if frames are not numpy arrays
+        imageio.mimsave(output_path, enhanced_frames, fps=fps, loop=loop)
     
     return output_path
 
@@ -501,6 +516,8 @@ def create_animated_gif_visualization(features_df, gif_paths, output_dir, dim_re
                 width: 100%;
                 height: 100%;
                 object-fit: contain;
+                /* Ensure GIFs play automatically */
+                animation-play-state: running !important;
             }}
             .controls {{
                 margin-top: 10px;
@@ -673,6 +690,8 @@ def create_animated_gif_visualization(features_df, gif_paths, output_dir, dim_re
                     gifContainer.style.height = '100px';
                     gifContainer.dataset.index = index;
                     gifContainer.dataset.cluster = sample.cluster;
+                    // Add data attributes to help with GIF autoplay
+                    gifContainer.setAttribute('data-autoplay', 'true');
                     
                     // Create GIF image using base64 data
                     const gifImg = document.createElement('img');
@@ -785,29 +804,88 @@ def create_animated_gif_visualization(features_df, gif_paths, output_dir, dim_re
             // Make an element draggable
             function makeDraggable(element) {{
                 let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
+                let isDragging = false;
+                let originalZIndex;
+                let dragStartX = 0, dragStartY = 0;
                 
                 element.onmousedown = dragMouseDown;
                 
                 function dragMouseDown(e) {{
                     e = e || window.event;
                     e.preventDefault();
+                    
                     // Get the mouse cursor position at startup
                     pos3 = e.clientX;
                     pos4 = e.clientY;
+                    dragStartX = element.offsetLeft;
+                    dragStartY = element.offsetTop;
                     
-                    // Add dragging class
-                    element.classList.add('dragging');
-                    
-                    // Bring the element to the front
+                    // Store original z-index and bring element to front
+                    originalZIndex = element.style.zIndex;
                     element.style.zIndex = "1000";
+                    
+                    // Add dragging class for visual feedback
+                    element.classList.add('dragging');
+                    isDragging = true;
+                    
+                    // Create a semi-transparent clone for original position
+                    const ghost = element.cloneNode(true);
+                    ghost.classList.add('ghost');
+                    ghost.style.opacity = '0.3';
+                    ghost.style.pointerEvents = 'none';
+                    ghost.style.position = 'absolute';
+                    ghost.style.left = dragStartX + 'px';
+                    ghost.style.top = dragStartY + 'px';
+                    ghost.id = 'drag-ghost';
+                    element.parentNode.appendChild(ghost);
                     
                     document.onmouseup = closeDragElement;
                     document.onmousemove = elementDrag;
+                }}
+
+                function getVisibleGifsExceptSelf() {{
+                    return Array.from(document.querySelectorAll('.gif-container'))
+                        .filter(container => container !== element && 
+                                          container.id !== 'drag-ghost' &&
+                                          container.style.display === 'block')
+                        .map(container => {{
+                            const rect = container.getBoundingClientRect();
+                            const plotRect = plot.getBoundingClientRect();
+                            return {{
+                                left: rect.left - plotRect.left,
+                                right: rect.right - plotRect.left,
+                                top: rect.top - plotRect.top,
+                                bottom: rect.bottom - plotRect.top
+                            }};
+                        }});
+                }}
+
+                function checkCollision(newX, newY) {{
+                    const size = parseInt(element.style.width);
+                    const halfSize = size / 2;
+                    const newRect = {{
+                        left: newX - halfSize,
+                        right: newX + halfSize,
+                        top: newY - halfSize,
+                        bottom: newY + halfSize
+                    }};
+
+                    // Check plot boundaries
+                    if (newX - halfSize < 0 || newX + halfSize > plotWidth ||
+                        newY - halfSize < 0 || newY + halfSize > plotHeight) {{
+                        return true;
+                    }}
+
+                    // Check collision with other GIFs
+                    const visibleGifs = getVisibleGifsExceptSelf();
+                    return visibleGifs.some(gifRect => checkOverlap(newRect, gifRect));
                 }}
                 
                 function elementDrag(e) {{
                     e = e || window.event;
                     e.preventDefault();
+                    
+                    if (!isDragging) return;
                     
                     // Calculate the new cursor position
                     pos1 = pos3 - e.clientX;
@@ -815,32 +893,43 @@ def create_animated_gif_visualization(features_df, gif_paths, output_dir, dim_re
                     pos3 = e.clientX;
                     pos4 = e.clientY;
                     
-                    // Set the element's new position
-                    const newTop = (element.offsetTop - pos2);
-                    const newLeft = (element.offsetLeft - pos1);
+                    // Calculate new position
+                    const newTop = element.offsetTop - pos2;
+                    const newLeft = element.offsetLeft - pos1;
                     
-                    // Constrain to plot boundaries
-                    const elemWidth = parseInt(element.style.width);
-                    const elemHeight = parseInt(element.style.height);
+                    // Check for collisions at new position
+                    if (!checkCollision(newLeft, newTop)) {{
+                        // Update position if no collision
+                        element.style.top = newTop + 'px';
+                        element.style.left = newLeft + 'px';
+                    }}
                     
-                    const boundedTop = Math.max(elemHeight/2, Math.min(newTop, plotHeight - elemHeight/2));
-                    const boundedLeft = Math.max(elemWidth/2, Math.min(newLeft, plotWidth - elemWidth/2));
-                    
-                    element.style.top = boundedTop + "px";
-                    element.style.left = boundedLeft + "px";
+                    // Add visual feedback for valid/invalid drop positions
+                    if (checkCollision(newLeft, newTop)) {{
+                        element.classList.add('invalid-position');
+                    }} else {{
+                        element.classList.remove('invalid-position');
+                    }}
                 }}
                 
                 function closeDragElement() {{
                     // Stop moving when mouse button is released
                     document.onmouseup = null;
                     document.onmousemove = null;
+                    isDragging = false;
                     
-                    // Remove dragging class
-                    element.classList.remove('dragging');
+                    // Remove ghost element
+                    const ghost = document.getElementById('drag-ghost');
+                    if (ghost) {{
+                        ghost.parentNode.removeChild(ghost);
+                    }}
                     
-                    // Reset z-index to normal
+                    // Remove visual feedback classes
+                    element.classList.remove('dragging', 'invalid-position');
+                    
+                    // Reset z-index with a small delay
                     setTimeout(() => {{
-                        element.style.zIndex = "10";
+                        element.style.zIndex = originalZIndex || "10";
                     }}, 200);
                 }}
             }}
@@ -1148,11 +1237,25 @@ def create_clickable_gif_visualization(features_df, gif_paths, output_dir, dim_r
                 z-index: 200;
                 box-shadow: 0 4px 15px rgba(0,0,0,0.3);
                 display: none;
+                cursor: grab;
             }}
+            
+            .gif-container:hover {{
+                box-shadow: 0 6px 20px rgba(0,0,0,0.4);
+            }}
+            
+            .gif-container.dragging {{
+                cursor: grabbing;
+                opacity: 0.8;
+                box-shadow: 0 8px 25px rgba(0,0,0,0.5);
+            }}
+            
             .gif-container img {{
                 width: 100%;
                 height: 100%;
                 object-fit: contain;
+                /* Ensure GIFs play automatically */
+                animation-play-state: running !important;
             }}
             .gif-info {{
                 position: absolute;
@@ -1231,6 +1334,25 @@ def create_clickable_gif_visualization(features_df, gif_paths, output_dir, dim_r
                 color: #666;
                 font-style: italic;
             }}
+            .dragging {{
+                opacity: 0.8;
+                cursor: grabbing !important;
+                box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+            }}
+            .invalid-position {{
+                border-color: #ff4444 !important;
+                box-shadow: 0 0 10px rgba(255,0,0,0.5);
+            }}
+            .ghost {{
+                border: 2px dashed #666;
+                background-color: rgba(200,200,200,0.2);
+            }}
+            .gif-container {{
+                cursor: grab;
+            }}
+            .gif-container:active {{
+                cursor: grabbing;
+            }}
         </style>
     </head>
     <body>
@@ -1239,6 +1361,7 @@ def create_clickable_gif_visualization(features_df, gif_paths, output_dir, dim_r
             
             <div class="instructions">
                 <p>Click on any highlighted point to view its GIF. Click elsewhere or on the close button to hide the GIF.</p>
+                <p>GIFs are <strong>draggable</strong> - click and drag to move them around. They will not overlap with other GIFs.</p>
             </div>
             
             <div class="controls">
@@ -1424,6 +1547,8 @@ def create_clickable_gif_visualization(features_df, gif_paths, output_dir, dim_r
                     const gifImg = document.createElement('img');
                     gifImg.src = 'data:image/gif;base64,' + sample.gifData;
                     gifImg.alt = 'Sample ' + sample_id;
+                    // Ensure GIF loops infinitely
+                    gifImg.setAttribute('loop', 'infinite');
                     
                     // Create info element
                     const infoElem = document.createElement('div');
@@ -1449,6 +1574,9 @@ def create_clickable_gif_visualization(features_df, gif_paths, output_dir, dim_r
                     gifContainer.appendChild(gifImg);
                     gifContainer.appendChild(infoElem);
                     gifContainer.appendChild(closeBtn);
+                    
+                    // Make the GIF container draggable
+                    makeDraggable(gifContainer);
                     
                     // Add to plot
                     plot.appendChild(gifContainer);
@@ -1477,22 +1605,28 @@ def create_clickable_gif_visualization(features_df, gif_paths, output_dir, dim_r
                 function findNonOverlappingPosition(startX, startY, size) {{
                     const visibleGifs = Array.from(document.querySelectorAll('.gif-container'))
                         .filter(container => container.id !== `gif-${{sample_id}}` && 
-                                          container.style.display === 'block')
-                        .map(container => {{
-                            const rect = container.getBoundingClientRect();
-                            const plotRect = plot.getBoundingClientRect();
-                            return {{
-                                left: rect.left - plotRect.left,
-                                right: rect.right - plotRect.left,
-                                top: rect.top - plotRect.top,
-                                bottom: rect.bottom - plotRect.top
-                            }};
-                        }});
-
+                                          container.style.display === 'block');
+                    
                     // If no visible GIFs, return original position
                     if (visibleGifs.length === 0) {{
                         return {{ x: startX, y: startY }};
                     }}
+                    
+                    // Calculate rectangles for existing GIFs
+                    const existingRects = visibleGifs.map(container => {{
+                        // Get the other GIF's actual position and size
+                        const otherSize = parseInt(container.style.width);
+                        const otherHalfSize = otherSize / 2;
+                        const otherLeft = parseFloat(container.style.left.replace('px', ''));
+                        const otherTop = parseFloat(container.style.top.replace('px', ''));
+                        
+                        return {{
+                            left: otherLeft - otherHalfSize,
+                            right: otherLeft + otherHalfSize,
+                            top: otherTop - otherHalfSize,
+                            bottom: otherTop + otherHalfSize
+                        }};
+                    }});
 
                     const halfSize = size / 2;
                     const spiralStep = size * 0.75; // Distance between spiral points
@@ -1514,10 +1648,25 @@ def create_clickable_gif_visualization(features_df, gif_paths, output_dir, dim_r
                             continue;
                         }}
 
-                        // Check if this position overlaps with any existing GIFs
-                        const testRect = getRectangle(testX, testY, size);
-                        const hasOverlap = visibleGifs.some(existingRect => 
-                            checkOverlap(testRect, existingRect));
+                        // Create test rectangle
+                        const testRect = {{
+                            left: testX - halfSize,
+                            right: testX + halfSize,
+                            top: testY - halfSize,
+                            bottom: testY + halfSize
+                        }};
+
+                        // Check for overlap with existing GIFs
+                        let hasOverlap = false;
+                        for (const existingRect of existingRects) {{
+                            if (!(testRect.right < existingRect.left || 
+                                  testRect.left > existingRect.right || 
+                                  testRect.bottom < existingRect.top || 
+                                  testRect.top > existingRect.bottom)) {{
+                                hasOverlap = true;
+                                break;
+                            }}
+                        }}
 
                         if (!hasOverlap) {{
                             return {{ x: testX, y: testY }};
@@ -1598,6 +1747,127 @@ def create_clickable_gif_visualization(features_df, gif_paths, output_dir, dim_r
                 gifItem.appendChild(gifMarker);
                 gifItem.appendChild(gifLabel);
                 legend.appendChild(gifItem);
+            }}
+            
+            // Make an element draggable
+            function makeDraggable(element) {{
+                let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
+                let isDragging = false;
+                let originalZIndex;
+                
+                element.onmousedown = dragMouseDown;
+                
+                function dragMouseDown(e) {{
+                    e = e || window.event;
+                    e.preventDefault();
+                    e.stopPropagation(); // Prevent triggering parent click events
+                    
+                    // Get the mouse cursor position at startup
+                    pos3 = e.clientX;
+                    pos4 = e.clientY;
+                    
+                    // Store original z-index and bring element to front
+                    originalZIndex = element.style.zIndex;
+                    element.style.zIndex = "1000";
+                    
+                    // Add dragging class for visual feedback
+                    element.classList.add('dragging');
+                    isDragging = true;
+                    
+                    document.onmouseup = closeDragElement;
+                    document.onmousemove = elementDrag;
+                }}
+                
+                function checkCollision(newX, newY) {{
+                    const size = parseInt(element.style.width);
+                    const halfSize = size / 2;
+                    
+                    // Check plot boundaries
+                    if (newX - halfSize < 0 || newX + halfSize > plotWidth ||
+                        newY - halfSize < 0 || newY + halfSize > plotHeight) {{
+                        return true;
+                    }}
+                    
+                    // Check collision with other GIFs
+                    const visibleGifs = Array.from(document.querySelectorAll('.gif-container'))
+                        .filter(container => container !== element && 
+                                container.style.display === 'block');
+                    
+                    // Calculate this element's rectangle at the new position
+                    const thisRect = {{
+                        left: newX - halfSize,
+                        right: newX + halfSize,
+                        top: newY - halfSize,
+                        bottom: newY + halfSize
+                    }};
+                    
+                    // Check for collisions with other visible GIFs
+                    for (const otherGif of visibleGifs) {{
+                        // Get the other GIF's actual position (accounting for transform)
+                        const otherSize = parseInt(otherGif.style.width);
+                        const otherHalfSize = otherSize / 2;
+                        
+                        // Get position from the style (left/top properties)
+                        const otherLeft = parseFloat(otherGif.style.left.replace('px', ''));
+                        const otherTop = parseFloat(otherGif.style.top.replace('px', ''));
+                        
+                        // Calculate rectangle
+                        const otherRect = {{
+                            left: otherLeft - otherHalfSize,
+                            right: otherLeft + otherHalfSize,
+                            top: otherTop - otherHalfSize,
+                            bottom: otherTop + otherHalfSize
+                        }};
+                        
+                        // Check if rectangles overlap
+                        if (!(thisRect.right < otherRect.left || 
+                            thisRect.left > otherRect.right || 
+                            thisRect.bottom < otherRect.top || 
+                            thisRect.top > otherRect.bottom)) {{
+                            return true;
+                        }}
+                    }}
+                    
+                    return false;
+                }}
+                
+                function elementDrag(e) {{
+                    e = e || window.event;
+                    e.preventDefault();
+                    
+                    if (!isDragging) return;
+                    
+                    // Calculate the new cursor position
+                    pos1 = pos3 - e.clientX;
+                    pos2 = pos4 - e.clientY;
+                    pos3 = e.clientX;
+                    pos4 = e.clientY;
+                    
+                    // Calculate new position
+                    const newTop = element.offsetTop - pos2;
+                    const newLeft = element.offsetLeft - pos1;
+                    
+                    // Only update position if no collision
+                    if (!checkCollision(newLeft, newTop)) {{
+                        element.style.top = newTop + 'px';
+                        element.style.left = newLeft + 'px';
+                    }}
+                }}
+                
+                function closeDragElement() {{
+                    // Stop moving when mouse button is released
+                    document.onmouseup = null;
+                    document.onmousemove = null;
+                    isDragging = false;
+                    
+                    // Remove visual feedback classes
+                    element.classList.remove('dragging');
+                    
+                    // Reset z-index with a small delay
+                    setTimeout(() => {{
+                        element.style.zIndex = originalZIndex || "10";
+                    }}, 200);
+                }}
             }}
             
             // Initialize controls
@@ -1930,7 +2200,7 @@ if __name__ == "__main__":
                     gif_path = gifs_dir / gif_filename
                     
                     # Generate GIF with reduced quality to save space
-                    create_gif_from_volume(volume, str(gif_path), fps=8)
+                    create_gif_from_volume(volume, str(gif_path), fps=8, loop=0)  # loop=0 means infinite looping
                     
                     # Check if GIF was successfully created
                     if os.path.exists(gif_path) and os.path.getsize(gif_path) > 0:
@@ -1942,6 +2212,11 @@ if __name__ == "__main__":
                     
                 except Exception as e:
                     print(f"Error creating GIF for sample {idx}: {str(e)}")
+
+            # Ensure all GIFs are set to autoplay
+            if gif_paths:
+                print("Ensuring all GIFs are set to autoplay...")
+                gif_paths = ensure_gif_autoplay(gif_paths, loop=0)
 
             # Now create visualizations with our simpler methods if we have GIFs
             if gif_paths:
