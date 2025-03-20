@@ -338,6 +338,7 @@ def create_animated_gif_visualization(features_df, gif_paths, output_dir, dim_re
                 # Extract cluster and bbox information if available
                 cluster = sample.get('cluster', 'N/A') if 'cluster' in sample else 'N/A'
                 bbox = sample.get('bbox_name', 'unknown') if 'bbox_name' in sample else 'unknown'
+                var1 = sample.get('Var1', f'sample_{idx}') if 'Var1' in sample else f'sample_{idx}'
                 
                 # Count samples per cluster
                 if cluster != 'N/A':
@@ -365,6 +366,7 @@ def create_animated_gif_visualization(features_df, gif_paths, output_dir, dim_re
                             'y': y,
                             'cluster': cluster,
                             'bbox': bbox,
+                            'var1': var1,
                             'gif_data': encoded_gif
                         })
                 except Exception as e:
@@ -456,6 +458,7 @@ def create_animated_gif_visualization(features_df, gif_paths, output_dir, dim_re
                     y: {sample['y']},
                     cluster: "{sample['cluster']}",
                     bbox: "{sample['bbox']}",
+                    var1: "{sample['var1']}",
                     gifData: "{sample['gif_data']}"
                 }},"""
     
@@ -569,6 +572,25 @@ def create_animated_gif_visualization(features_df, gif_paths, output_dir, dim_re
                 margin-right: 15px;
                 user-select: none;
             }}
+            .gif-info {
+                position: absolute;
+                bottom: 0;
+                left: 0;
+                right: 0;
+                background-color: rgba(0,0,0,0.7);
+                color: white;
+                padding: 8px;
+                font-size: 12px;
+                text-align: center;
+                line-height: 1.3;
+                max-height: 60px;
+                overflow-y: auto;
+            }
+            
+            .gif-info:hover {
+                max-height: 120px;
+                background-color: rgba(0,0,0,0.9);
+            }
         </style>
     </head>
     <body>
@@ -960,13 +982,17 @@ def create_animated_gif_visualization(features_df, gif_paths, output_dir, dim_re
                 
                 sizeSlider.addEventListener('input', () => {{
                     const size = sizeSlider.value;
-                    sizeValue.textContent = size + 'px';
+                    sizeValue.textContent = `${{size}}px`;
                     
-                    // Update active GIF container size if one is shown
-                    if (activeGifContainer) {{
-                        activeGifContainer.style.width = size + 'px';
-                        activeGifContainer.style.height = size + 'px';
-                    }}
+                    // Get all visible GIFs
+                    const visibleGifs = Array.from(document.querySelectorAll('.gif-container'))
+                        .filter(container => container.style.display === 'block');
+                    
+                    // Update size of all visible GIFs for real-time feedback
+                    visibleGifs.forEach(container => {{
+                        container.style.width = `${{size}}px`;
+                        container.style.height = `${{size}}px`;
+                    }});
                 }});
                 
                 // Set up resize button
@@ -1093,6 +1119,7 @@ def create_clickable_gif_visualization(features_df, gif_paths, output_dir, dim_r
                 # Extract cluster and bbox information if available
                 cluster = sample.get('cluster', 'N/A') if 'cluster' in sample else 'N/A'
                 bbox = sample.get('bbox_name', 'unknown') if 'bbox_name' in sample else 'unknown'
+                var1 = sample.get('Var1', f'sample_{idx}') if 'Var1' in sample else f'sample_{idx}'
                 
                 # Count samples per cluster
                 if cluster != 'N/A':
@@ -1120,6 +1147,7 @@ def create_clickable_gif_visualization(features_df, gif_paths, output_dir, dim_r
                             'y': y,
                             'cluster': cluster,
                             'bbox': bbox,
+                            'var1': var1,
                             'gif_data': encoded_gif
                         })
                 except Exception as e:
@@ -1369,6 +1397,7 @@ def create_clickable_gif_visualization(features_df, gif_paths, output_dir, dim_r
                     <span class="control-label">GIF Size:</span>
                     <input type="range" min="100" max="400" value="200" id="gif-size-slider" class="gif-size-slider">
                     <span id="size-value">200px</span>
+                    <button id="resize-gifs">Apply to All</button>
                 </div>
                 
                 <div class="control-group">
@@ -1511,6 +1540,7 @@ def create_clickable_gif_visualization(features_df, gif_paths, output_dir, dim_r
                     id: {sample['id']},
                     cluster: "{sample['cluster']}",
                     bbox: "{sample['bbox']}",
+                    var1: "{sample['var1']}",
                     gifData: "{sample['gif_data']}"
                 }});
                 """ for sample in samples_with_gifs])}
@@ -1553,7 +1583,10 @@ def create_clickable_gif_visualization(features_df, gif_paths, output_dir, dim_r
                     // Create info element
                     const infoElem = document.createElement('div');
                     infoElem.className = 'gif-info';
-                    infoElem.textContent = 'ID: ' + sample_id + ', Cluster: ' + sample.cluster + ', BBox: ' + sample.bbox;
+                    infoElem.innerHTML = `
+                        <div><strong>BBox:</strong> ${{sample.bbox}}</div>
+                        <div><strong>Var1:</strong> ${{sample.var1}}</div>
+                    `;
                     
                     // Create close button
                     const closeBtn = document.createElement('button');
@@ -1880,11 +1913,29 @@ def create_clickable_gif_visualization(features_df, gif_paths, output_dir, dim_r
                     const size = sizeSlider.value;
                     sizeValue.textContent = `${{size}}px`;
                     
-                    // Update active GIF container size if one is shown
-                    if (activeGifContainer) {{
-                        activeGifContainer.style.width = `${{size}}px`;
-                        activeGifContainer.style.height = `${{size}}px`;
-                    }}
+                    // Get all visible GIFs
+                    const visibleGifs = Array.from(document.querySelectorAll('.gif-container'))
+                        .filter(container => container.style.display === 'block');
+                    
+                    // Update size of all visible GIFs for real-time feedback
+                    visibleGifs.forEach(container => {{
+                        container.style.width = `${{size}}px`;
+                        container.style.height = `${{size}}px`;
+                    }});
+                }});
+                
+                // Resize button - update all visible GIFs
+                const resizeButton = document.getElementById('resize-gifs');
+                resizeButton.addEventListener('click', () => {{
+                    const size = sizeSlider.value;
+                    const gifContainers = document.querySelectorAll('.gif-container');
+                    
+                    gifContainers.forEach(container => {{
+                        container.style.width = `${{size}}px`;
+                        container.style.height = `${{size}}px`;
+                    }});
+                    
+                    console.log(`Resized all GIFs to ${{size}}px`);
                 }});
                 
                 // Show all points checkbox
@@ -2117,7 +2168,7 @@ if __name__ == "__main__":
             random_samples = []
             
             # Set number of samples to 40 as requested
-            num_samples = 80  # User requested 40 samples
+            num_samples = 200  # User requested 40 samples
             
             if 'cluster' in features_df.columns:
                 # Get all cluster IDs

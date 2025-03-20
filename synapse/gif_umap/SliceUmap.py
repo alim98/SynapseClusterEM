@@ -142,7 +142,7 @@ def create_center_slice_from_volume(volume, output_path, cleft_mask=None):
         print(f"Error processing volume: {e}")
         return None
 
-def create_clickable_image_visualization(features_df, image_paths, output_dir, dim_reduction='umap'):
+def create_clickable_image_visualization(features_df, image_paths, output_dir, dim_reduction='umap', canvas_width=1200, canvas_height=900, default_point_size=5, highlight_point_size=7):
     """
     Create an HTML visualization where clicking on a point displays its center slice image.
     
@@ -151,6 +151,10 @@ def create_clickable_image_visualization(features_df, image_paths, output_dir, d
         image_paths: Dictionary mapping sample indices to image file paths.
         output_dir: Directory to save the HTML file.
         dim_reduction: 'umap' or 'tsne'; used to decide which coordinate columns to use.
+        canvas_width: Width of the canvas for visualization.
+        canvas_height: Height of the canvas for visualization.
+        default_point_size: Default size for points in the visualization.
+        highlight_point_size: Size for points with images in the visualization.
     
     Returns:
         Path to the generated HTML file.
@@ -179,6 +183,45 @@ def create_clickable_image_visualization(features_df, image_paths, output_dir, d
     else:
         raise ValueError("No suitable coordinate columns found in features_df.")
     
+    # Print available columns for debugging
+    print(f"Available columns in CSV: {features_df.columns.tolist()}")
+    
+    # Try to identify a good column to use for var1
+    var1_column = None
+    if 'Var1' in features_df.columns:
+        var1_column = 'Var1'
+        print(f"Found 'Var1' column in the CSV, using it for var1 values")
+    elif 'var1' in features_df.columns:
+        var1_column = 'var1'
+        print(f"Found 'var1' column in the CSV, using it for var1 values")
+    else:
+        # Try alternative column names
+        for col in ['var_1', 'variable1', 'param1', 'parameter1']:
+            if col in features_df.columns:
+                var1_column = col
+                print(f"Using '{col}' column for var1 values")
+                break
+        
+        # If still not found, look for feature columns
+        if var1_column is None:
+            feature_cols = [col for col in features_df.columns if col.startswith('feat_') or 'layer' in col]
+            if feature_cols:
+                var1_column = feature_cols[0]
+                print(f"No var1 column found, using feature column '{var1_column}' for var1 values")
+            # Or use the first numerical column that's not x, y, or cluster
+            else:
+                for col in features_df.columns:
+                    if col not in [x_col, y_col, 'cluster'] and pd.api.types.is_numeric_dtype(features_df[col]):
+                        var1_column = col
+                        print(f"No var1 or feature columns found, using numerical column '{var1_column}' for var1 values")
+                        break
+    
+    if var1_column is None:
+        print("No suitable column found for var1 values, using index as var1")
+        var1_column = 'index'  # We'll use row index as fallback
+    else:
+        print(f"Using column '{var1_column}' for var1 values")
+    
     # Determine bounds from the coordinate columns and add some padding.
     all_x = features_df[x_col].values
     all_y = features_df[y_col].values
@@ -188,8 +231,6 @@ def create_clickable_image_visualization(features_df, image_paths, output_dir, d
     y_pad = (y_max - y_min) * 0.1
     x_min -= x_pad; x_max += x_pad
     y_min -= y_pad; y_max += y_pad
-    canvas_width = 1000
-    canvas_height = 800
 
     def map_to_canvas(x, y):
         canvas_x = ((x - x_min) / (x_max - x_min)) * canvas_width
@@ -205,7 +246,7 @@ def create_clickable_image_visualization(features_df, image_paths, output_dir, d
         
         # Default color and size
         color = "#888888"
-        point_size = 5
+        point_size = default_point_size
         
         # Assign color based on cluster if available
         if 'cluster' in features_df.columns:
@@ -221,13 +262,23 @@ def create_clickable_image_visualization(features_df, image_paths, output_dir, d
             
         # Adjust size - make points with images slightly larger
         if idx in image_data_urls:
-            point_size = 7
+            point_size = highlight_point_size
         
         # Get additional metadata for hovering
         bbox_name = row.get('bbox_name', 'Unknown')
         if isinstance(bbox_name, (int, float, np.number)):
             bbox_name = f"bbox_{bbox_name}"
                 
+        # Get var1 value if available 
+        var1 = row.get(var1_column, None)
+        
+        # Special case for when we're using the index as var1
+        if var1_column == 'index':
+            var1 = f'sample_{idx}'
+        
+        # Convert to string and set fallback
+        var1 = str(var1) if var1 is not None else f'sample_{idx}'
+        
         points.append({
             'id': int(idx) if isinstance(idx, (int, np.integer)) else str(idx),
             'x': float(canvas_x),
@@ -236,7 +287,8 @@ def create_clickable_image_visualization(features_df, image_paths, output_dir, d
             'size': point_size,
             'has_image': idx in image_data_urls,
             'cluster': str(row.get('cluster', 'none')),
-            'bbox_name': str(bbox_name)
+            'bbox_name': str(bbox_name),
+            'var1': var1
         })
     
     # Custom JSON encoder to handle numpy types
@@ -334,12 +386,15 @@ def create_clickable_image_visualization(features_df, image_paths, output_dir, d
                 z-index: 1000;
                 display: none;
                 flex-direction: column;
-                pointer-events: none;
+                pointer-events: auto;
+                width: 270px;
+                cursor: move;
             }}
             .popup-image img {{
-                max-width: 250px;
-                max-height: 250px;
+                max-width: 100%;
+                height: auto;
                 object-fit: contain;
+                cursor: default;
             }}
             .popup-info {{
                 margin-top: 8px;
@@ -348,6 +403,54 @@ def create_clickable_image_visualization(features_df, image_paths, output_dir, d
                 border-radius: 4px;
                 font-size: 12px;
                 text-align: center;
+                cursor: default;
+            }}
+            .resize-controls {{
+                margin-top: 8px;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                padding: 0 5px;
+            }}
+            .resize-controls label {{
+                font-size: 12px;
+                margin-right: 8px;
+            }}
+            .resize-slider {{
+                flex-grow: 1;
+                cursor: pointer;
+            }}
+            .global-controls {{
+                position: absolute;
+                bottom: 20px;
+                left: 50%;
+                transform: translateX(-50%);
+                background-color: white;
+                border-radius: 6px;
+                padding: 8px 15px;
+                box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+                z-index: 100;
+                display: flex;
+                align-items: center;
+            }}
+            .control-item {{
+                display: flex;
+                align-items: center;
+                margin: 0 10px;
+            }}
+            .control-item label {{
+                margin-right: 10px;
+                font-size: 13px;
+                white-space: nowrap;
+            }}
+            .control-item input[type="range"] {{
+                width: 120px;
+                margin: 0 10px;
+            }}
+            .control-item span {{
+                font-size: 13px;
+                min-width: 40px;
+                text-align: right;
             }}
             .tooltip {{
                 position: absolute;
@@ -440,11 +543,7 @@ def create_clickable_image_visualization(features_df, image_paths, output_dir, d
                 <canvas id="visualization-canvas" width="{canvas_width}" height="{canvas_height}"></canvas>
             </div>
             
-            <div id="popup-image" class="popup-image">
-                <div class="close-button" id="close-popup">×</div>
-                <img id="popup-img" src="" alt="Sample image">
-                <div id="popup-info" class="popup-info"></div>
-            </div>
+            <div id="popup-container"></div>
             
             <div id="tooltip" class="tooltip"></div>
             
@@ -453,12 +552,30 @@ def create_clickable_image_visualization(features_df, image_paths, output_dir, d
                 <div id="legend-content"></div>
             </div>
             
+            <div class="global-controls">
+                <div class="control-item">
+                    <label>Popup Size:</label>
+                    <input type="range" id="global-size-slider" min="10" max="200" value="100" step="5" />
+                    <span id="global-size-value">100%</span>
+                </div>
+                <div class="control-item">
+                    <label>Point Size:</label>
+                    <input type="range" id="point-size-slider" min="10" max="100" value="100" step="5" />
+                    <span id="point-size-value">100%</span>
+                </div>
+            </div>
+            
             <div class="instructions">
                 <div class="help-title">How to use:</div>
                 <ul style="padding-left: 15px; margin: 5px 0;">
                     <li>Hover over points to see details</li>
                     <li>Click on a point to see its image</li>
                     <li>Points with images have darker outlines</li>
+                    <li>Multiple images can be viewed at once</li>
+                    <li>Click the X to close an image</li>
+                    <li>Drag images to reposition them</li>
+                    <li>Use the size slider to resize all images</li>
+                    <li>Adjust point sizes with the point slider</li>
                 </ul>
             </div>
         </div>
@@ -472,11 +589,8 @@ def create_clickable_image_visualization(features_df, image_paths, output_dir, d
             const canvas = document.getElementById('visualization-canvas');
             const ctx = canvas.getContext('2d');
             
-            // Setup popup element
-            const popup = document.getElementById('popup-image');
-            const popupImg = document.getElementById('popup-img');
-            const popupInfo = document.getElementById('popup-info');
-            const closePopup = document.getElementById('close-popup');
+            // Setup popup container
+            const popupContainer = document.getElementById('popup-container');
             const tooltip = document.getElementById('tooltip');
             
             // Map of sample ID to image URL
@@ -485,8 +599,18 @@ def create_clickable_image_visualization(features_df, image_paths, output_dir, d
                 imageUrls[sample.id] = sample.url;
             }});
             
-            // Track current active popup
-            let activePopup = null;
+            // Track active popups
+            const activePopups = new Set();
+            
+            // Global settings
+            const globalSettings = {{
+                popupSizePercent: 100,
+                basePopupWidth: 270,
+                baseImageWidth: 250,
+                pointSizePercent: 100,
+                basePointSize: 5,
+                baseHighlightSize: 7
+            }};
             
             // Create cluster map for legend
             const clusters = {{}};
@@ -547,9 +671,12 @@ def create_clickable_image_visualization(features_df, image_paths, output_dir, d
                 
                 // Draw points
                 points.forEach(point => {{
+                    // Calculate point size based on global settings
+                    const scaledSize = point.size * (globalSettings.pointSizePercent / 100);
+                    
                     // Draw point with shadow for depth
                     ctx.beginPath();
-                    ctx.arc(point.x, point.y, point.size, 0, 2 * Math.PI);
+                    ctx.arc(point.x, point.y, scaledSize, 0, 2 * Math.PI);
                     ctx.fillStyle = point.color;
                     ctx.shadowColor = 'rgba(0, 0, 0, 0.2)';
                     ctx.shadowBlur = 2;
@@ -561,7 +688,7 @@ def create_clickable_image_visualization(features_df, image_paths, output_dir, d
                     // Add border to points with images
                     if (point.has_image) {{
                         ctx.beginPath();
-                        ctx.arc(point.x, point.y, point.size + 1.5, 0, 2 * Math.PI);
+                        ctx.arc(point.x, point.y, scaledSize + 1.5, 0, 2 * Math.PI);
                         ctx.strokeStyle = '#333';
                         ctx.lineWidth = 1.5;
                         ctx.stroke();
@@ -572,20 +699,51 @@ def create_clickable_image_visualization(features_df, image_paths, output_dir, d
             // Initial draw
             drawVisualization();
             
-            // Close popup when clicking the close button
-            closePopup.addEventListener('click', () => {{
-                popup.style.display = 'none';
-                activePopup = null;
+            // Setup global size slider
+            const globalSizeSlider = document.getElementById('global-size-slider');
+            const globalSizeValue = document.getElementById('global-size-value');
+            
+            globalSizeSlider.addEventListener('input', function() {{
+                // Update global settings
+                globalSettings.popupSizePercent = parseInt(this.value);
+                globalSizeValue.textContent = globalSettings.popupSizePercent + '%';
+                
+                // Update all existing popups
+                resizeAllPopups();
             }});
             
-            // Close popup when clicking anywhere else
-            document.addEventListener('click', (event) => {{
-                if (event.target !== canvas && event.target !== popup && 
-                    !popup.contains(event.target) && activePopup !== null) {{
-                    popup.style.display = 'none';
-                    activePopup = null;
-                }}
+            // Setup point size slider
+            const pointSizeSlider = document.getElementById('point-size-slider');
+            const pointSizeValue = document.getElementById('point-size-value');
+            
+            pointSizeSlider.addEventListener('input', function() {{
+                // Update global settings
+                globalSettings.pointSizePercent = parseInt(this.value);
+                pointSizeValue.textContent = globalSettings.pointSizePercent + '%';
+                
+                // Redraw all points with new sizes
+                drawVisualization();
             }});
+            
+            // Function to resize all popups
+            function resizeAllPopups() {{
+                const popups = document.querySelectorAll('.popup-image');
+                
+                popups.forEach(popup => {{
+                    // Calculate new dimensions
+                    const newWidth = (globalSettings.basePopupWidth * globalSettings.popupSizePercent / 100);
+                    const img = popup.querySelector('img');
+                    
+                    // Resize the popup
+                    popup.style.width = newWidth + 'px';
+                    
+                    // Resize the image if needed
+                    if (img) {{
+                        const newImgWidth = (globalSettings.baseImageWidth * globalSettings.popupSizePercent / 100);
+                        img.style.width = newImgWidth + 'px';
+                    }}
+                }});
+            }}
             
             // Handle hover
             canvas.addEventListener('mousemove', (event) => {{
@@ -596,14 +754,17 @@ def create_clickable_image_visualization(features_df, image_paths, output_dir, d
                 // Find closest point within hover range
                 let hoverPoint = null;
                 let closestDistance = Infinity;
-                const hoverThreshold = 15; // Increased hover detection area
+                const baseHoverThreshold = 15; // Base hover detection area
                 
                 points.forEach(point => {{
                     const dx = point.x - mouseX;
                     const dy = point.y - mouseY;
                     const distance = Math.sqrt(dx*dx + dy*dy);
                     
-                    if (distance < hoverThreshold && distance < closestDistance) {{
+                    // Scale the hover threshold based on point size
+                    const scaledHoverThreshold = baseHoverThreshold * (globalSettings.pointSizePercent / 100);
+                    
+                    if (distance < scaledHoverThreshold && distance < closestDistance) {{
                         hoverPoint = point;
                         closestDistance = distance;
                     }}
@@ -615,9 +776,8 @@ def create_clickable_image_visualization(features_df, image_paths, output_dir, d
                     tooltip.style.left = `${{event.clientX + 12}}px`;
                     tooltip.style.top = `${{event.clientY + 12}}px`;
                     tooltip.innerHTML = `
-                        <div><strong>ID:</strong> ${{hoverPoint.id}}</div>
-                        <div><strong>Cluster:</strong> ${{hoverPoint.cluster}}</div>
-                        <div><strong>Bbox Name:</strong> ${{hoverPoint.bbox_name}}</div>
+                        <div><strong>Var1:</strong> ${{hoverPoint.var1 || 'N/A'}}</div>
+                        <div><strong>BBox:</strong> ${{hoverPoint.bbox_name}}</div>
                         ${{hoverPoint.has_image ? 
                             '<div style="margin-top:4px;color:#7ff07f"><strong>Click to view image</strong></div>' : 
                             '<div style="margin-top:4px;color:#f0a07f">No image available</div>'}}
@@ -636,7 +796,139 @@ def create_clickable_image_visualization(features_df, image_paths, output_dir, d
                 tooltip.style.display = 'none';
             }});
             
-            // Handle click to show image
+            // Function to check if two rectangles overlap
+            function checkOverlap(rect1, rect2) {{
+                return !(rect1.right < rect2.left || 
+                        rect1.left > rect2.right || 
+                        rect1.bottom < rect2.top || 
+                        rect1.top > rect2.bottom);
+            }}
+            
+            // Function to make an element draggable
+            function makeDraggable(element) {{
+                let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
+                let isDragging = false;
+                let zIndexCounter = 1000; // Base z-index value
+                
+                // Set initial z-index
+                element.style.zIndex = zIndexCounter++;
+                
+                // Mouse down event starts the drag
+                element.addEventListener('mousedown', dragMouseDown);
+                
+                function dragMouseDown(e) {{
+                    // Only start drag if it's not the close button or img or popup-info or resize controls
+                    if (e.target.classList.contains('close-button') || 
+                        e.target.tagName === 'IMG' ||
+                        e.target.classList.contains('popup-info') ||
+                        e.target.classList.contains('resize-controls') ||
+                        e.target.classList.contains('resize-slider') ||
+                        e.target.parentElement?.classList.contains('resize-controls')) {{
+                        return;
+                    }}
+                    
+                    e.preventDefault();
+                    
+                    // Bring this popup to the front
+                    element.style.zIndex = zIndexCounter++;
+                    
+                    // Get the current mouse position
+                    pos3 = e.clientX;
+                    pos4 = e.clientY;
+                    
+                    isDragging = true;
+                    
+                    // Set cursor to grabbing during drag
+                    element.style.cursor = 'grabbing';
+                    
+                    // Add event listeners for move and release
+                    document.addEventListener('mousemove', elementDrag);
+                    document.addEventListener('mouseup', closeDragElement);
+                }}
+                
+                function elementDrag(e) {{
+                    if (!isDragging) return;
+                    
+                    e.preventDefault();
+                    
+                    // Calculate the new cursor position
+                    pos1 = pos3 - e.clientX;
+                    pos2 = pos4 - e.clientY;
+                    pos3 = e.clientX;
+                    pos4 = e.clientY;
+                    
+                    // Set the element's new position
+                    const newTop = (element.offsetTop - pos2);
+                    const newLeft = (element.offsetLeft - pos1);
+                    
+                    // Keep the element within the viewport
+                    const maxTop = window.innerHeight - element.offsetHeight;
+                    const maxLeft = window.innerWidth - element.offsetWidth;
+                    
+                    element.style.top = Math.max(0, Math.min(maxTop, newTop)) + "px";
+                    element.style.left = Math.max(0, Math.min(maxLeft, newLeft)) + "px";
+                }}
+                
+                function closeDragElement() {{
+                    // Stop moving when mouse button is released
+                    isDragging = false;
+                    
+                    // Reset cursor
+                    element.style.cursor = 'move';
+                    
+                    // Remove event listeners
+                    document.removeEventListener('mousemove', elementDrag);
+                    document.removeEventListener('mouseup', closeDragElement);
+                }}
+            }}
+            
+            // Function to find a non-overlapping position
+            function findNonOverlappingPosition(x, y, size) {{
+                const rect = {{
+                    left: x,
+                    top: y,
+                    right: x + size,
+                    bottom: y + size
+                }};
+                
+                // Get all existing popup elements
+                const existingPopups = document.querySelectorAll('.popup-image[style*="display: flex"]');
+                let overlap = false;
+                
+                // Check against each existing popup
+                existingPopups.forEach(existingPopup => {{
+                    const bounds = existingPopup.getBoundingClientRect();
+                    const existingRect = {{
+                        left: bounds.left,
+                        top: bounds.top,
+                        right: bounds.right,
+                        bottom: bounds.bottom
+                    }};
+                    
+                    if (checkOverlap(rect, existingRect)) {{
+                        overlap = true;
+                        // Try shifting position
+                        rect.left += size + 20;
+                        rect.right += size + 20;
+                        
+                        // If off screen, move down instead
+                        if (rect.right > window.innerWidth) {{
+                            rect.left = 10;
+                            rect.right = rect.left + size;
+                            rect.top += size + 20;
+                            rect.bottom += size + 20;
+                        }}
+                    }}
+                }});
+                
+                return {{ left: rect.left, top: rect.top }};
+            }}
+            
+            // Modify canvas click handler to improve popup behavior
+            // Store the original click handler
+            const originalClickHandler = canvas.onclick;
+            
+            // Replace with our enhanced handler
             canvas.addEventListener('click', (event) => {{
                 const rect = canvas.getBoundingClientRect();
                 const mouseX = event.clientX - rect.left;
@@ -645,14 +937,17 @@ def create_clickable_image_visualization(features_df, image_paths, output_dir, d
                 // Find closest point
                 let clickedPoint = null;
                 let closestDistance = Infinity;
-                const clickThreshold = 20;
+                const baseClickThreshold = 20;
                 
                 points.forEach(point => {{
                     const dx = point.x - mouseX;
                     const dy = point.y - mouseY;
                     const distance = Math.sqrt(dx*dx + dy*dy);
                     
-                    if (distance < clickThreshold && distance < closestDistance) {{
+                    // Scale the click threshold based on point size
+                    const scaledClickThreshold = baseClickThreshold * (globalSettings.pointSizePercent / 100);
+                    
+                    if (distance < scaledClickThreshold && distance < closestDistance) {{
                         clickedPoint = point;
                         closestDistance = distance;
                     }}
@@ -661,18 +956,27 @@ def create_clickable_image_visualization(features_df, image_paths, output_dir, d
                 // Handle the click
                 if (clickedPoint && clickedPoint.has_image) {{
                     // Update popup content
-                    popupImg.src = imageUrls[clickedPoint.id];
-                    popupInfo.innerHTML = `
-                        <strong>ID:</strong> ${{clickedPoint.id}} | 
-                        <strong>Cluster:</strong> ${{clickedPoint.cluster}} |
-                        <strong>Bbox:</strong> ${{clickedPoint.bbox_name}}
+                    const popupId = clickedPoint.id;
+                    const popupContent = `
+                        <div class="close-button">×</div>
+                        <img src="${{imageUrls[popupId]}}" alt="Sample image">
+                        <div class="popup-info">
+                            <strong>Var1:</strong> ${{clickedPoint.var1 || 'N/A'}} |
+                            <strong>BBox:</strong> ${{clickedPoint.bbox_name}}
+                        </div>
                     `;
                     
-                    // Position popup near the clicked point, but keep it fully visible
-                    const popupWidth = 270; // Width with padding
-                    const popupHeight = 300; // Approximate height
+                    // Create new popup element
+                    const newPopup = document.createElement('div');
+                    newPopup.className = 'popup-image';
+                    newPopup.dataset.id = popupId;
+                    newPopup.innerHTML = popupContent;
                     
-                    // Calculate position relative to canvas
+                    // Position popup near the clicked point, but keep it fully visible
+                    const popupWidth = globalSettings.basePopupWidth * (globalSettings.popupSizePercent / 100);
+                    const popupHeight = 300 * (globalSettings.popupSizePercent / 100);
+                    
+                    // Calculate initial position relative to canvas
                     let popupX = clickedPoint.x + rect.left + 15;
                     let popupY = clickedPoint.y + rect.top - 10;
                     
@@ -691,13 +995,55 @@ def create_clickable_image_visualization(features_df, image_paths, output_dir, d
                         popupY = 10;
                     }}
                     
-                    // Set popup position
-                    popup.style.left = `${{popupX}}px`;
-                    popup.style.top = `${{popupY}}px`;
-                    popup.style.display = 'flex';
+                    // Find non-overlapping position from existing popups
+                    const nonOverlappingPos = findNonOverlappingPosition(popupX, popupY, popupWidth);
                     
-                    // Set active popup
-                    activePopup = clickedPoint.id;
+                    // Set popup position and size
+                    newPopup.style.left = `${{nonOverlappingPos.left}}px`;
+                    newPopup.style.top = `${{nonOverlappingPos.top}}px`;
+                    newPopup.style.width = `${{popupWidth}}px`;
+                    newPopup.style.display = 'flex';
+                    newPopup.style.pointerEvents = 'auto'; // Make the popup clickable
+                    
+                    // Set the image size
+                    const img = newPopup.querySelector('img');
+                    if (img) {{
+                        const imgWidth = globalSettings.baseImageWidth * (globalSettings.popupSizePercent / 100);
+                        img.style.width = `${{imgWidth}}px`;
+                    }}
+                    
+                    // Add new popup to container
+                    popupContainer.appendChild(newPopup);
+                    
+                    // Add close button event listener for this popup
+                    const closeButton = newPopup.querySelector('.close-button');
+                    closeButton.addEventListener('click', (e) => {{
+                        e.stopPropagation(); // Prevent event bubbling
+                        newPopup.remove(); // Remove the popup from DOM
+                        activePopups.delete(popupId);
+                    }});
+                    
+                    // Make the popup draggable
+                    makeDraggable(newPopup);
+                    
+                    // Add active class to points if needed
+                    document.querySelectorAll('.point.active').forEach(p => {{
+                        p.classList.remove('active');
+                    }});
+                    
+                    // Mark clicked point as active
+                    if (clickedPoint.element) {{
+                        clickedPoint.element.classList.add('active');
+                    }}
+                    
+                    // Track active popups
+                    activePopups.add(popupId);
+                }} else if (event.target === canvas) {{
+                    // Only remove active state from points when clicking on empty space
+                    // Don't close popups when clicking on empty canvas areas
+                    document.querySelectorAll('.point.active').forEach(p => {{
+                        p.classList.remove('active');
+                    }});
                 }}
             }});
         </script>
@@ -761,7 +1107,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Clickable Image Visualization from Center Slices')
     parser.add_argument('--dim-reduction', choices=['umap', 'tsne'], default='umap',
                         help='Dimensionality reduction method to use')
-    parser.add_argument('--num-samples', type=int, default=80,
+    parser.add_argument('--num-samples', type=int, default=200,
                         help='Number of random samples to process')
     args = parser.parse_args()
     
