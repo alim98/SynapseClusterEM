@@ -17,6 +17,7 @@ from PIL import Image, ImageSequence
 import io
 import seaborn as sns
 import base64  # For image encoding
+import json
 
 # Add the parent directory to the path so we can import the synapse module
 # This needs to be before any synapse imports
@@ -138,7 +139,7 @@ def initialize_dataset_from_newdl():
             segmentation_type=config.segmentation_type,
             subvol_size=config.subvol_size,
             num_frames=config.num_frames,
-            alpha=config.alpha
+            alpha=0.5
         )
         
         print(f"Successfully created dataset with {len(dataset)} samples")
@@ -210,15 +211,17 @@ def perform_clustering_analysis(config, csv_path, output_path):
     
     return features_df
 
-def create_gif_from_volume(volume, output_path, fps=10, loop=0):
+def create_gif_from_volume(volume, output_path, fps=10):
     """
-    Create a GIF from a volume (3D array).
+    Create a GIF from a volume (3D array) and return the frames.
     
     Args:
         volume: 3D array representing volume data
         output_path: Path to save the GIF
         fps: Frames per second
-        loop: Number of times to loop the GIF (0 = infinite, -1 = no loop)
+        
+    Returns:
+        Tuple of (output_path, frames) where frames is a list of normalized frame data
     """
     # Convert PyTorch tensor to numpy if needed
     if isinstance(volume, torch.Tensor):
@@ -253,26 +256,22 @@ def create_gif_from_volume(volume, output_path, fps=10, loop=0):
     # Create directory if it doesn't exist
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     
-    # Save as GIF with infinite looping
-    if isinstance(enhanced_frames[0], np.ndarray):
-        # For numpy arrays, use PIL for better control over loop parameter
-        from PIL import Image
-        frames_pil = [Image.fromarray(frame) for frame in enhanced_frames]
-        frames_pil[0].save(
-            output_path,
-            save_all=True,
-            append_images=frames_pil[1:],
-            optimize=False,
-            duration=int(1000/fps),  # Convert fps to milliseconds per frame
-            loop=loop  # 0 = infinite loop
-        )
-    else:
-        # Fallback to imageio if frames are not numpy arrays
-        imageio.mimsave(output_path, enhanced_frames, fps=fps, loop=loop)
+    # Save as GIF with reduced size (lower fps and scale)
+    imageio.mimsave(output_path, enhanced_frames, fps=fps)
     
-    return output_path
+    # Convert frames to base64-encoded PNGs for web display
+    frame_data = []
+    for frame in enhanced_frames:
+        # Convert frame to PNG and then to base64
+        with io.BytesIO() as output:
+            Image.fromarray(frame).save(output, format="PNG")
+            frame_base64 = base64.b64encode(output.getvalue()).decode('utf-8')
+            frame_data.append(frame_base64)
+    
+    return output_path, frame_data
 
-def create_animated_gif_visualization(features_df, gif_paths, output_dir, dim_reduction='umap'):
+
+def create_animated_gif_visualization(features_df, gif_paths, output_dir, dim_reduction='umap', frame_data=None):
     """
     Create a simple HTML page that displays animated GIFs directly at their coordinates.
     The GIFs are embedded directly in the HTML as base64 data to avoid file:// protocol issues.
@@ -284,12 +283,17 @@ def create_animated_gif_visualization(features_df, gif_paths, output_dir, dim_re
         gif_paths: Dictionary mapping sample indices to GIF paths
         output_dir: Directory to save the HTML file
         dim_reduction: Dimensionality reduction method ('umap' or 'tsne')
+        frame_data: Dictionary mapping sample indices to lists of frame data (base64 encoded images)
     
     Returns:
         Path to the HTML file
     """
     method_name = "UMAP" if dim_reduction == 'umap' else "t-SNE"
     import base64
+    
+    # Define plot dimensions upfront
+    plot_width = 1600  # From the CSS .plot-container width
+    plot_height = 1200  # From the CSS .plot-container height
     
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -338,7 +342,6 @@ def create_animated_gif_visualization(features_df, gif_paths, output_dir, dim_re
                 # Extract cluster and bbox information if available
                 cluster = sample.get('cluster', 'N/A') if 'cluster' in sample else 'N/A'
                 bbox = sample.get('bbox_name', 'unknown') if 'bbox_name' in sample else 'unknown'
-                var1 = sample.get('Var1', f'sample_{idx}') if 'Var1' in sample else f'sample_{idx}'
                 
                 # Count samples per cluster
                 if cluster != 'N/A':
@@ -360,14 +363,19 @@ def create_animated_gif_visualization(features_df, gif_paths, output_dir, dim_re
                         gif_data = gif_file.read()
                         encoded_gif = base64.b64encode(gif_data).decode('utf-8')
                         
+                        # Add frame data if available
+                        frames = []
+                        if frame_data and idx in frame_data:
+                            frames = frame_data[idx]
+                        
                         samples_with_gifs.append({
                             'id': idx,
                             'x': x,
                             'y': y,
                             'cluster': cluster,
                             'bbox': bbox,
-                            'var1': var1,
-                            'gif_data': encoded_gif
+                            'gifData': encoded_gif,
+                            'frames': frames
                         })
                 except Exception as e:
                     print(f"Error encoding GIF for sample {idx}: {e}")
@@ -383,9 +391,15 @@ def create_animated_gif_visualization(features_df, gif_paths, output_dir, dim_re
     if not samples_with_gifs:
         raise ValueError("No samples with GIFs and valid coordinates found. Cannot create visualization.")
     
+    print(f"\nTotal samples with GIFs and valid coordinates: {len(samples_with_gifs)}")
+    print(f"First sample for debugging: {json.dumps(samples_with_gifs[0], default=str)[:200]}...")
+    
     # Compute the bounds of the coordinate values
     all_x_values = features_df[x_col].values
     all_y_values = features_df[y_col].values
+    
+    print(f"X coordinate range: {min(all_x_values)} to {max(all_x_values)}")
+    print(f"Y coordinate range: {min(all_y_values)} to {max(all_y_values)}")
     
     x_min, x_max = float(min(all_x_values)), float(max(all_x_values))
     y_min, y_max = float(min(all_y_values)), float(max(all_y_values))
@@ -396,6 +410,199 @@ def create_animated_gif_visualization(features_df, gif_paths, output_dir, dim_re
     
     x_min, x_max = x_min - x_padding, x_max + x_padding
     y_min, y_max = y_min - y_padding, y_max + y_padding
+    
+    # Processing to create non-overlapping positions
+    gif_size = 50  # Default size decreased from 100 to 50px
+    shift_limit = 50  # Fixed 50px shift limit (not percentage-based)
+    max_shift_x = shift_limit
+    max_shift_y = shift_limit
+    
+    # Function to check if two rectangles overlap
+    def do_rectangles_overlap(rect1, rect2):
+        return not (rect1['right'] < rect2['left'] or 
+                   rect1['left'] > rect2['right'] or 
+                   rect1['bottom'] < rect2['top'] or 
+                   rect1['top'] > rect2['bottom'])
+    
+    # Track placed rectangles to avoid overlap
+    placed_rectangles = []
+    
+    # Function to find non-overlapping position
+    def find_non_overlapping_position(baseX, baseY, existingRects):
+        # Check if the original position works
+        half_size = gif_size / 2
+        rect = {
+            'left': baseX - half_size,
+            'right': baseX + half_size,
+            'top': baseY - half_size,
+            'bottom': baseY + half_size
+        }
+        
+        # Check if original position has no overlap
+        has_overlap = False
+        overlap_rect = None
+        
+        for existing_rect in existingRects:
+            if do_rectangles_overlap(rect, existing_rect):
+                has_overlap = True
+                overlap_rect = existing_rect
+                break
+                
+        # If no overlap, use original position
+        if not has_overlap:
+            return (baseX, baseY, rect)
+            
+        # Calculate the minimum shift needed in each direction to avoid overlap
+        if overlap_rect:
+            # Calculate overlap amounts in each direction
+            overlap_right = rect['right'] - overlap_rect['left']
+            overlap_left = overlap_rect['right'] - rect['left']
+            overlap_bottom = rect['bottom'] - overlap_rect['top']
+            overlap_top = overlap_rect['bottom'] - rect['top']
+            
+            # Find the smallest shift needed
+            shifts = [
+                {'axis': 'x', 'amount': overlap_right, 'direction': 1},   # shift right
+                {'axis': 'x', 'amount': -overlap_left, 'direction': -1},  # shift left
+                {'axis': 'y', 'amount': overlap_bottom, 'direction': 1},  # shift down
+                {'axis': 'y', 'amount': -overlap_top, 'direction': -1}    # shift up
+            ]
+            
+            # Sort by absolute amount to find smallest shift
+            shifts.sort(key=lambda s: abs(s['amount']))
+            
+            # Try each shift until we find one that works
+            for shift in shifts:
+                # Skip if shift is too large
+                if abs(shift['amount']) > shift_limit:
+                    continue
+                
+                shifted_x = baseX
+                shifted_y = baseY
+                
+                if shift['axis'] == 'x':
+                    shifted_x += shift['amount']
+                else:
+                    shifted_y += shift['amount']
+                
+                # Skip if this would move the GIF out of bounds
+                if (shifted_x - half_size < 0 or shifted_x + half_size > plot_width or
+                    shifted_y - half_size < 0 or shifted_y + half_size > plot_height):
+                    continue
+                
+                # Check if this position works with all existing rectangles
+                shifted_rect = {
+                    'left': shifted_x - half_size,
+                    'right': shifted_x + half_size,
+                    'top': shifted_y - half_size,
+                    'bottom': shifted_y + half_size
+                }
+                
+                shifted_overlap = False
+                for existing_rect in existingRects:
+                    if do_rectangles_overlap(shifted_rect, existing_rect):
+                        shifted_overlap = True
+                        break
+                        
+                if not shifted_overlap:
+                    return (shifted_x, shifted_y, shifted_rect)
+        
+        # If the simple shifts didn't work, try a more general approach
+        # Try cardinal and diagonal directions with increasing distances
+        directions = [
+            (1, 0),   # right
+            (0, 1),   # down
+            (-1, 0),  # left
+            (0, -1),  # up
+            (1, 1),   # down-right
+            (1, -1),  # up-right
+            (-1, 1),  # down-left
+            (-1, -1)  # up-left
+        ]
+        
+        # Try increasing distances
+        for distance in range(1, int(shift_limit) + 1):
+            for dir_x, dir_y in directions:
+                shifted_x = baseX + (dir_x * distance)
+                shifted_y = baseY + (dir_y * distance)
+                
+                # Skip if this would move the GIF out of bounds
+                if (shifted_x - half_size < 0 or shifted_x + half_size > plot_width or
+                    shifted_y - half_size < 0 or shifted_y + half_size > plot_height):
+                    continue
+                
+                # Check this position
+                shifted_rect = {
+                    'left': shifted_x - half_size,
+                    'right': shifted_x + half_size,
+                    'top': shifted_y - half_size,
+                    'bottom': shifted_y + half_size
+                }
+                
+                shifted_overlap = False
+                for existing_rect in existingRects:
+                    if do_rectangles_overlap(shifted_rect, existing_rect):
+                        shifted_overlap = True
+                        break
+                        
+                if not shifted_overlap:
+                    return (shifted_x, shifted_y, shifted_rect)
+        
+        # If we can't find a non-overlapping position, return null
+        return None
+    
+    # Initialize originalPositions dictionary for storing initial GIF positions
+    # Note: we need to map the raw coordinates to plot coordinates
+    # For this we use the same mapping logic as in the JavaScript mapToPlot function
+    orig_positions_dict = {}
+    samples_to_remove = []
+    
+    for i, sample in enumerate(samples_with_gifs):
+        id_val = sample['id']
+        if hasattr(id_val, 'item'):
+            id_val = id_val.item()  # Convert numpy types to native Python
+        
+        x_val = sample['x']
+        y_val = sample['y']
+        
+        # Map data coordinates to plot coordinates (same as JavaScript mapToPlot function)
+        plot_x = ((x_val - x_min) / (x_max - x_min)) * plot_width
+        # Invert y-axis (data coordinates increase upward, plot coordinates increase downward)
+        plot_y = plot_height - ((y_val - y_min) / (y_max - y_min)) * plot_height
+        
+        # Find non-overlapping position
+        position = find_non_overlapping_position(plot_x, plot_y, placed_rectangles)
+        
+        # If no valid position found, skip this sample
+        if position is None:
+            print(f"Skipping sample {id_val} due to overlap that couldn't be resolved")
+            samples_to_remove.append(i)
+            continue
+            
+        # Unpack the position
+        pos_x, pos_y, rect = position
+        
+        # Add to tracking for future samples
+        placed_rectangles.append(rect)
+        
+        # Use string keys for the JavaScript object
+        str_id = str(id_val)
+        orig_positions_dict[str_id] = {"x": float(pos_x), "y": float(pos_y)}
+        
+        # If position was shifted, note it
+        if pos_x != plot_x or pos_y != plot_y:
+            print(f"Sample {id_val} shifted to avoid overlap")
+    
+    # Remove samples that couldn't be placed
+    if samples_to_remove:
+        for i in sorted(samples_to_remove, reverse=True):
+            del samples_with_gifs[i]
+        print(f"Removed {len(samples_to_remove)} samples that couldn't be placed without overlap")
+    
+    # Convert to JSON string for embedding in JavaScript
+    originalPositions = json.dumps(orig_positions_dict)
+    print(f"originalPositions JSON string length: {len(originalPositions)}")
+    print(f"Sample of originalPositions: {originalPositions[:100]}...")
     
     # Determine colors for points based on clusters or bboxes
     point_colors = {}
@@ -438,29 +645,88 @@ def create_animated_gif_visualization(features_df, gif_paths, output_dir, dim_re
             else:
                 color = 'rgb(100, 100, 100)'
             
-            # Add this point to the samples array
-            points_content += f"""
+            # Add this point to the samples array - make sure we have a valid number before adding
+            if not (np.isnan(x) or np.isnan(y)):
+                points_content += f"""
                 {{
-                    id: {idx},
-                    x: {x},
-                    y: {y},
-                    color: "{color}",
-                    hasGif: {str(idx in gif_paths).lower()}
+                    "id": {idx},
+                    "x": {x},
+                    "y": {y},
+                    "color": "{color}",
+                    "hasGif": {str(idx in gif_paths).lower()}
                 }},"""
+    
+    # Count how many valid points we have
+    print(f"Generated points_content with {points_content.count('id:')} points")
+    print(f"Sample of points_content: {points_content[:200]}...")
     
     # Generate HTML content for GIFs
     gifs_content = ""
     for sample in samples_with_gifs:
+        # Ensure all values are properly stringified
+        sample_id = sample['id']
+        if hasattr(sample_id, 'item'):
+            sample_id = sample_id.item()
+            
+        sample_x = float(sample['x'])
+        sample_y = float(sample['y'])
+        sample_cluster = str(sample['cluster'])
+        sample_bbox = str(sample['bbox'])
+        
+        # Set a frames flag - store them separately to avoid huge HTML content
+        has_frames = 'frames' in sample and len(sample['frames']) > 0
+        
         gifs_content += f"""
                 {{
-                    id: {sample['id']},
-                    x: {sample['x']},
-                    y: {sample['y']},
-                    cluster: "{sample['cluster']}",
-                    bbox: "{sample['bbox']}",
-                    var1: "{sample['var1']}",
-                    gifData: "{sample['gif_data']}"
+                    "id": {sample_id},
+                    "x": {sample_x},
+                    "y": {sample_y},
+                    "cluster": "{sample_cluster}",
+                    "bbox": "{sample_bbox}",
+                    "gifData": "{sample['gifData']}",
+                    "hasFrames": {str(has_frames).lower()}
                 }},"""
+    
+    # Count how many valid GIFs we have
+    print(f"Generated gifs_content with {gifs_content.count('id:')} GIFs")
+    print(f"Sample of gifs_content (without actual base64 data): {gifs_content[:200]}...")
+    
+    # Create a dedicated frames content structure
+    frames_content = "{"
+    has_any_frames = False
+    
+    # Check if we have frame data
+    if frame_data:
+        for idx, frames in frame_data.items():
+            if frames:
+                has_any_frames = True
+                # Stringify the ID
+                str_id = str(idx)
+                if hasattr(idx, 'item'):
+                    str_id = str(idx.item())
+                
+                # Add frames data for this sample as JSON array
+                frames_content += f'"{str_id}": ['
+                for frame in frames:
+                    frames_content += f'"{frame}",'
+                # Remove trailing comma if there are frames
+                if frames:
+                    frames_content = frames_content[:-1]
+                frames_content += "],"
+    
+    # Remove trailing comma if any frames were added
+    if frames_content.endswith(","):
+        frames_content = frames_content[:-1]
+    
+    frames_content += "}"
+    
+    # If we have no frames, initialize a valid empty object
+    if not has_any_frames:
+        frames_content = "{}"
+        
+    print(f"Generated frames_content with data for {frame_data.keys() if frame_data else 0} GIFs")
+    print(f"Has any frames: {has_any_frames}")
+    print(f"frames_content length: {len(frames_content)}")
     
     # Create a simple HTML page with SVG for plotting points and GIFs
     html_content = f"""
@@ -519,8 +785,6 @@ def create_animated_gif_visualization(features_df, gif_paths, output_dir, dim_re
                 width: 100%;
                 height: 100%;
                 object-fit: contain;
-                /* Ensure GIFs play automatically */
-                animation-play-state: running !important;
             }}
             .controls {{
                 margin-top: 10px;
@@ -572,30 +836,32 @@ def create_animated_gif_visualization(features_df, gif_paths, output_dir, dim_re
                 margin-right: 15px;
                 user-select: none;
             }}
-            .gif-info {
-                position: absolute;
-                bottom: 0;
-                left: 0;
-                right: 0;
-                background-color: rgba(0,0,0,0.7);
-                color: white;
+            #debug-message {{
+                padding: 10px;
+                margin: 10px 0;
+                background-color: #f0f0f0;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+            }}
+            .frame-slider {{
+                width: 300px;
+                margin: 0 10px;
+                vertical-align: middle;
+            }}  
+            .frame-control {{
+                margin-top: 10px;
                 padding: 8px;
-                font-size: 12px;
-                text-align: center;
-                line-height: 1.3;
-                max-height: 60px;
-                overflow-y: auto;
-            }
-            
-            .gif-info:hover {
-                max-height: 120px;
-                background-color: rgba(0,0,0,0.9);
-            }
+                background-color: #e8f7e8;
+                border-radius: 4px;
+                border: 1px solid #4CAF50;
+            }}
         </style>
     </head>
     <body>
         <div class="container">
             <h1>{method_name} Visualization with Animated GIFs</h1>
+            
+            <div id="debug-message"></div>
             
             <div class="controls">
                 <div class="control-group">
@@ -604,8 +870,8 @@ def create_animated_gif_visualization(features_df, gif_paths, output_dir, dim_re
                 
                 <div class="control-group">
                     <span class="control-label">GIF Size:</span>
-                    <input type="range" min="50" max="200" value="100" id="gif-size-slider" class="gif-size-slider">
-                    <span id="size-value">100px</span>
+                    <input type="range" min="20" max="200" value="50" id="gif-size-slider" class="gif-size-slider">
+                    <span id="size-value">50px</span>
                     <button id="resize-gifs">Apply Size</button>
                 </div>
                 
@@ -618,6 +884,13 @@ def create_animated_gif_visualization(features_df, gif_paths, output_dir, dim_re
                 
                 <div class="control-group">
                     <button id="reset-positions">Reset Positions</button>
+                </div>
+                
+                <div class="control-group frame-control">
+                    <span class="control-label">Frame Control:</span>
+                    <input type="range" min="0" max="80" value="0" id="frame-slider" class="frame-slider">
+                    <span id="frame-value">0</span>
+                    <button id="play-pause">Play/Pause</button>
                 </div>
             </div>
             
@@ -633,11 +906,22 @@ def create_animated_gif_visualization(features_df, gif_paths, output_dir, dim_re
         </div>
         
         <script>
+            // Initialize debug element
+            const debugMessage = document.getElementById('debug-message');
+            function log(message) {{
+                debugMessage.innerHTML += message + '<br>';
+                console.log(message);
+            }}
+            
+            log("Script started");
+            
             // Define the UMAP bounds
             const xMin = {x_min};
             const xMax = {x_max};
             const yMin = {y_min};
             const yMax = {y_max};
+            
+            log(`Coordinate bounds: X: ${{xMin}} to ${{xMax}}, Y: ${{yMin}} to ${{yMax}}`);
             
             // Function to map UMAP coordinates to plot coordinates
             function mapToPlot(x, y, width, height) {{
@@ -652,84 +936,396 @@ def create_animated_gif_visualization(features_df, gif_paths, output_dir, dim_re
             const plotWidth = plot.clientWidth;
             const plotHeight = plot.clientHeight;
             
+            log(`Plot dimensions: ${{plotWidth}}x${{plotHeight}}`);
+            
             // Store original positions of GIFs for reset functionality
-            const originalPositions = {{}};
+            let originalPositions = {{}};
+            try {{
+                originalPositions = {originalPositions};
+                log(`Loaded original positions data with ${{Object.keys(originalPositions).length}} items`);
+            }} catch (e) {{
+                log(`Error loading original positions: ${{e.message}}`);
+            }}
             
             // Store all GIF data with cluster information
             const allGifData = [];
             
-            // Add background points for all samples
-            function addBackgroundPoints() {{
-                // Samples from features_df
-                const samples = [{points_content}
-                ];
+            // Store frames data for all GIFs
+            const allFramesData = {{}};
+            try {{
+                // Parse frames data string to JavaScript object
+                const framesStr = `{frames_content}`;
+                log(`Loading frames data: ${{framesStr.substring(0, 100)}}...`);
                 
-                // Add points to the plot
-                samples.forEach(sample => {{
-                    const [plotX, plotY] = mapToPlot(sample.x, sample.y, plotWidth, plotHeight);
+                // Check if we have valid JSON
+                if (framesStr && framesStr !== "{{}}" && framesStr.length > 2) {{
+                    const framesData = JSON.parse(framesStr);
+                    Object.assign(allFramesData, framesData);
+                    log(`Loaded frames data for ${{Object.keys(allFramesData).length}} GIFs`);
+                }} else {{
+                    log("No frames data available");
+                }}
+            }} catch(e) {{
+                log(`Error loading frames data: ${{e.message}}`);
+            }}
+            
+            // Variable to track play/pause state
+            let isPlaying = false;
+            let animationInterval = null;
+            let currentFrame = 0;
+            
+            // Function to update the frame display for all GIFs
+            function updateFrameDisplay(frameIndex) {{
+                // Update all visible gif containers
+                document.querySelectorAll('.gif-container.has-frames').forEach(container => {{
+                    const id = container.dataset.id;
+                    if (id && allFramesData[id] && allFramesData[id].length > 0) {{
+                        // Make sure we don't exceed the frame count for this GIF
+                        const actualFrame = Math.min(frameIndex, allFramesData[id].length - 1);
+                        const frameImg = container.querySelector('img');
+                        if (frameImg) {{
+                            frameImg.src = `data:image/png;base64,${{allFramesData[id][actualFrame]}}`;
+                        }}
+                    }}
+                }});
+                
+                // Update the frame value display
+                document.getElementById('frame-value').textContent = frameIndex;
+            }}
+            
+            // Function to handle playing animation
+            function playFrames() {{
+                if (animationInterval) {{
+                    clearInterval(animationInterval);
+                }}
+                
+                animationInterval = setInterval(() => {{
+                    // Get the max frame count among all GIFs
+                    let maxFrames = 80; // Default value
+                    Object.values(allFramesData).forEach(frames => {{
+                        if (frames && frames.length > maxFrames) {{
+                            maxFrames = frames.length;
+                        }}
+                    }});
                     
-                    const pointElem = document.createElement('div');
-                    pointElem.className = 'point';
-                    pointElem.style.left = ${{plotX}}px;
-                    pointElem.style.top = ${{plotY}}px;
-                    pointElem.style.backgroundColor = sample.color;
+                    // Update frame slider max value
+                    const frameSlider = document.getElementById('frame-slider');
+                    if (frameSlider) {{
+                        frameSlider.max = maxFrames - 1;
                     
-                    // Make points with GIFs larger
-                    if (sample.hasGif) {{
-                        pointElem.style.width = '10px';
-                        pointElem.style.height = '10px';
-                        pointElem.style.border = '2px solid black';
-                        pointElem.style.zIndex = '5';
+                        // Increment current frame and loop if needed
+                        currentFrame = (currentFrame + 1) % maxFrames;
+                    
+                        // Update frame slider position
+                        frameSlider.value = currentFrame;
                     }}
                     
-                    plot.appendChild(pointElem);
+                    // Update all GIFs to show this frame
+                    updateFrameDisplay(currentFrame);
+                }}, 100); // 10 FPS
+            }}
+            
+            // Function to stop playing animation
+            function pauseFrames() {{
+                if (animationInterval) {{
+                    clearInterval(animationInterval);
+                    animationInterval = null;
+                }}
+            }}
+            
+            // Add background points for all samples
+            function addBackgroundPoints() {{
+                log("Adding background points...");
+                
+                // Samples from features_df
+                let samples = [];
+                try {{
+                    samples = [
+                        {points_content}
+                    ];
+                    log(`Found ${{samples.length}} background points to add`);
+                }} catch (e) {{
+                    log(`Error loading background points: ${{e.message}}`);
+                    return;
+                }}
+                
+                // Add points to the plot
+                let pointsAdded = 0;
+                samples.forEach(sample => {{
+                    try {{
+                        const [plotX, plotY] = mapToPlot(sample.x, sample.y, plotWidth, plotHeight);
+                        
+                        const pointElem = document.createElement('div');
+                        pointElem.className = 'point';
+                        pointElem.style.left = `${{plotX}}px`;
+                        pointElem.style.top = `${{plotY}}px`;
+                        pointElem.style.backgroundColor = sample.color;
+                        
+                        // Make points with GIFs larger
+                        if (sample.hasGif) {{
+                            pointElem.style.width = '10px';
+                            pointElem.style.height = '10px';
+                            pointElem.style.border = '2px solid black';
+                            pointElem.style.zIndex = '5';
+                        }}
+                        
+                        plot.appendChild(pointElem);
+                        pointsAdded++;
+                    }} catch (e) {{
+                        log(`Error adding point: ${{e.message}}`);
+                    }}
                 }});
+                
+                log(`Successfully added ${{pointsAdded}} background points`);
             }}
             
             // Add GIFs to the plot
             function addGifs() {{
+                log("Adding GIFs...");
+                
                 // Samples with GIFs
-                const samplesWithGifs = [{gifs_content}
-                ];
+                let samplesWithGifs = [];
+                try {{
+                    samplesWithGifs = [
+                        {gifs_content}
+                    ];
+                    log(`Found ${{samplesWithGifs.length}} GIFs to add`);
+                }} catch (e) {{
+                    log(`Error loading GIFs: ${{e.message}}`);
+                    return;
+                }}
                 
                 // Store all GIF data for filtering
                 allGifData.push(...samplesWithGifs);
                 
-                // Add GIFs to the plot
-                samplesWithGifs.forEach((sample, index) => {{
-                    const [plotX, plotY] = mapToPlot(sample.x, sample.y, plotWidth, plotHeight);
-                    
-                    // Store original position for reset functionality
-                    originalPositions[sample.id] = {{ x: plotX, y: plotY }};
-                    
-                    // Create GIF container
-                    const gifContainer = document.createElement('div');
-                    gifContainer.className = 'gif-container';
-                    gifContainer.id = `gif-${sample.id}`;
-                    gifContainer.style.left = `${plotX}px`;
-                    gifContainer.style.top = `${plotY}px`;
-                    gifContainer.style.width = '100px';
-                    gifContainer.style.height = '100px';
-                    gifContainer.dataset.index = index;
-                    gifContainer.dataset.cluster = sample.cluster;
-                    // Add data attributes to help with GIF autoplay
-                    gifContainer.setAttribute('data-autoplay', 'true');
-                    
-                    // Create GIF image using base64 data
-                    const gifImg = document.createElement('img');
-                    gifImg.src = `data:image/gif;base64,${sample.gifData}`;
-                    gifImg.alt = `Sample ${sample.id}`;
-                    gifImg.setAttribute('loop', 'infinite');
-                    
-                    // Add to container
-                    gifContainer.appendChild(gifImg);
-                    
-                    // Make the GIF container draggable
-                    makeDraggable(gifContainer);
-                    
-                    // Add to plot
-                    plot.appendChild(gifContainer);
+                // Extract frames data for all GIFs
+                samplesWithGifs.forEach(sample => {{
+                    if (sample.hasFrames) {{
+                        // The frames data is already loaded via the framesData object
+                        log(`Found GIF ${{sample.id}} with frames`);
+                    }}
                 }});
+                
+                // Tracking placed rectangles to prevent overlap
+                const placedRectangles = [];
+                const gifSize = 50; // Default size decreased from 100 to 50px
+                const shiftLimit = 50; // Fixed 50px shift limit (not percentage-based)
+                const maxShiftX = shiftLimit;
+                const maxShiftY = shiftLimit;
+                
+                // Function to check if two rectangles overlap
+                function doRectanglesOverlap(rect1, rect2) {{
+                    return !(rect1.right < rect2.left || 
+                             rect1.left > rect2.right || 
+                             rect1.bottom < rect2.top || 
+                             rect1.top > rect2.bottom);
+                }}
+                
+                // Function to find a position with no overlap
+                function findNonOverlappingPosition(baseX, baseY, existingRects) {{
+                    // Check if the original position works
+                    const halfSize = gifSize / 2;
+                    let rect = {{
+                        left: baseX - halfSize,
+                        right: baseX + halfSize,
+                        top: baseY - halfSize,
+                        bottom: baseY + halfSize
+                    }};
+                    
+                    // Check if original position has no overlap
+                    let hasOverlap = false;
+                    let overlapRect = null;
+                    
+                    for (const existingRect of existingRects) {{
+                        if (doRectanglesOverlap(rect, existingRect)) {{
+                            hasOverlap = true;
+                            overlapRect = existingRect;
+                            break;
+                        }}
+                    }}
+                    
+                    // If no overlap, return original position
+                    if (!hasOverlap) {{
+                        return {{ x: baseX, y: baseY, rect: rect }};
+                    }}
+                    
+                    // Calculate the minimum shift needed in each direction to avoid overlap
+                    if (overlapRect) {{
+                        // Calculate overlap amounts in each direction
+                        const overlapRight = rect.right - overlapRect.left;
+                        const overlapLeft = overlapRect.right - rect.left;
+                        const overlapBottom = rect.bottom - overlapRect.top;
+                        const overlapTop = overlapRect.bottom - rect.top;
+                        
+                        // Find the smallest shift needed
+                        const shifts = [
+                            {{ axis: 'x', amount: overlapRight, direction: 1 }},  // shift right
+                            {{ axis: 'x', amount: -overlapLeft, direction: -1 }}, // shift left
+                            {{ axis: 'y', amount: overlapBottom, direction: 1 }},  // shift down
+                            {{ axis: 'y', amount: -overlapTop, direction: -1 }}   // shift up
+                        ];
+                        
+                        // Sort by absolute amount to find smallest shift
+                        shifts.sort((a, b) => Math.abs(a.amount) - Math.abs(b.amount));
+                        
+                        // Try each shift until we find one that works
+                        for (const shift of shifts) {{
+                            // Skip if shift is too large
+                            if (Math.abs(shift.amount) > shiftLimit) {{
+                                continue;
+                            }}
+                            
+                            let shiftedX = baseX;
+                            let shiftedY = baseY;
+                            
+                            if (shift.axis === 'x') {{
+                                shiftedX += shift.amount;
+                            }} else {{
+                                shiftedY += shift.amount;
+                            }}
+                            
+                            // Skip if this would move the GIF out of bounds
+                            if (shiftedX - halfSize < 0 || shiftedX + halfSize > plotWidth ||
+                                shiftedY - halfSize < 0 || shiftedY + halfSize > plotHeight) {{
+                                continue;
+                            }}
+                            
+                            // Check if this position works with all existing rectangles
+                            const shiftedRect = {{
+                                left: shiftedX - halfSize,
+                                right: shiftedX + halfSize,
+                                top: shiftedY - halfSize,
+                                bottom: shiftedY + halfSize
+                            }};
+                            
+                            let shiftedOverlap = false;
+                            for (const existingRect of existingRects) {{
+                                if (doRectanglesOverlap(shiftedRect, existingRect)) {{
+                                    shiftedOverlap = true;
+                                    break;
+                                }}
+                            }}
+                            
+                            if (!shiftedOverlap) {{
+                                return {{ x: shiftedX, y: shiftedY, rect: shiftedRect }};
+                            }}
+                        }}
+                    }}
+                    
+                    // If the simple shifts didn't work, try a more general approach
+                    // Try cardinal and diagonal directions with increasing distances
+                    const directions = [
+                        {{ x: 1, y: 0 }},  // right
+                        {{ x: 0, y: 1 }},  // down
+                        {{ x: -1, y: 0 }}, // left
+                        {{ x: 0, y: -1 }}, // up
+                        {{ x: 1, y: 1 }},  // down-right
+                        {{ x: 1, y: -1 }}, // up-right
+                        {{ x: -1, y: 1 }}, // down-left
+                        {{ x: -1, y: -1 }} // up-left
+                    ];
+                    
+                    // Try increasing distances
+                    for (let distance = 1; distance <= shiftLimit; distance += 1) {{
+                        for (const dir of directions) {{
+                            const shiftedX = baseX + (dir.x * distance);
+                            const shiftedY = baseY + (dir.y * distance);
+                            
+                            // Skip if this would move the GIF out of bounds
+                            if (shiftedX - halfSize < 0 || shiftedX + halfSize > plotWidth ||
+                                shiftedY - halfSize < 0 || shiftedY + halfSize > plotHeight) {{
+                                continue;
+                            }}
+                            
+                            // Check this position
+                            const shiftedRect = {{
+                                left: shiftedX - halfSize,
+                                right: shiftedX + halfSize,
+                                top: shiftedY - halfSize,
+                                bottom: shiftedY + halfSize
+                            }};
+                            
+                            let shiftedOverlap = false;
+                            for (const existingRect of existingRects) {{
+                                if (doRectanglesOverlap(shiftedRect, existingRect)) {{
+                                    shiftedOverlap = true;
+                                    break;
+                                }}
+                            }}
+                            
+                            if (!shiftedOverlap) {{
+                                return {{ x: shiftedX, y: shiftedY, rect: shiftedRect }};
+                            }}
+                        }}
+                    }}
+                    
+                    // If we can't find a non-overlapping position, return null
+                    return null;
+                }}
+                
+                // Add GIFs to the plot
+                let gifsAdded = 0;
+                let gifsSkipped = 0;
+                
+                samplesWithGifs.forEach((sample, index) => {{
+                    try {{
+                        const [plotX, plotY] = mapToPlot(sample.x, sample.y, plotWidth, plotHeight);
+                        
+                        // Find a non-overlapping position
+                        const position = findNonOverlappingPosition(plotX, plotY, placedRectangles);
+                        
+                        // Skip this GIF if no non-overlapping position found
+                        if (!position) {{
+                            log(`Skipping GIF ${{sample.id}} due to overlap that couldn't be resolved`);
+                            gifsSkipped++;
+                            return;
+                        }}
+                        
+                        // Add this rectangle to our tracking
+                        placedRectangles.push(position.rect);
+                        
+                        // Create GIF container
+                        const gifContainer = document.createElement('div');
+                        gifContainer.className = 'gif-container';
+                        if (sample.hasFrames) {{
+                            gifContainer.classList.add('has-frames');
+                        }}
+                        gifContainer.id = `gif-${{sample.id}}`;
+                        gifContainer.dataset.id = sample.id;
+                        gifContainer.style.left = `${{position.x}}px`;
+                        gifContainer.style.top = `${{position.y}}px`;
+                        gifContainer.style.width = `${{gifSize}}px`;
+                        gifContainer.style.height = `${{gifSize}}px`;
+                        gifContainer.dataset.index = index;
+                        gifContainer.dataset.cluster = sample.cluster;
+                        
+                        // If this position was shifted, add a marker to indicate that
+                        if (position.x !== plotX || position.y !== plotY) {{
+                            // Add small visual indicator that this was shifted
+                            gifContainer.style.border = '2px dashed #e74c3c';
+                        }}
+                        
+                        // Create GIF image using base64 data
+                        const gifImg = document.createElement('img');
+                        gifImg.src = `data:image/gif;base64,${{sample.gifData}}`;
+                        gifImg.alt = `Sample ${{sample.id}}`;
+                        gifImg.setAttribute('loop', 'infinite');
+                        
+                        // Add to container
+                        gifContainer.appendChild(gifImg);
+                        
+                        // Make the GIF container draggable
+                        makeDraggable(gifContainer);
+                        
+                        // Add to plot
+                        plot.appendChild(gifContainer);
+                        gifsAdded++;
+                    }} catch (e) {{
+                        log(`Error adding GIF ${{index}}: ${{e.message}}`);
+                    }}
+                }});
+                
+                log(`Successfully added ${{gifsAdded}} GIFs, skipped ${{gifsSkipped}} due to overlaps`);
                 
                 // Store all gif containers for later use
                 window.gifContainers = document.querySelectorAll('.gif-container');
@@ -745,8 +1341,8 @@ def create_animated_gif_visualization(features_df, gif_paths, output_dir, dim_re
                 
                 // Get unique clusters
                 allGifData.forEach(sample => {{
-                    if (sample.cluster !== 'N/A') {{
-                        clusters.add(sample.cluster);
+                    if (sample['cluster'] !== 'N/A') {{
+                        clusters.add(sample['cluster']);
                     }}
                 }});
                 
@@ -760,12 +1356,12 @@ def create_animated_gif_visualization(features_df, gif_paths, output_dir, dim_re
                     checkbox.className = 'cluster-checkbox';
                     checkbox.value = cluster;
                     checkbox.checked = true;
-                    checkbox.id = `cluster-${cluster}`;
+                    checkbox.id = `cluster-${{cluster}}`;
                     
                     checkbox.addEventListener('change', updateVisibleGifs);
                     
                     label.appendChild(checkbox);
-                    label.appendChild(document.createTextNode(Cluster ${{cluster}}));
+                    label.appendChild(document.createTextNode(`Cluster ${{cluster}}`));
                     
                     clusterFilter.appendChild(label);
                 }});
@@ -826,88 +1422,29 @@ def create_animated_gif_visualization(features_df, gif_paths, output_dir, dim_re
             // Make an element draggable
             function makeDraggable(element) {{
                 let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
-                let isDragging = false;
-                let originalZIndex;
-                let dragStartX = 0, dragStartY = 0;
                 
                 element.onmousedown = dragMouseDown;
                 
                 function dragMouseDown(e) {{
                     e = e || window.event;
                     e.preventDefault();
-                    
                     // Get the mouse cursor position at startup
                     pos3 = e.clientX;
                     pos4 = e.clientY;
-                    dragStartX = element.offsetLeft;
-                    dragStartY = element.offsetTop;
                     
-                    // Store original z-index and bring element to front
-                    originalZIndex = element.style.zIndex;
-                    element.style.zIndex = "1000";
-                    
-                    // Add dragging class for visual feedback
+                    // Add dragging class
                     element.classList.add('dragging');
-                    isDragging = true;
                     
-                    // Create a semi-transparent clone for original position
-                    const ghost = element.cloneNode(true);
-                    ghost.classList.add('ghost');
-                    ghost.style.opacity = '0.3';
-                    ghost.style.pointerEvents = 'none';
-                    ghost.style.position = 'absolute';
-                    ghost.style.left = dragStartX + 'px';
-                    ghost.style.top = dragStartY + 'px';
-                    ghost.id = 'drag-ghost';
-                    element.parentNode.appendChild(ghost);
+                    // Bring the element to the front
+                    element.style.zIndex = "1000";
                     
                     document.onmouseup = closeDragElement;
                     document.onmousemove = elementDrag;
-                }}
-
-                function getVisibleGifsExceptSelf() {{
-                    return Array.from(document.querySelectorAll('.gif-container'))
-                        .filter(container => container !== element && 
-                                          container.id !== 'drag-ghost' &&
-                                          container.style.display === 'block')
-                        .map(container => {{
-                            const rect = container.getBoundingClientRect();
-                            const plotRect = plot.getBoundingClientRect();
-                            return {{
-                                left: rect.left - plotRect.left,
-                                right: rect.right - plotRect.left,
-                                top: rect.top - plotRect.top,
-                                bottom: rect.bottom - plotRect.top
-                            }};
-                        }});
-                }}
-
-                function checkCollision(newX, newY) {{
-                    const size = parseInt(element.style.width);
-                    const halfSize = size / 2;
-                    const newRect = {{
-                        left: newX - halfSize,
-                        right: newX + halfSize,
-                        top: newY - halfSize,
-                        bottom: newY + halfSize
-                    }};
-
-                    // Check plot boundaries
-                    if (newX - halfSize < 0 || newX + halfSize > plotWidth ||
-                        newY - halfSize < 0 || newY + halfSize > plotHeight) {{
-                        return true;
-                    }}
-
-                    // Check collision with other GIFs
-                    const visibleGifs = getVisibleGifsExceptSelf();
-                    return visibleGifs.some(gifRect => checkOverlap(newRect, gifRect));
                 }}
                 
                 function elementDrag(e) {{
                     e = e || window.event;
                     e.preventDefault();
-                    
-                    if (!isDragging) return;
                     
                     // Calculate the new cursor position
                     pos1 = pos3 - e.clientX;
@@ -915,43 +1452,32 @@ def create_animated_gif_visualization(features_df, gif_paths, output_dir, dim_re
                     pos3 = e.clientX;
                     pos4 = e.clientY;
                     
-                    // Calculate new position
-                    const newTop = element.offsetTop - pos2;
-                    const newLeft = element.offsetLeft - pos1;
+                    // Set the element's new position
+                    const newTop = (element.offsetTop - pos2);
+                    const newLeft = (element.offsetLeft - pos1);
                     
-                    // Check for collisions at new position
-                    if (!checkCollision(newLeft, newTop)) {{
-                        // Update position if no collision
-                        element.style.top = newTop + 'px';
-                        element.style.left = newLeft + 'px';
-                    }}
+                    // Constrain to plot boundaries
+                    const elemWidth = parseInt(element.style.width);
+                    const elemHeight = parseInt(element.style.height);
                     
-                    // Add visual feedback for valid/invalid drop positions
-                    if (checkCollision(newLeft, newTop)) {{
-                        element.classList.add('invalid-position');
-                    }} else {{
-                        element.classList.remove('invalid-position');
-                    }}
+                    const boundedTop = Math.max(elemHeight/2, Math.min(newTop, plotHeight - elemHeight/2));
+                    const boundedLeft = Math.max(elemWidth/2, Math.min(newLeft, plotWidth - elemWidth/2));
+                    
+                    element.style.top = boundedTop + "px";
+                    element.style.left = boundedLeft + "px";
                 }}
                 
                 function closeDragElement() {{
                     // Stop moving when mouse button is released
                     document.onmouseup = null;
                     document.onmousemove = null;
-                    isDragging = false;
                     
-                    // Remove ghost element
-                    const ghost = document.getElementById('drag-ghost');
-                    if (ghost) {{
-                        ghost.parentNode.removeChild(ghost);
-                    }}
+                    // Remove dragging class
+                    element.classList.remove('dragging');
                     
-                    // Remove visual feedback classes
-                    element.classList.remove('dragging', 'invalid-position');
-                    
-                    // Reset z-index with a small delay
+                    // Reset z-index to normal
                     setTimeout(() => {{
-                        element.style.zIndex = originalZIndex || "10";
+                        element.style.zIndex = "10";
                     }}, 200);
                 }}
             }}
@@ -982,17 +1508,7 @@ def create_animated_gif_visualization(features_df, gif_paths, output_dir, dim_re
                 
                 sizeSlider.addEventListener('input', () => {{
                     const size = sizeSlider.value;
-                    sizeValue.textContent = `${{size}}px`;
-                    
-                    // Get all visible GIFs
-                    const visibleGifs = Array.from(document.querySelectorAll('.gif-container'))
-                        .filter(container => container.style.display === 'block');
-                    
-                    // Update size of all visible GIFs for real-time feedback
-                    visibleGifs.forEach(container => {{
-                        container.style.width = `${{size}}px`;
-                        container.style.height = `${{size}}px`;
-                    }});
+                    sizeValue.textContent = size + 'px';
                 }});
                 
                 // Set up resize button
@@ -1024,11 +1540,57 @@ def create_animated_gif_visualization(features_df, gif_paths, output_dir, dim_re
                 resetButton.addEventListener('click', () => {{
                     window.gifContainers.forEach(container => {{
                         const id = container.id.replace('gif-', '');
+                        // Use safe property access with proper syntax
                         if (originalPositions[id]) {{
-                            container.style.left = `${originalPositions[id].x}px`;
-                            container.style.top = `${originalPositions[id].y}px`;
+                            const pos = originalPositions[id];
+                            container.style.left = `${{pos.x}}px`;
+                            container.style.top = `${{pos.y}}px`;
                         }}
                     }});
+                }});
+                
+                // Setup frame slider
+                const frameSlider = document.getElementById('frame-slider');
+                const frameValue = document.getElementById('frame-value');
+                
+                // Find the maximum number of frames across all GIFs
+                let maxFrames = 80; // Default value
+                Object.values(allFramesData).forEach(frames => {{
+                    if (frames && frames.length > maxFrames) {{
+                        maxFrames = frames.length;
+                    }}
+                }});
+                
+                // Set the slider max value
+                frameSlider.max = maxFrames - 1;
+                
+                frameSlider.addEventListener('input', () => {{
+                    // Update the displayed value
+                    currentFrame = parseInt(frameSlider.value);
+                    frameValue.textContent = currentFrame;
+                    
+                    // Pause any animation that's playing
+                    if (isPlaying) {{
+                        pauseFrames();
+                        isPlaying = false;
+                    }}
+                    
+                    // Update all GIFs to display the selected frame
+                    updateFrameDisplay(currentFrame);
+                }});
+                
+                // Setup play/pause button
+                const playPauseButton = document.getElementById('play-pause');
+                playPauseButton.addEventListener('click', () => {{
+                    isPlaying = !isPlaying;
+                    
+                    if (isPlaying) {{
+                        playFrames();
+                        playPauseButton.textContent = 'Pause';
+                    }} else {{
+                        pauseFrames();
+                        playPauseButton.textContent = 'Play';
+                    }}
                 }});
                 
                 // Initial update of visible GIFs
@@ -1045,992 +1607,41 @@ def create_animated_gif_visualization(features_df, gif_paths, output_dir, dim_re
     # Save the HTML file
     html_path = output_dir / f"animated_gifs_{dim_reduction}_visualization.html"
     try:
+        # Add debug statements to narrow down the error
+        print("Types of data:")
+        print("- originalPositions type:", type(originalPositions))
+        print("- frames_content type:", type(frames_content))
+        print("- frames_content length:", len(frames_content))
+        print("- First item in samples_with_gifs:", samples_with_gifs[0] if samples_with_gifs else "No samples")
+        
+        # Check if the points_content and gifs_content are empty 
+        if not points_content.strip():
+            print("WARNING: points_content is empty! No background points will be shown.")
+        
+        if not gifs_content.strip():
+            print("WARNING: gifs_content is empty! No GIFs will be shown.")
+            
+        # Write the HTML file
         with open(html_path, 'w', encoding='utf-8') as f:
             f.write(html_content)
+        
         print(f"Created animated GIF visualization with embedded data: {html_path}")
-    except UnicodeEncodeError:
-        # If utf-8 fails, try with a more compatible encoding
-        with open(html_path, 'w', encoding='ascii', errors='xmlcharrefreplace') as f:
-            f.write(html_content)
-        print(f"Created animated GIF visualization with embedded data (using ASCII encoding): {html_path}")
-    
-    return html_path
-
-def create_clickable_gif_visualization(features_df, gif_paths, output_dir, dim_reduction='umap'):
-    """
-    Create an HTML visualization where GIFs only appear when you click on their corresponding points.
-    
-    Args:
-        features_df: DataFrame with features and coordinates
-        gif_paths: Dictionary mapping sample indices to GIF paths
-        output_dir: Directory to save the HTML file
-        dim_reduction: Dimensionality reduction method ('umap' or 'tsne')
-    
-    Returns:
-        Path to the HTML file
-    """
-    method_name = "UMAP" if dim_reduction == 'umap' else "t-SNE"
-    import base64
-    
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    
-    print("Ensuring coordinates are available...")
-    
-    # Make sure we have the right coordinate columns
-    coord_columns = {
-        'umap': ['umap_x', 'umap_y'],
-        'tsne': ['tsne_x', 'tsne_y'],
-        'generic': ['x', 'y']
-    }
-    
-    # First priority: check for generic columns
-    if all(col in features_df.columns for col in coord_columns['generic']):
-        x_col, y_col = coord_columns['generic']
-        print(f"Using generic coordinate columns: {x_col}, {y_col}")
-    # Second priority: check for method-specific columns
-    elif all(col in features_df.columns for col in coord_columns[dim_reduction]):
-        x_col, y_col = coord_columns[dim_reduction]
-        print(f"Using {method_name}-specific coordinate columns: {x_col}, {y_col}")
-    # Fall back to the other method if available
-    elif dim_reduction == 'umap' and all(col in features_df.columns for col in coord_columns['tsne']):
-        x_col, y_col = coord_columns['tsne']
-        print(f"Using t-SNE coordinates as fallback: {x_col}, {y_col}")
-    elif dim_reduction == 'tsne' and all(col in features_df.columns for col in coord_columns['umap']):
-        x_col, y_col = coord_columns['umap']
-        print(f"Using UMAP coordinates as fallback: {x_col}, {y_col}")
-    else:
-        raise ValueError(f"No suitable coordinate columns found in DataFrame. Available columns: {features_df.columns.tolist()}")
-    
-    # Extract coordinates and other info for samples with GIFs
-    samples_with_gifs = []
-    
-    # Track how many GIFs we have from each cluster for reporting
-    cluster_counts = {}
-    
-    for idx in gif_paths:
-        if idx in features_df.index:
-            sample = features_df.loc[idx]
-            
-            # Use the determined coordinate columns
-            if x_col in sample and y_col in sample:
-                x, y = sample[x_col], sample[y_col]
-                
-                # Extract cluster and bbox information if available
-                cluster = sample.get('cluster', 'N/A') if 'cluster' in sample else 'N/A'
-                bbox = sample.get('bbox_name', 'unknown') if 'bbox_name' in sample else 'unknown'
-                var1 = sample.get('Var1', f'sample_{idx}') if 'Var1' in sample else f'sample_{idx}'
-                
-                # Count samples per cluster
-                if cluster != 'N/A':
-                    cluster_counts[cluster] = cluster_counts.get(cluster, 0) + 1
-                
-                # Convert numpy/pandas types to Python native types for JSON serialization
-                if hasattr(idx, 'item'):
-                    idx = idx.item()
-                if hasattr(x, 'item'):
-                    x = x.item()
-                if hasattr(y, 'item'):
-                    y = y.item()
-                if hasattr(cluster, 'item'):
-                    cluster = cluster.item()
-                
-                # Load the GIF file and convert to base64
-                try:
-                    with open(gif_paths[idx], 'rb') as gif_file:
-                        gif_data = gif_file.read()
-                        encoded_gif = base64.b64encode(gif_data).decode('utf-8')
-                        
-                        samples_with_gifs.append({
-                            'id': idx,
-                            'x': x,
-                            'y': y,
-                            'cluster': cluster,
-                            'bbox': bbox,
-                            'var1': var1,
-                            'gif_data': encoded_gif
-                        })
-                except Exception as e:
-                    print(f"Error encoding GIF for sample {idx}: {e}")
-            else:
-                print(f"Warning: Sample {idx} does not have required coordinates ({x_col}, {y_col}). Skipping.")
-    
-    # Print distribution of GIFs across clusters
-    if cluster_counts:
-        print("\nDistribution of GIFs across clusters:")
-        for cluster, count in sorted(cluster_counts.items()):
-            print(f"  Cluster {cluster}: {count} GIFs")
-    
-    if not samples_with_gifs:
-        raise ValueError("No samples with GIFs and valid coordinates found. Cannot create visualization.")
-    
-    # Compute the bounds of the coordinate values
-    all_x_values = features_df[x_col].values
-    all_y_values = features_df[y_col].values
-    
-    x_min, x_max = float(min(all_x_values)), float(max(all_x_values))
-    y_min, y_max = float(min(all_y_values)), float(max(all_y_values))
-    
-    # Add padding
-    x_padding = (x_max - x_min) * 0.1
-    y_padding = (y_max - y_min) * 0.1
-    
-    x_min, x_max = x_min - x_padding, x_max + x_padding
-    y_min, y_max = y_min - y_padding, y_max + y_padding
-    
-    # Determine colors for points based on clusters or bboxes
-    point_colors = {}
-    if 'cluster' in features_df.columns:
-        # Generate colors for each cluster
-        clusters = features_df['cluster'].unique()
-        import matplotlib.pyplot as plt
         
-        # Use the new recommended approach to get colormaps
-        try:
-            cmap = plt.colormaps['tab10']
-        except AttributeError:
-            # Fallback for older matplotlib versions
-            cmap = plt.cm.get_cmap('tab10')
+        # Print a sample of the HTML content to verify it has data
+        html_sample = html_content[0:1000]  # Get first 1000 chars
+        print(f"Sample of HTML content: {html_sample}")
         
-        for i, cluster in enumerate(clusters):
-            r, g, b, _ = cmap(i % 10)  # Use modulo to handle more than 10 clusters
-            point_colors[cluster] = f"rgb({int(r*255)}, {int(g*255)}, {int(b*255)})"
-    
-    # Create the HTML content
-    html_content = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="utf-8">
-        <title>Click-to-Show GIFs - {method_name} Visualization</title>
-        <style>
-            body {{
-                font-family: Arial, sans-serif;
-                margin: 0;
-                padding: 20px;
-                background-color: #f5f5f5;
-            }}
-            .container {{
-                max-width: 1800px;
-                margin: 0 auto;
-                background-color: white;
-                box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-                padding: 20px;
-                border-radius: 8px;
-            }}
-            h1 {{
-                text-align: center;
-                color: #333;
-            }}
-            .plot-container {{
-                position: relative;
-                margin: 20px auto;
-                border: 1px solid #ddd;
-                background-color: #fff;
-                overflow: hidden;
-                width: 1600px;
-                height: 1200px;
-            }}
-            .point {{
-                position: absolute;
-                width: 8px;
-                height: 8px;
-                border-radius: 50%;
-                transform: translate(-50%, -50%);
-                cursor: pointer;
-                transition: transform 0.2s ease;
-            }}
-            .point:hover {{
-                transform: translate(-50%, -50%) scale(1.5);
-                z-index: 100;
-            }}
-            .point.has-gif {{
-                width: 12px;
-                height: 12px;
-                border: 2px solid white;
-                box-shadow: 0 0 4px rgba(0,0,0,0.5);
-            }}
-            .point.active {{
-                transform: translate(-50%, -50%) scale(1.8);
-                box-shadow: 0 0 8px rgba(0,0,0,0.8);
-                z-index: 101;
-            }}
-            .gif-container {{
-                position: absolute;
-                border: 3px solid #333;
-                background-color: white;
-                border-radius: 8px;
-                overflow: hidden;
-                transform: translate(-50%, -50%);
-                z-index: 200;
-                box-shadow: 0 4px 15px rgba(0,0,0,0.3);
-                display: none;
-                cursor: grab;
-            }}
-            
-            .gif-container:hover {{
-                box-shadow: 0 6px 20px rgba(0,0,0,0.4);
-            }}
-            
-            .gif-container.dragging {{
-                cursor: grabbing;
-                opacity: 0.8;
-                box-shadow: 0 8px 25px rgba(0,0,0,0.5);
-            }}
-            
-            .gif-container img {{
-                width: 100%;
-                height: 100%;
-                object-fit: contain;
-                /* Ensure GIFs play automatically */
-                animation-play-state: running !important;
-            }}
-            .gif-info {{
-                position: absolute;
-                bottom: 0;
-                left: 0;
-                right: 0;
-                background-color: rgba(0,0,0,0.7);
-                color: white;
-                padding: 8px;
-                font-size: 14px;
-                text-align: center;
-            }}
-            .close-btn {{
-                position: absolute;
-                top: 5px;
-                right: 5px;
-                width: 24px;
-                height: 24px;
-                background-color: rgba(255,255,255,0.8);
-                border: none;
-                border-radius: 50%;
-                font-weight: bold;
-                cursor: pointer;
-                z-index: 201;
-            }}
-            .close-btn:hover {{
-                background-color: rgba(255,0,0,0.2);
-            }}
-            .controls {{
-                margin: 20px auto;
-                text-align: center;
-                padding: 15px;
-                background-color: #f8f8f8;
-                border-radius: 8px;
-                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            }}
-            .control-group {{
-                display: inline-block;
-                margin: 0 15px;
-                vertical-align: middle;
-            }}
-            .control-label {{
-                font-weight: bold;
-                margin-right: 10px;
-            }}
-            .gif-size-slider {{
-                width: 200px;
-                margin: 0 10px;
-                vertical-align: middle;
-            }}
-            .legend {{
-                position: absolute;
-                top: 10px;
-                right: 10px;
-                background-color: rgba(255,255,255,0.9);
-                border: 1px solid #ddd;
-                border-radius: 4px;
-                padding: 10px;
-                max-width: 200px;
-            }}
-            .legend-item {{
-                margin-bottom: 5px;
-                display: flex;
-                align-items: center;
-            }}
-            .legend-color {{
-                width: 15px;
-                height: 15px;
-                border-radius: 50%;
-                margin-right: 8px;
-                display: inline-block;
-            }}
-            .instructions {{
-                text-align: center;
-                margin: 15px 0;
-                color: #666;
-                font-style: italic;
-            }}
-            .dragging {{
-                opacity: 0.8;
-                cursor: grabbing !important;
-                box-shadow: 0 5px 15px rgba(0,0,0,0.3);
-            }}
-            .invalid-position {{
-                border-color: #ff4444 !important;
-                box-shadow: 0 0 10px rgba(255,0,0,0.5);
-            }}
-            .ghost {{
-                border: 2px dashed #666;
-                background-color: rgba(200,200,200,0.2);
-            }}
-            .gif-container {{
-                cursor: grab;
-            }}
-            .gif-container:active {{
-                cursor: grabbing;
-            }}
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <h1>Click-to-Show GIFs - {method_name} Visualization</h1>
-            
-            <div class="instructions">
-                <p>Click on any highlighted point to view its GIF. Click elsewhere or on the close button to hide the GIF.</p>
-                <p>GIFs are <strong>draggable</strong> - click and drag to move them around. They will not overlap with other GIFs.</p>
-            </div>
-            
-            <div class="controls">
-                <div class="control-group">
-                    <span class="control-label">GIF Size:</span>
-                    <input type="range" min="100" max="400" value="200" id="gif-size-slider" class="gif-size-slider">
-                    <span id="size-value">200px</span>
-                    <button id="resize-gifs">Apply to All</button>
-                </div>
-                
-                <div class="control-group">
-                    <label>
-                        <input type="checkbox" id="show-all-points" checked>
-                        Show all points
-                    </label>
-                </div>
-                
-                <div class="control-group">
-                    <label>
-                        <input type="checkbox" id="highlight-gif-points" checked>
-                        Highlight points with GIFs
-                    </label>
-                </div>
-            </div>
-            
-            <div class="plot-container" id="plot">
-                <!-- Points and GIFs will be added here by JavaScript -->
-                
-                <div class="legend" id="legend">
-                    <h3>Legend</h3>
-                    <!-- Legend items will be added here by JavaScript -->
-                </div>
-            </div>
-        </div>
+        # Check HTML file size
+        html_size = os.path.getsize(html_path)
+        print(f"HTML file size: {html_size} bytes")
         
-        <script>
-            // Define the coordinate bounds
-            const xMin = {x_min};
-            const xMax = {x_max};
-            const yMin = {y_min};
-            const yMax = {y_max};
+        if html_size < 10000:  # If file is too small, something might be wrong
+            print("WARNING: HTML file is very small! It might not contain all necessary data.")
             
-            // Function to map data coordinates to plot coordinates
-            function mapToPlot(x, y, width, height) {{
-                const plotX = ((x - xMin) / (xMax - xMin)) * width;
-                // Invert y-axis (data coordinates increase upward, plot coordinates increase downward)
-                const plotY = height - ((y - yMin) / (yMax - yMin)) * height;
-                return [plotX, plotY];
-            }}
-            
-            // Get the plot container
-            const plot = document.getElementById('plot');
-            const plotWidth = plot.clientWidth;
-            const plotHeight = plot.clientHeight;
-            
-            // Store all points and GIF data
-            const allPoints = [];
-            const gifData = [];
-            
-            // Currently active GIF container
-            let activeGifContainer = null;
-            
-            // Add all data points to the plot
-            function addDataPoints() {{
-                // Get all samples from the features DataFrame
-                const samples = [];
-                
-                // Add points for all samples in the DataFrame
-                {features_df.apply(lambda row: f"""
-                samples.push({{
-                    id: {row.name if hasattr(row.name, 'item') else row.name},
-                    x: {row[x_col] if hasattr(row[x_col], 'item') else row[x_col]},
-                    y: {row[y_col] if hasattr(row[y_col], 'item') else row[y_col]},
-                    cluster: "{row.get('cluster', 'N/A') if hasattr(row.get('cluster', 'N/A'), 'item') else row.get('cluster', 'N/A')}",
-                    hasGif: {str(row.name in gif_paths).lower()}
-                }});
-                """, axis=1).str.cat(sep='\n')}
-                
-                // Create a point element for each sample
-                samples.forEach(sample => {{
-                    const [plotX, plotY] = mapToPlot(sample.x, sample.y, plotWidth, plotHeight);
-                    
-                    // Determine color based on cluster
-                    let color = "#666666";
-                    if (sample.cluster !== "N/A") {{
-                        // Use cluster-based coloring
-                        const clusterColors = {{}};
-                        {';'.join([f'clusterColors["{cluster}"] = "{point_colors.get(cluster, "#666666")}"' for cluster in features_df['cluster'].unique() if hasattr(cluster, 'item')])}
-                        color = clusterColors[sample.cluster] || "#666666";
-                    }}
-                    
-                    // Create the point element
-                    const pointElem = document.createElement('div');
-                    pointElem.className = 'point' + (sample.hasGif ? ' has-gif' : '');
-                    pointElem.style.left = plotX + 'px';
-                    pointElem.style.top = plotY + 'px';
-                    pointElem.style.backgroundColor = color;
-                    pointElem.dataset.id = sample.id;
-                    pointElem.dataset.cluster = sample.cluster;
-                    
-                    // Store the point data
-                    allPoints.push({{
-                        id: sample.id,
-                        element: pointElem,
-                        x: plotX,
-                        y: plotY,
-                        cluster: sample.cluster,
-                        hasGif: sample.hasGif
-                    }});
-                    
-                    // Add click event for points with GIFs
-                    if (sample.hasGif) {{
-                        pointElem.addEventListener('click', (e) => {{
-                            e.stopPropagation();
-                            showGif(sample.id, plotX, plotY);
-                            
-                            // Mark this point as active
-                            document.querySelectorAll('.point.active').forEach(p => {{
-                                p.classList.remove('active');
-                            }});
-                            pointElem.classList.add('active');
-                        }});
-                    }}
-                    
-                    // Add to plot
-                    plot.appendChild(pointElem);
-                }});
-                
-                // Add click event to the plot to hide GIFs when clicking elsewhere
-                plot.addEventListener('click', (e) => {{
-                    if (e.target === plot) {{
-                        hideAllGifs();
-                        document.querySelectorAll('.point.active').forEach(p => {{
-                            p.classList.remove('active');
-                        }});
-                    }}
-                }});
-            }}
-            
-            // Add GIF data
-            function addGifData() {{
-                // Samples with GIFs
-                const samplesWithGifs = [];
-                
-                // Add GIF data for samples that have GIFs
-                {';'.join([f"""
-                samplesWithGifs.push({{
-                    id: {sample['id']},
-                    cluster: "{sample['cluster']}",
-                    bbox: "{sample['bbox']}",
-                    var1: "{sample['var1']}",
-                    gifData: "{sample['gif_data']}"
-                }});
-                """ for sample in samples_with_gifs])}
-                
-                // Store GIF data for later use
-                gifData.push(...samplesWithGifs);
-            }}
-            
-            // Show GIF for a specific sample
-            function showGif(sample_id, x, y) {{
-                // Find the GIF data for this sample
-                const sample = gifData.find(s => s.id === sample_id);
-                if (!sample) return;
-                
-                // Check if this GIF is already visible
-                let gifContainer = document.getElementById(`gif-${{sample_id}}`);
-                if (gifContainer && gifContainer.style.display === 'block') {{
-                    // GIF is already visible, no need to do anything
-                    return;
-                }}
-                
-                // Create GIF container if it doesn't exist
-                if (!gifContainer) {{
-                    gifContainer = document.createElement('div');
-                    gifContainer.className = 'gif-container';
-                    gifContainer.id = `gif-${{sample_id}}`;
-                    
-                    // Get the current size from the slider
-                    const size = parseInt(document.getElementById('gif-size-slider').value);
-                    gifContainer.style.width = size + 'px';
-                    gifContainer.style.height = size + 'px';
-                    
-                    // Create GIF image using base64 data
-                    const gifImg = document.createElement('img');
-                    gifImg.src = 'data:image/gif;base64,' + sample.gifData;
-                    gifImg.alt = 'Sample ' + sample_id;
-                    // Ensure GIF loops infinitely
-                    gifImg.setAttribute('loop', 'infinite');
-                    
-                    // Create info element
-                    const infoElem = document.createElement('div');
-                    infoElem.className = 'gif-info';
-                    infoElem.innerHTML = `
-                        <div><strong>BBox:</strong> ${{sample.bbox}}</div>
-                        <div><strong>Var1:</strong> ${{sample.var1}}</div>
-                    `;
-                    
-                    // Create close button
-                    const closeBtn = document.createElement('button');
-                    closeBtn.className = 'close-btn';
-                    closeBtn.textContent = '×';
-                    closeBtn.addEventListener('click', (e) => {{
-                        e.stopPropagation();
-                        // Only hide this specific GIF, not all GIFs
-                        gifContainer.style.display = 'none';
-                        // Remove active state from the corresponding point
-                        const point = document.querySelector(`.point[data-id="${{sample_id}}"]`);
-                        if (point) {{
-                            point.classList.remove('active');
-                        }}
-                    }});
-                    
-                    // Add elements to container
-                    gifContainer.appendChild(gifImg);
-                    gifContainer.appendChild(infoElem);
-                    gifContainer.appendChild(closeBtn);
-                    
-                    // Make the GIF container draggable
-                    makeDraggable(gifContainer);
-                    
-                    // Add to plot
-                    plot.appendChild(gifContainer);
-                }}
-
-                // Function to check if two rectangles overlap
-                function checkOverlap(rect1, rect2) {{
-                    return !(rect1.right < rect2.left || 
-                            rect1.left > rect2.right || 
-                            rect1.bottom < rect2.top || 
-                            rect1.top > rect2.bottom);
-                }}
-
-                // Function to get rectangle dimensions for a position
-                function getRectangle(posX, posY, size) {{
-                    const halfSize = size / 2;
-                    return {{
-                        left: posX - halfSize,
-                        right: posX + halfSize,
-                        top: posY - halfSize,
-                        bottom: posY + halfSize
-                    }};
-                }}
-
-                // Function to find a non-overlapping position
-                function findNonOverlappingPosition(startX, startY, size) {{
-                    const visibleGifs = Array.from(document.querySelectorAll('.gif-container'))
-                        .filter(container => container.id !== `gif-${{sample_id}}` && 
-                                          container.style.display === 'block');
-                    
-                    // If no visible GIFs, return original position
-                    if (visibleGifs.length === 0) {{
-                        return {{ x: startX, y: startY }};
-                    }}
-                    
-                    // Calculate rectangles for existing GIFs
-                    const existingRects = visibleGifs.map(container => {{
-                        // Get the other GIF's actual position and size
-                        const otherSize = parseInt(container.style.width);
-                        const otherHalfSize = otherSize / 2;
-                        const otherLeft = parseFloat(container.style.left.replace('px', ''));
-                        const otherTop = parseFloat(container.style.top.replace('px', ''));
-                        
-                        return {{
-                            left: otherLeft - otherHalfSize,
-                            right: otherLeft + otherHalfSize,
-                            top: otherTop - otherHalfSize,
-                            bottom: otherTop + otherHalfSize
-                        }};
-                    }});
-
-                    const halfSize = size / 2;
-                    const spiralStep = size * 0.75; // Distance between spiral points
-                    const maxAttempts = 50; // Maximum number of attempts to find position
-                    let angle = 0;
-                    let radius = spiralStep;
-
-                    // Try positions in a spiral pattern
-                    for (let i = 0; i < maxAttempts; i++) {{
-                        // Calculate position on spiral
-                        const testX = startX + radius * Math.cos(angle);
-                        const testY = startY + radius * Math.sin(angle);
-
-                        // Check if position is within plot bounds
-                        if (testX - halfSize < 0 || testX + halfSize > plotWidth ||
-                            testY - halfSize < 0 || testY + halfSize > plotHeight) {{
-                            angle += Math.PI / 4;
-                            radius += spiralStep;
-                            continue;
-                        }}
-
-                        // Create test rectangle
-                        const testRect = {{
-                            left: testX - halfSize,
-                            right: testX + halfSize,
-                            top: testY - halfSize,
-                            bottom: testY + halfSize
-                        }};
-
-                        // Check for overlap with existing GIFs
-                        let hasOverlap = false;
-                        for (const existingRect of existingRects) {{
-                            if (!(testRect.right < existingRect.left || 
-                                  testRect.left > existingRect.right || 
-                                  testRect.bottom < existingRect.top || 
-                                  testRect.top > existingRect.bottom)) {{
-                                hasOverlap = true;
-                                break;
-                            }}
-                        }}
-
-                        if (!hasOverlap) {{
-                            return {{ x: testX, y: testY }};
-                        }}
-
-                        angle += Math.PI / 4;
-                        radius += spiralStep;
-                    }}
-
-                    // If no non-overlapping position found, return original position
-                    return {{ x: startX, y: startY }};
-                }}
-
-                // Get current size and find non-overlapping position
-                const currentSize = parseInt(gifContainer.style.width);
-                const newPosition = findNonOverlappingPosition(x, y, currentSize);
-
-                // Position the GIF container
-                gifContainer.style.left = newPosition.x + 'px';
-                gifContainer.style.top = newPosition.y + 'px';
-
-                // Show the GIF
-                gifContainer.style.display = 'block';
-            }}
-            
-            // Hide all GIFs
-            function hideAllGifs() {{
-                document.querySelectorAll('.gif-container').forEach(container => {{
-                    container.style.display = 'none';
-                }});
-            }}
-            
-            // Create legend
-            function createLegend() {{
-                const legend = document.getElementById('legend');
-                const clusters = new Set();
-                const clusterColors = {{}};
-                
-                // Collect unique clusters and their colors
-                allPoints.forEach(point => {{
-                    if (point.cluster !== 'N/A') {{
-                        clusters.add(point.cluster);
-                        const color = point.element.style.backgroundColor;
-                        clusterColors[point.cluster] = color;
-                    }}
-                }});
-                
-                // Create legend items
-                clusters.forEach(cluster => {{
-                    const item = document.createElement('div');
-                    item.className = 'legend-item';
-                    
-                    const colorBox = document.createElement('div');
-                    colorBox.className = 'legend-color';
-                    colorBox.style.backgroundColor = clusterColors[cluster];
-                    
-                    const label = document.createElement('span');
-                    label.textContent = 'Cluster ' + cluster;
-                    
-                    item.appendChild(colorBox);
-                    item.appendChild(label);
-                    legend.appendChild(item);
-                }});
-                
-                // Add legend item for points with GIFs
-                const gifItem = document.createElement('div');
-                gifItem.className = 'legend-item';
-                
-                const gifMarker = document.createElement('div');
-                gifMarker.className = 'legend-color';
-                gifMarker.style.border = '2px solid white';
-                gifMarker.style.boxShadow = '0 0 4px rgba(0,0,0,0.5)';
-                gifMarker.style.backgroundColor = '#666';
-                
-                const gifLabel = document.createElement('span');
-                gifLabel.textContent = 'Has GIF (clickable)';
-                
-                gifItem.appendChild(gifMarker);
-                gifItem.appendChild(gifLabel);
-                legend.appendChild(gifItem);
-            }}
-            
-            // Make an element draggable
-            function makeDraggable(element) {{
-                let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
-                let isDragging = false;
-                let originalZIndex;
-                
-                element.onmousedown = dragMouseDown;
-                
-                function dragMouseDown(e) {{
-                    e = e || window.event;
-                    e.preventDefault();
-                    e.stopPropagation(); // Prevent triggering parent click events
-                    
-                    // Get the mouse cursor position at startup
-                    pos3 = e.clientX;
-                    pos4 = e.clientY;
-                    
-                    // Store original z-index and bring element to front
-                    originalZIndex = element.style.zIndex;
-                    element.style.zIndex = "1000";
-                    
-                    // Add dragging class for visual feedback
-                    element.classList.add('dragging');
-                    isDragging = true;
-                    
-                    document.onmouseup = closeDragElement;
-                    document.onmousemove = elementDrag;
-                }}
-                
-                function checkCollision(newX, newY) {{
-                    const size = parseInt(element.style.width);
-                    const halfSize = size / 2;
-                    
-                    // Check plot boundaries
-                    if (newX - halfSize < 0 || newX + halfSize > plotWidth ||
-                        newY - halfSize < 0 || newY + halfSize > plotHeight) {{
-                        return true;
-                    }}
-                    
-                    // Check collision with other GIFs
-                    const visibleGifs = Array.from(document.querySelectorAll('.gif-container'))
-                        .filter(container => container !== element && 
-                                container.style.display === 'block');
-                    
-                    // Calculate this element's rectangle at the new position
-                    const thisRect = {{
-                        left: newX - halfSize,
-                        right: newX + halfSize,
-                        top: newY - halfSize,
-                        bottom: newY + halfSize
-                    }};
-                    
-                    // Check for collisions with other visible GIFs
-                    for (const otherGif of visibleGifs) {{
-                        // Get the other GIF's actual position (accounting for transform)
-                        const otherSize = parseInt(otherGif.style.width);
-                        const otherHalfSize = otherSize / 2;
-                        
-                        // Get position from the style (left/top properties)
-                        const otherLeft = parseFloat(otherGif.style.left.replace('px', ''));
-                        const otherTop = parseFloat(otherGif.style.top.replace('px', ''));
-                        
-                        // Calculate rectangle
-                        const otherRect = {{
-                            left: otherLeft - otherHalfSize,
-                            right: otherLeft + otherHalfSize,
-                            top: otherTop - otherHalfSize,
-                            bottom: otherTop + otherHalfSize
-                        }};
-                        
-                        // Check if rectangles overlap
-                        if (!(thisRect.right < otherRect.left || 
-                            thisRect.left > otherRect.right || 
-                            thisRect.bottom < otherRect.top || 
-                            thisRect.top > otherRect.bottom)) {{
-                            return true;
-                        }}
-                    }}
-                    
-                    return false;
-                }}
-                
-                function elementDrag(e) {{
-                    e = e || window.event;
-                    e.preventDefault();
-                    
-                    if (!isDragging) return;
-                    
-                    // Calculate the new cursor position
-                    pos1 = pos3 - e.clientX;
-                    pos2 = pos4 - e.clientY;
-                    pos3 = e.clientX;
-                    pos4 = e.clientY;
-                    
-                    // Calculate new position
-                    const newTop = element.offsetTop - pos2;
-                    const newLeft = element.offsetLeft - pos1;
-                    
-                    // Only update position if no collision
-                    if (!checkCollision(newLeft, newTop)) {{
-                        element.style.top = newTop + 'px';
-                        element.style.left = newLeft + 'px';
-                    }}
-                }}
-                
-                function closeDragElement() {{
-                    // Stop moving when mouse button is released
-                    document.onmouseup = null;
-                    document.onmousemove = null;
-                    isDragging = false;
-                    
-                    // Remove visual feedback classes
-                    element.classList.remove('dragging');
-                    
-                    // Reset z-index with a small delay
-                    setTimeout(() => {{
-                        element.style.zIndex = originalZIndex || "10";
-                    }}, 200);
-                }}
-            }}
-            
-            // Initialize controls
-            function initControls() {{
-                // GIF size slider
-                const sizeSlider = document.getElementById('gif-size-slider');
-                const sizeValue = document.getElementById('size-value');
-                
-                sizeSlider.addEventListener('input', () => {{
-                    const size = sizeSlider.value;
-                    sizeValue.textContent = `${{size}}px`;
-                    
-                    // Get all visible GIFs
-                    const visibleGifs = Array.from(document.querySelectorAll('.gif-container'))
-                        .filter(container => container.style.display === 'block');
-                    
-                    // Update size of all visible GIFs for real-time feedback
-                    visibleGifs.forEach(container => {{
-                        container.style.width = `${{size}}px`;
-                        container.style.height = `${{size}}px`;
-                    }});
-                }});
-                
-                // Resize button - update all visible GIFs
-                const resizeButton = document.getElementById('resize-gifs');
-                resizeButton.addEventListener('click', () => {{
-                    const size = sizeSlider.value;
-                    const gifContainers = document.querySelectorAll('.gif-container');
-                    
-                    gifContainers.forEach(container => {{
-                        container.style.width = `${{size}}px`;
-                        container.style.height = `${{size}}px`;
-                    }});
-                    
-                    console.log(`Resized all GIFs to ${{size}}px`);
-                }});
-                
-                // Show all points checkbox
-                const showAllPointsCheckbox = document.getElementById('show-all-points');
-                showAllPointsCheckbox.addEventListener('change', () => {{
-                    const showAll = showAllPointsCheckbox.checked;
-                    
-                    allPoints.forEach(point => {{
-                        if (!point.hasGif) {{
-                            point.element.style.display = showAll ? 'block' : 'none';
-                        }}
-                    }});
-                }});
-                
-                // Highlight points with GIFs checkbox
-                const highlightGifPointsCheckbox = document.getElementById('highlight-gif-points');
-                highlightGifPointsCheckbox.addEventListener('change', () => {{
-                    const highlight = highlightGifPointsCheckbox.checked;
-                    
-                    allPoints.forEach(point => {{
-                        if (point.hasGif) {{
-                            if (highlight) {{
-                                point.element.classList.add('has-gif');
-                            }} else {{
-                                point.element.classList.remove('has-gif');
-                            }}
-                        }}
-                    }});
-                }});
-            }}
-            
-            // Initialize the visualization
-            function init() {{
-                // Add data points
-                addDataPoints();
-                
-                // Add GIF data
-                addGifData();
-                
-                // Create legend
-                createLegend();
-                
-                // Initialize controls
-                initControls();
-                
-                // Modify plot click handler to not close GIFs when clicking on empty space
-                plot.removeEventListener('click', plot.onclick);
-                plot.addEventListener('click', (e) => {{
-                    // Only do something if we click directly on the plot (not on a point or GIF)
-                    if (e.target === plot) {{
-                        // We don't close GIFs anymore when clicking on empty space
-                        // Just remove the active state from points
-                        document.querySelectorAll('.point.active').forEach(p => {{
-                            p.classList.remove('active');
-                        }});
-                    }}
-                }});
-                
-                // Add a "Close All GIFs" button to the controls
-                const controlsDiv = document.querySelector('.controls');
-                const closeAllGroup = document.createElement('div');
-                closeAllGroup.className = 'control-group';
-                
-                const closeAllBtn = document.createElement('button');
-                closeAllBtn.id = 'close-all-gifs';
-                closeAllBtn.textContent = 'Close All GIFs';
-                closeAllBtn.addEventListener('click', () => {{
-                    hideAllGifs();
-                    document.querySelectorAll('.point.active').forEach(p => {{
-                        p.classList.remove('active');
-                    }});
-                }});
-                
-                closeAllGroup.appendChild(closeAllBtn);
-                controlsDiv.appendChild(closeAllGroup);
-            }}
-            
-            // Run initialization when the page loads
-            window.onload = init;
-        </script>
-    </body>
-    </html>
-    """
-    
-    # Save the HTML file
-    html_path = output_dir / f"clickable_{dim_reduction}_visualization.html"
-    try:
-        with open(html_path, 'w', encoding='utf-8') as f:
-            f.write(html_content)
-        print(f"Created clickable {method_name} visualization: {html_path}")
-    except UnicodeEncodeError:
-        # If utf-8 fails, try with a more compatible encoding
-        with open(html_path, 'w', encoding='ascii', errors='xmlcharrefreplace') as f:
-            f.write(html_content)
-        print(f"Created clickable {method_name} visualization (using ASCII encoding): {html_path}")
+    except Exception as e:
+        print(f"Error creating animated GIF visualization: {e}")
+        import traceback
+        traceback.print_exc()  # Print the full traceback for debugging
     
     return html_path
 
@@ -2168,7 +1779,7 @@ if __name__ == "__main__":
             random_samples = []
             
             # Set number of samples to 40 as requested
-            num_samples = 200  # User requested 40 samples
+            num_samples = 500  # User requested 40 samples
             
             if 'cluster' in features_df.columns:
                 # Get all cluster IDs
@@ -2251,38 +1862,37 @@ if __name__ == "__main__":
                     gif_path = gifs_dir / gif_filename
                     
                     # Generate GIF with reduced quality to save space
-                    create_gif_from_volume(volume, str(gif_path), fps=8, loop=0)  # loop=0 means infinite looping
+                    gif_path, frames = create_gif_from_volume(volume, str(gif_path), fps=8)
                     
                     # Check if GIF was successfully created
                     if os.path.exists(gif_path) and os.path.getsize(gif_path) > 0:
                         # Store full absolute path for HTML file - this is crucial for browser to find the GIFs
                         gif_paths[idx] = os.path.abspath(str(gif_path))
-                        print(f"Created GIF for sample {idx}")
+                        # Store frame data for the global slider
+                        if 'all_frames' not in locals():
+                            all_frames = {}
+                        all_frames[idx] = frames
+                        print(f"Created GIF for sample {idx} with {len(frames)} frames")
                     else:
                         print(f"Failed to create GIF for sample {idx} - file not created or empty")
                     
                 except Exception as e:
                     print(f"Error creating GIF for sample {idx}: {str(e)}")
-
-            # Ensure all GIFs are set to autoplay
-            if gif_paths:
-                print("Ensuring all GIFs are set to autoplay...")
-                gif_paths = ensure_gif_autoplay(gif_paths, loop=0)
-
+            
+            # Skip the original visualization that takes longer
+            # html_path = create_umap_with_gifs(features_df, dataset, output_path, num_samples=args.num_samples, random_seed=42, dim_reduction=args.dim_reduction)
+            
             # Now create visualizations with our simpler methods if we have GIFs
-            if gif_paths:
-                print("\nCreating simpler matplotlib visualization with GIF thumbnails...")
-             
-                print("\nCreating clickable GIF visualization...")
+            if gif_paths:                    
+                print("\nCreating animated GIF visualization...")
                 try:
-                    import traceback
-                    clickable_path = create_clickable_gif_visualization(features_df, gif_paths, output_dir, dim_reduction=args.dim_reduction)
-                    print(f"Clickable GIF visualization created at {clickable_path}")
-                    print(f"Open this in your browser to click on points and see their GIFs.")
+                    animated_path = create_animated_gif_visualization(features_df, gif_paths, output_dir, dim_reduction=args.dim_reduction, frame_data=all_frames)
+                    print(f"Animated GIF visualization created at {animated_path}")
+                    print(f"Open this in your browser to see animated GIFs directly at their {args.dim_reduction.upper()} coordinates.")
                 except Exception as e:
-                    print(f"Error creating clickable GIF visualization: {e}")
-                    print("Detailed error:")
-                    traceback.print_exc()
+                    print(f"Error creating animated GIF visualization: {e}")
+                
+         
             else:
                 print("No GIFs were created successfully. Skipping additional visualizations.")
         else:

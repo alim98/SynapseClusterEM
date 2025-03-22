@@ -278,7 +278,7 @@ def create_clickable_image_visualization(features_df, image_paths, output_dir, d
         
         # Convert to string and set fallback
         var1 = str(var1) if var1 is not None else f'sample_{idx}'
-        
+                
         points.append({
             'id': int(idx) if isinstance(idx, (int, np.integer)) else str(idx),
             'x': float(canvas_x),
@@ -741,8 +741,8 @@ def create_clickable_image_visualization(features_df, image_paths, output_dir, d
                     if (img) {{
                         const newImgWidth = (globalSettings.baseImageWidth * globalSettings.popupSizePercent / 100);
                         img.style.width = newImgWidth + 'px';
-                    }}
-                }});
+                }}
+            }});
             }}
             
             // Handle hover

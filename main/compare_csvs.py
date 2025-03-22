@@ -694,59 +694,1349 @@ def create_comparative_umap(csv_path1, csv_path2, output_dir, label1="Method 1",
     except ImportError:
         print("Plotly not available, skipping interactive visualization")
 
-def main():
-    # Add debug print
-    print("Debug: Starting main function")
-    default_csv_file1 = r"C:\Users\alim9\Documents\codes\synapse2\results\features\50\run_2025-03-18_19-08-06\features_extraction_stage_specific_layer20_segNone_alphaNone\features_layer20_segNone_alphaNone.csv"
-    default_csv_file2 = r"C:\Users\alim9\Documents\codes\synapse2\results\features\50\run_2025-03-18_18-12-54\features_extraction_stage_specific_layer20_segNone_alphaNone_intelligent_crop_w7\features_layer20_segNone_alphaNone.csv"
-
-    # Parse command line arguments
-    parser = argparse.ArgumentParser(description="Compare features from two CSV files using UMAP visualization")
-    parser.add_argument("csv_file1", default=default_csv_file1, help="Path to first feature CSV file")
-    parser.add_argument("csv_file2", default=default_csv_file2, help="Path to second feature CSV file")
-    parser.add_argument("--output_dir", default="comparison_results", help="Directory to save results")
-    parser.add_argument("--label1", default="Intelligent Cropping", help="Label for first dataset")
-    parser.add_argument("--label2", default="Normal Cropping", help="Label for second dataset")
-    parser.add_argument("--max_pairs", type=int, help="Maximum number of sample pairs to display with connections")
-    # Default paths to use if no CSV files are provided
-
-    try:
-        args = parser.parse_args()
+def create_correlation_scatter_plot(csv_path1, csv_path2, output_dir, label1="Method 1", label2="Method 2"):
+    """
+    Create a correlation scatter plot between feature values from two CSV files.
+    
+    Args:
+        csv_path1: Path to first feature CSV file
+        csv_path2: Path to second feature CSV file
+        output_dir: Directory to save the visualization
+        label1: Label for first dataset
+        label2: Label for second dataset
+    """
+    print("\n" + "="*80)
+    print("Creating correlation scatter plot...")
+    
+    # Load feature data from both CSV files
+    dataframes = []
+    feature_sets = []
+    sample_ids = []
+    
+    for i, csv_path in enumerate([csv_path1, csv_path2]):
+        print(f"Loading features from {csv_path}")
+        df = pd.read_csv(csv_path)
         
-        print(f"Debug: Command line arguments parsed successfully")
-        print(f"Debug: csv_file1 = {args.csv_file1}")
-        print(f"Debug: csv_file2 = {args.csv_file2}")
-        print(f"Debug: output_dir = {args.output_dir}")
+        # Figure out the feature columns using the same logic as in create_comparative_umap
+        feature_cols = []
+        layer_cols = [col for col in df.columns if col.startswith('layer20_feat_')]
+        if layer_cols:
+            feature_cols = layer_cols
+            print(f"Found {len(feature_cols)} feature columns with prefix 'layer20_feat_'")
+        else:
+            feat_cols = [col for col in df.columns if col.startswith('feat_')]
+            if feat_cols:
+                feature_cols = feat_cols
+                print(f"Found {len(feature_cols)} feature columns with prefix 'feat_'")
+            else:
+                for prefix in ['feature_', 'f_', 'layer']:
+                    cols = [col for col in df.columns if col.startswith(prefix)]
+                    if cols:
+                        feature_cols = cols
+                        print(f"Found {len(feature_cols)} feature columns with prefix '{prefix}'")
+                        break
         
-        # Check if files exist
-        if not os.path.exists(args.csv_file1):
-            print(f"Error: File not found: {args.csv_file1}")
+        if not feature_cols:
+            non_feature_cols = ['bbox', 'cluster', 'label', 'id', 'index', 'tsne', 'umap', 'var', 'Var']
+            numeric_cols = df.select_dtypes(include=['float64', 'int64']).columns
+            feature_cols = [col for col in numeric_cols if not any(col.lower().startswith(x.lower()) for x in non_feature_cols)]
+            
+            if feature_cols:
+                print(f"Detected {len(feature_cols)} potential feature columns based on numeric data type")
+        
+        if not feature_cols:
+            print(f"No feature columns found in {csv_path}")
             return
         
-        if not os.path.exists(args.csv_file2):
-            print(f"Error: File not found: {args.csv_file2}")
-            return
+        # Extract features
+        features = df[feature_cols].values
         
-        print(f"Debug: Both input files exist")
+        # Get sample identifiers (same logic as in create_comparative_umap)
+        if 'Var1' in df.columns:
+            ids = df['Var1'].tolist()
+        elif 'id' in df.columns:
+            ids = df['id'].tolist()
+        else:
+            ids = [f"sample_{i}" for i in range(len(df))]
         
-        # Create output directory
-        os.makedirs(args.output_dir, exist_ok=True)
-        print(f"Debug: Output directory created/verified: {args.output_dir}")
+        # Store data
+        dataframes.append(df)
+        feature_sets.append(features)
+        sample_ids.append(ids)
+    
+    # Check if both feature sets have the same dimensions
+    if feature_sets[0].shape[1] != feature_sets[1].shape[1]:
+        print(f"Feature dimensions don't match: {feature_sets[0].shape[1]} vs {feature_sets[1].shape[1]}")
+        print("Reducing feature dimensions to a common space before correlation analysis")
         
-        # Create comparative UMAP visualization
+        # Standardize the features
+        scaler1 = StandardScaler()
+        scaler2 = StandardScaler()
+        scaled_features1 = scaler1.fit_transform(feature_sets[0])
+        scaled_features2 = scaler2.fit_transform(feature_sets[1])
+        
+        # Determine the target dimension - use the smaller of the two or a fixed value
+        target_dim = min(feature_sets[0].shape[1], feature_sets[1].shape[1])
+        target_dim = min(64, target_dim)  # Set a maximum dimension for computation efficiency
+        
+        print(f"Reducing both feature sets to {target_dim} dimensions")
+        
+        # Apply PCA or UMAP for dimensionality reduction
         try:
-            create_comparative_umap(args.csv_file1, args.csv_file2, args.output_dir, args.label1, args.label2, args.max_pairs)
-            print(f"Debug: create_comparative_umap function completed")
+            # Try UMAP first for better preservation of relationships
+            reducer1 = umap.UMAP(n_components=target_dim, random_state=42)
+            reducer2 = umap.UMAP(n_components=target_dim, random_state=42)
+            reduced_features1 = reducer1.fit_transform(scaled_features1)
+            reduced_features2 = reducer2.fit_transform(scaled_features2)
+            print(f"Successfully reduced features using UMAP to dimension {target_dim}")
         except Exception as e:
-            print(f"Error in create_comparative_umap: {str(e)}")
-            import traceback
-            traceback.print_exc()
+            print(f"UMAP reduction failed: {str(e)}")
+            # Fall back to PCA if UMAP fails
+            from sklearn.decomposition import PCA
+            reducer1 = PCA(n_components=target_dim, random_state=42)
+            reducer2 = PCA(n_components=target_dim, random_state=42)
+            reduced_features1 = reducer1.fit_transform(scaled_features1)
+            reduced_features2 = reducer2.fit_transform(scaled_features2)
+            print(f"Successfully reduced features using PCA to dimension {target_dim}")
         
-        print("Comparison completed successfully!")
+        # Update the feature sets with the reduced dimensions
+        feature_sets[0] = reduced_features1
+        feature_sets[1] = reduced_features2
+    
+    # Find common samples between the two datasets
+    set1 = set(sample_ids[0])
+    set2 = set(sample_ids[1])
+    common_ids = list(set1.intersection(set2))
+    
+    if not common_ids:
+        print("No common samples found between the two feature sets")
+        return
+    
+    print(f"Found {len(common_ids)} common samples between the two feature sets")
+    
+    # Create dictionaries to map sample IDs to row indices
+    id_to_idx_1 = {id_val: idx for idx, id_val in enumerate(sample_ids[0])}
+    id_to_idx_2 = {id_val: idx for idx, id_val in enumerate(sample_ids[1])}
+    
+    # Calculate correlation coefficient for each feature
+    feature_correlations = []
+    for feature_idx in range(feature_sets[0].shape[1]):
+        values_1 = []
+        values_2 = []
+        
+        for sample_id in common_ids:
+            idx1 = id_to_idx_1.get(sample_id)
+            idx2 = id_to_idx_2.get(sample_id)
+            
+            if idx1 is not None and idx2 is not None:
+                values_1.append(feature_sets[0][idx1, feature_idx])
+                values_2.append(feature_sets[1][idx2, feature_idx])
+        
+        correlation = np.corrcoef(values_1, values_2)[0, 1]
+        feature_correlations.append((feature_idx, correlation))
+    
+    # Sort features by correlation
+    feature_correlations.sort(key=lambda x: x[1], reverse=True)
+    
+    # Select 9 features for visualization, prioritizing strong correlations and some weaker ones
+    num_features_to_plot = min(9, len(feature_correlations))
+    selected_features = []
+    
+    # Select high correlation features
+    high_corr = [fc for fc in feature_correlations if fc[1] > 0.7][:3]
+    selected_features.extend(high_corr)
+    
+    # Select medium correlation features
+    medium_corr = [fc for fc in feature_correlations if 0.3 <= fc[1] <= 0.7][:3]
+    selected_features.extend(medium_corr)
+    
+    # Select low correlation features
+    low_corr = [fc for fc in feature_correlations if fc[1] < 0.3][:3]
+    selected_features.extend(low_corr)
+    
+    # If we don't have enough features for each category, take from the remaining features
+    if len(selected_features) < num_features_to_plot:
+        remaining = [fc for fc in feature_correlations if fc not in selected_features]
+        remaining_needed = num_features_to_plot - len(selected_features)
+        selected_features.extend(remaining[:remaining_needed])
+    
+    # Create a subplot grid
+    num_plots = min(9, len(selected_features))
+    rows = int(np.ceil(np.sqrt(num_plots)))
+    cols = int(np.ceil(num_plots / rows))
+    
+    fig, axes = plt.subplots(rows, cols, figsize=(15, 15))
+    if rows == 1 and cols == 1:
+        axes = np.array([axes])
+    axes = axes.flatten()
+    
+    # Generate scatter plots for each selected feature
+    for i, (feature_idx, correlation) in enumerate(selected_features[:num_plots]):
+        ax = axes[i]
+        
+        # Get feature values for the common samples
+        values_1 = []
+        values_2 = []
+        
+        for sample_id in common_ids:
+            idx1 = id_to_idx_1.get(sample_id)
+            idx2 = id_to_idx_2.get(sample_id)
+            
+            if idx1 is not None and idx2 is not None:
+                values_1.append(feature_sets[0][idx1, feature_idx])
+                values_2.append(feature_sets[1][idx2, feature_idx])
+        
+        # Create scatter plot
+        ax.scatter(values_1, values_2, alpha=0.7, s=30, edgecolors='navy', linewidths=0.5)
+        
+        # Add reference line for y=x
+        min_val = min(min(values_1), min(values_2))
+        max_val = max(max(values_1), max(values_2))
+        padding = (max_val - min_val) * 0.05
+        ax.plot([min_val-padding, max_val+padding], [min_val-padding, max_val+padding], 'r--', alpha=0.6)
+        
+        # Set axis limits with some padding
+        ax.set_xlim(min_val-padding, max_val+padding)
+        ax.set_ylim(min_val-padding, max_val+padding)
+        
+        # Add correlation coefficient to the plot
+        ax.set_title(f"Feature {feature_idx}, r = {correlation:.3f}")
+        
+        # Set axis labels
+        if i >= (rows-1) * cols:  # Only bottom row gets x-axis label
+            ax.set_xlabel(f"{label1}")
+        if i % cols == 0:  # Only leftmost column gets y-axis label
+            ax.set_ylabel(f"{label2}")
+    
+    # Hide unused subplots
+    for j in range(num_plots, len(axes)):
+        axes[j].axis('off')
+    
+    plt.tight_layout()
+    
+    # Create output directory if it doesn't exist
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Save the plot
+    output_path = os.path.join(output_dir, "correlation_scatter_plot.png")
+    plt.savefig(output_path, dpi=300)
+    print(f"Saved correlation scatter plot to {output_path}")
+    
+    # Create a single summary correlation plot
+    plt.figure(figsize=(10, 6))
+    
+    # Calculate overall correlation for each feature
+    all_correlations = [corr for _, corr in feature_correlations]
+    feature_indices = np.arange(len(all_correlations))
+    
+    plt.bar(feature_indices, all_correlations, alpha=0.7)
+    plt.axhline(y=0, color='r', linestyle='-', alpha=0.3)
+    
+    # Add horizontal lines for correlation reference
+    plt.axhline(y=0.5, color='g', linestyle='--', alpha=0.5)
+    plt.axhline(y=-0.5, color='g', linestyle='--', alpha=0.5)
+    
+    plt.title(f"Feature Correlation between {label1} and {label2}")
+    plt.xlabel("Feature Index")
+    plt.ylabel("Correlation Coefficient")
+    plt.ylim(-1.05, 1.05)
+    
+    # Add mean correlation as text
+    mean_corr = np.mean(all_correlations)
+    plt.text(0.02, 0.95, f"Mean correlation: {mean_corr:.3f}", 
+             transform=plt.gca().transAxes, bbox=dict(facecolor='white', alpha=0.8))
+    
+    # Save the summary plot
+    summary_path = os.path.join(output_dir, "correlation_summary.png")
+    plt.savefig(summary_path, dpi=300)
+    print(f"Saved correlation summary to {summary_path}")
+    
+    plt.close('all')
+    return output_path
+
+def create_2d_correlation_scatter_plot(csv_path1, csv_path2, output_dir, label1="Method 1", label2="Method 2"):
+    """
+    Create a 2D correlation scatter plot after reducing both feature sets to 2 dimensions.
+    
+    Args:
+        csv_path1: Path to first feature CSV file
+        csv_path2: Path to second feature CSV file
+        output_dir: Directory to save the visualization
+        label1: Label for first dataset
+        label2: Label for second dataset
+    """
+    print("\n" + "="*80)
+    print("Creating 2D correlation scatter plot...")
+    
+    # Load feature data from both CSV files using the same logic as other functions
+    dataframes = []
+    feature_sets = []
+    sample_ids = []
+    
+    for i, csv_path in enumerate([csv_path1, csv_path2]):
+        print(f"Loading features from {csv_path}")
+        df = pd.read_csv(csv_path)
+        
+        # Figure out the feature columns using the same logic as in create_comparative_umap
+        feature_cols = []
+        layer_cols = [col for col in df.columns if col.startswith('layer20_feat_')]
+        if layer_cols:
+            feature_cols = layer_cols
+            print(f"Found {len(feature_cols)} feature columns with prefix 'layer20_feat_'")
+        else:
+            feat_cols = [col for col in df.columns if col.startswith('feat_')]
+            if feat_cols:
+                feature_cols = feat_cols
+                print(f"Found {len(feature_cols)} feature columns with prefix 'feat_'")
+            else:
+                for prefix in ['feature_', 'f_', 'layer']:
+                    cols = [col for col in df.columns if col.startswith(prefix)]
+                    if cols:
+                        feature_cols = cols
+                        print(f"Found {len(feature_cols)} feature columns with prefix '{prefix}'")
+                        break
+        
+        if not feature_cols:
+            non_feature_cols = ['bbox', 'cluster', 'label', 'id', 'index', 'tsne', 'umap', 'var', 'Var']
+            numeric_cols = df.select_dtypes(include=['float64', 'int64']).columns
+            feature_cols = [col for col in numeric_cols if not any(col.lower().startswith(x.lower()) for x in non_feature_cols)]
+            
+            if feature_cols:
+                print(f"Detected {len(feature_cols)} potential feature columns based on numeric data type")
+        
+        if not feature_cols:
+            print(f"No feature columns found in {csv_path}")
+            return
+        
+        # Extract features
+        features = df[feature_cols].values
+        
+        # Get sample identifiers (same logic as in create_comparative_umap)
+        if 'Var1' in df.columns:
+            ids = df['Var1'].tolist()
+        elif 'id' in df.columns:
+            ids = df['id'].tolist()
+        else:
+            ids = [f"sample_{i}" for i in range(len(df))]
+        
+        # Store data
+        dataframes.append(df)
+        feature_sets.append(features)
+        sample_ids.append(ids)
+    
+    # Standardize the features
+    scaler1 = StandardScaler()
+    scaler2 = StandardScaler()
+    scaled_features1 = scaler1.fit_transform(feature_sets[0])
+    scaled_features2 = scaler2.fit_transform(feature_sets[1])
+    
+    # Find common samples between the two datasets
+    set1 = set(sample_ids[0])
+    set2 = set(sample_ids[1])
+    common_ids = list(set1.intersection(set2))
+    
+    if not common_ids:
+        print("No common samples found between the two feature sets")
+        return
+    
+    print(f"Found {len(common_ids)} common samples between the two feature sets")
+    
+    # Create dictionaries to map sample IDs to row indices
+    id_to_idx_1 = {id_val: idx for idx, id_val in enumerate(sample_ids[0])}
+    id_to_idx_2 = {id_val: idx for idx, id_val in enumerate(sample_ids[1])}
+    
+    # Extract features for common samples only
+    common_features1 = []
+    common_features2 = []
+    for sample_id in common_ids:
+        idx1 = id_to_idx_1.get(sample_id)
+        idx2 = id_to_idx_2.get(sample_id)
+        
+        if idx1 is not None and idx2 is not None:
+            common_features1.append(scaled_features1[idx1])
+            common_features2.append(scaled_features2[idx2])
+    
+    common_features1 = np.array(common_features1)
+    common_features2 = np.array(common_features2)
+    
+    print(f"Reducing both feature sets to 2 dimensions for 2D correlation visualization")
+    
+    # Reduce to 2D using UMAP or PCA
+    try:
+        # Try UMAP first
+        reducer1 = umap.UMAP(n_components=2, random_state=42)
+        reducer2 = umap.UMAP(n_components=2, random_state=42)
+        reduced_features1 = reducer1.fit_transform(common_features1)
+        reduced_features2 = reducer2.fit_transform(common_features2)
+        reduction_method = "UMAP"
+        print("Successfully reduced features using UMAP to 2D")
     except Exception as e:
-        print(f"Error in main function: {str(e)}")
-        import traceback
-        traceback.print_exc()
+        print(f"UMAP reduction failed: {str(e)}")
+        # Fall back to PCA
+        from sklearn.decomposition import PCA
+        reducer1 = PCA(n_components=2, random_state=42)
+        reducer2 = PCA(n_components=2, random_state=42)
+        reduced_features1 = reducer1.fit_transform(common_features1)
+        reduced_features2 = reducer2.fit_transform(common_features2)
+        reduction_method = "PCA"
+        print("Successfully reduced features using PCA to 2D")
+    
+    # Calculate correlations between the two sets of 2D embeddings
+    correlations = []
+    for dim in range(2):
+        corr = np.corrcoef(reduced_features1[:, dim], reduced_features2[:, dim])[0, 1]
+        correlations.append(corr)
+    
+    # Create the figure with subplots
+    fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+    
+    # Plot X dimension correlation
+    axes[0].scatter(reduced_features1[:, 0], reduced_features2[:, 0], alpha=0.7, s=40, 
+                   edgecolors='navy', linewidths=0.5)
+    
+    # Add reference line for y=x
+    dim0_min = min(reduced_features1[:, 0].min(), reduced_features2[:, 0].min())
+    dim0_max = max(reduced_features1[:, 0].max(), reduced_features2[:, 0].max())
+    padding = (dim0_max - dim0_min) * 0.05
+    axes[0].plot([dim0_min-padding, dim0_max+padding], [dim0_min-padding, dim0_max+padding], 'r--', alpha=0.6)
+    
+    axes[0].set_title(f"Dimension 1 Correlation\nr = {correlations[0]:.3f}")
+    axes[0].set_xlabel(f"{label1} Dimension 1")
+    axes[0].set_ylabel(f"{label2} Dimension 1")
+    
+    # Plot Y dimension correlation
+    axes[1].scatter(reduced_features1[:, 1], reduced_features2[:, 1], alpha=0.7, s=40, 
+                   color='darkred', edgecolors='maroon', linewidths=0.5)
+    
+    # Add reference line for y=x
+    dim1_min = min(reduced_features1[:, 1].min(), reduced_features2[:, 1].min())
+    dim1_max = max(reduced_features1[:, 1].max(), reduced_features2[:, 1].max())
+    padding = (dim1_max - dim1_min) * 0.05
+    axes[1].plot([dim1_min-padding, dim1_max+padding], [dim1_min-padding, dim1_max+padding], 'r--', alpha=0.6)
+    
+    axes[1].set_title(f"Dimension 2 Correlation\nr = {correlations[1]:.3f}")
+    axes[1].set_xlabel(f"{label1} Dimension 2")
+    axes[1].set_ylabel(f"{label2} Dimension 2")
+    
+    # Create a side-by-side 2D scatter plot
+    axes[2].scatter(reduced_features1[:, 0], reduced_features1[:, 1], alpha=0.7, s=40, 
+                   label=label1, color='navy')
+    axes[2].scatter(reduced_features2[:, 0], reduced_features2[:, 1], alpha=0.7, s=40, 
+                   label=label2, color='darkred')
+    
+    # Connect the same samples with lines
+    for i in range(len(common_ids)):
+        axes[2].plot([reduced_features1[i, 0], reduced_features2[i, 0]], 
+                    [reduced_features1[i, 1], reduced_features2[i, 1]], 
+                    'gray', alpha=0.2, linewidth=0.5)
+    
+    axes[2].set_title(f"2D Embeddings of Both Feature Sets\n({reduction_method} Reduction)")
+    axes[2].set_xlabel("Dimension 1")
+    axes[2].set_ylabel("Dimension 2")
+    axes[2].legend()
+    
+    plt.tight_layout()
+    
+    # Create output directory if it doesn't exist
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Save the plot
+    output_path = os.path.join(output_dir, "2d_correlation_scatter_plot.png")
+    plt.savefig(output_path, dpi=300)
+    print(f"Saved 2D correlation scatter plot to {output_path}")
+    
+    # Create a comprehensive correlation visualization
+    plt.figure(figsize=(12, 12))
+    
+    # Create a 2x2 grid of scatter plots comparing both dimensions
+    gs = plt.GridSpec(2, 2, height_ratios=[1, 1], width_ratios=[1, 1])
+    
+    # Plot 1: Method 1 dim1 vs Method 2 dim1
+    ax1 = plt.subplot(gs[0, 0])
+    ax1.scatter(reduced_features1[:, 0], reduced_features2[:, 0], alpha=0.7, c='blue')
+    ax1.set_title(f"Correlation: {correlations[0]:.3f}")
+    ax1.set_xlabel(f"{label1} Dim 1")
+    ax1.set_ylabel(f"{label2} Dim 1")
+    
+    # Plot 2: Method 1 dim1 vs Method 2 dim2
+    ax2 = plt.subplot(gs[0, 1])
+    cross_corr_1_2 = np.corrcoef(reduced_features1[:, 0], reduced_features2[:, 1])[0, 1]
+    ax2.scatter(reduced_features1[:, 0], reduced_features2[:, 1], alpha=0.7, c='green')
+    ax2.set_title(f"Correlation: {cross_corr_1_2:.3f}")
+    ax2.set_xlabel(f"{label1} Dim 1")
+    ax2.set_ylabel(f"{label2} Dim 2")
+    
+    # Plot 3: Method 1 dim2 vs Method 2 dim1
+    ax3 = plt.subplot(gs[1, 0])
+    cross_corr_2_1 = np.corrcoef(reduced_features1[:, 1], reduced_features2[:, 0])[0, 1]
+    ax3.scatter(reduced_features1[:, 1], reduced_features2[:, 0], alpha=0.7, c='orange')
+    ax3.set_title(f"Correlation: {cross_corr_2_1:.3f}")
+    ax3.set_xlabel(f"{label1} Dim 2")
+    ax3.set_ylabel(f"{label2} Dim 1")
+    
+    # Plot 4: Method 1 dim2 vs Method 2 dim2
+    ax4 = plt.subplot(gs[1, 1])
+    ax4.scatter(reduced_features1[:, 1], reduced_features2[:, 1], alpha=0.7, c='red')
+    ax4.set_title(f"Correlation: {correlations[1]:.3f}")
+    ax4.set_xlabel(f"{label1} Dim 2")
+    ax4.set_ylabel(f"{label2} Dim 2")
+    
+    plt.suptitle(f"Cross-Dimensional Correlation Matrix ({reduction_method} Reduction)", fontsize=16)
+    plt.tight_layout()
+    plt.subplots_adjust(top=0.92)
+    
+    # Save the comprehensive correlation visualization
+    matrix_path = os.path.join(output_dir, "2d_correlation_matrix.png")
+    plt.savefig(matrix_path, dpi=300)
+    print(f"Saved 2D correlation matrix to {matrix_path}")
+    
+    plt.close('all')
+    return output_path
+
+def create_distance_correlation_plot(csv_path1, csv_path2, output_dir, label1="Method 1", label2="Method 2"):
+    """
+    Create a correlation plot comparing pairwise sample distances between two methods.
+    
+    Args:
+        csv_path1: Path to first feature CSV file
+        csv_path2: Path to second feature CSV file
+        output_dir: Directory to save the visualization
+        label1: Label for first dataset
+        label2: Label for second dataset
+    """
+    print("\n" + "="*80)
+    print("Creating distance correlation plot...")
+    
+    # Load feature data from both CSV files using the same logic as other functions
+    dataframes = []
+    feature_sets = []
+    sample_ids = []
+    
+    for i, csv_path in enumerate([csv_path1, csv_path2]):
+        print(f"Loading features from {csv_path}")
+        df = pd.read_csv(csv_path)
+        
+        # Figure out the feature columns using the same logic as in create_comparative_umap
+        feature_cols = []
+        layer_cols = [col for col in df.columns if col.startswith('layer20_feat_')]
+        if layer_cols:
+            feature_cols = layer_cols
+            print(f"Found {len(feature_cols)} feature columns with prefix 'layer20_feat_'")
+        else:
+            feat_cols = [col for col in df.columns if col.startswith('feat_')]
+            if feat_cols:
+                feature_cols = feat_cols
+                print(f"Found {len(feature_cols)} feature columns with prefix 'feat_'")
+            else:
+                for prefix in ['feature_', 'f_', 'layer']:
+                    cols = [col for col in df.columns if col.startswith(prefix)]
+                    if cols:
+                        feature_cols = cols
+                        print(f"Found {len(feature_cols)} feature columns with prefix '{prefix}'")
+                        break
+        
+        if not feature_cols:
+            non_feature_cols = ['bbox', 'cluster', 'label', 'id', 'index', 'tsne', 'umap', 'var', 'Var']
+            numeric_cols = df.select_dtypes(include=['float64', 'int64']).columns
+            feature_cols = [col for col in numeric_cols if not any(col.lower().startswith(x.lower()) for x in non_feature_cols)]
+            
+            if feature_cols:
+                print(f"Detected {len(feature_cols)} potential feature columns based on numeric data type")
+        
+        if not feature_cols:
+            print(f"No feature columns found in {csv_path}")
+            return
+        
+        # Extract features
+        features = df[feature_cols].values
+        
+        # Get sample identifiers (same logic as in create_comparative_umap)
+        if 'Var1' in df.columns:
+            ids = df['Var1'].tolist()
+        elif 'id' in df.columns:
+            ids = df['id'].tolist()
+        else:
+            ids = [f"sample_{i}" for i in range(len(df))]
+        
+        # Store data
+        dataframes.append(df)
+        feature_sets.append(features)
+        sample_ids.append(ids)
+    
+    # Standardize the features
+    scaler1 = StandardScaler()
+    scaler2 = StandardScaler()
+    scaled_features1 = scaler1.fit_transform(feature_sets[0])
+    scaled_features2 = scaler2.fit_transform(feature_sets[1])
+    
+    # Handle different dimensions if necessary
+    if feature_sets[0].shape[1] != feature_sets[1].shape[1]:
+        print(f"Feature dimensions don't match: {feature_sets[0].shape[1]} vs {feature_sets[1].shape[1]}")
+        print("Reducing feature dimensions to a common space before distance calculation")
+        
+        # Determine the target dimension - use the smaller of the two or a fixed value
+        target_dim = min(feature_sets[0].shape[1], feature_sets[1].shape[1])
+        target_dim = min(64, target_dim)  # Set a maximum dimension for computation efficiency
+        
+        print(f"Reducing both feature sets to {target_dim} dimensions")
+        
+        # Apply PCA or UMAP for dimensionality reduction
+        try:
+            # Try UMAP first for better preservation of relationships
+            reducer1 = umap.UMAP(n_components=target_dim, random_state=42)
+            reducer2 = umap.UMAP(n_components=target_dim, random_state=42)
+            reduced_features1 = reducer1.fit_transform(scaled_features1)
+            reduced_features2 = reducer2.fit_transform(scaled_features2)
+            print(f"Successfully reduced features using UMAP to dimension {target_dim}")
+        except Exception as e:
+            print(f"UMAP reduction failed: {str(e)}")
+            # Fall back to PCA if UMAP fails
+            from sklearn.decomposition import PCA
+            reducer1 = PCA(n_components=target_dim, random_state=42)
+            reducer2 = PCA(n_components=target_dim, random_state=42)
+            reduced_features1 = reducer1.fit_transform(scaled_features1)
+            reduced_features2 = reducer2.fit_transform(scaled_features2)
+            print(f"Successfully reduced features using PCA to dimension {target_dim}")
+        
+        # Update the feature sets with the reduced dimensions
+        scaled_features1 = reduced_features1
+        scaled_features2 = reduced_features2
+    
+    # Find common samples between the two datasets
+    set1 = set(sample_ids[0])
+    set2 = set(sample_ids[1])
+    common_ids = list(set1.intersection(set2))
+    
+    if not common_ids:
+        print("No common samples found between the two feature sets")
+        return
+    
+    print(f"Found {len(common_ids)} common samples between the two feature sets")
+    
+    # Create dictionaries to map sample IDs to row indices
+    id_to_idx_1 = {id_val: idx for idx, id_val in enumerate(sample_ids[0])}
+    id_to_idx_2 = {id_val: idx for idx, id_val in enumerate(sample_ids[1])}
+    
+    # Extract features for common samples only and ensure they have same ordering
+    common_features1 = []
+    common_features2 = []
+    ordered_common_ids = []
+    
+    for sample_id in common_ids:
+        idx1 = id_to_idx_1.get(sample_id)
+        idx2 = id_to_idx_2.get(sample_id)
+        
+        if idx1 is not None and idx2 is not None:
+            common_features1.append(scaled_features1[idx1])
+            common_features2.append(scaled_features2[idx2])
+            ordered_common_ids.append(sample_id)
+    
+    common_features1 = np.array(common_features1)
+    common_features2 = np.array(common_features2)
+    
+    # Compute pairwise distances within each method
+    print("Computing pairwise distances...")
+    from scipy.spatial.distance import pdist, squareform
+    
+    # Calculate full distance matrices
+    dist_matrix1 = squareform(pdist(common_features1, metric='euclidean'))
+    dist_matrix2 = squareform(pdist(common_features2, metric='euclidean'))
+    
+    # Flatten the distance matrices (excluding the diagonal)
+    n_samples = len(common_features1)
+    distances1 = []
+    distances2 = []
+    pair_indices = []
+    
+    for i in range(n_samples):
+        for j in range(i+1, n_samples):
+            distances1.append(dist_matrix1[i, j])
+            distances2.append(dist_matrix2[i, j])
+            pair_indices.append((i, j))
+    
+    # Calculate correlation between the distances
+    correlation = np.corrcoef(distances1, distances2)[0, 1]
+    print(f"Correlation between pairwise distances: {correlation:.4f}")
+    
+    # Create the scatter plot
+    plt.figure(figsize=(10, 8))
+    
+    # Create scatter plot with point density coloring
+    # The error occurs here with gaussian_kde, so let's modify this part
+    try:
+        from scipy.stats import gaussian_kde
+        
+        # Calculate point density for coloring
+        xy = np.vstack([distances1, distances2])
+        
+        # Add small random noise to avoid singularity issues
+        xy_with_noise = xy + np.random.normal(0, 0.0001, xy.shape)
+        
+        # Try to calculate density with noise-added data
+        try:
+            z = gaussian_kde(xy_with_noise)(xy)
+            
+            # Sort points by density for better visualization
+            idx = z.argsort()
+            distances1_sorted = np.array(distances1)[idx]
+            distances2_sorted = np.array(distances2)[idx]
+            z_sorted = z[idx]
+            
+            # Scatter plot with density coloring
+            scatter = plt.scatter(distances1_sorted, distances2_sorted, 
+                                c=z_sorted, s=30, alpha=0.7, 
+                                cmap='viridis', edgecolor='w', linewidth=0.2)
+            
+            # Add color bar for density
+            cbar = plt.colorbar(scatter)
+            cbar.set_label('Point Density', fontsize=12)
+        except Exception as e:
+            print(f"Density estimation failed, using simpler coloring: {str(e)}")
+            # Fall back to simpler coloring when density estimation fails
+            plt.scatter(distances1, distances2, c='blue', alpha=0.5, s=20)
+    except Exception as e:
+        print(f"Density coloring failed: {str(e)}")
+        # Basic scatter plot without density coloring
+        plt.scatter(distances1, distances2, c='blue', alpha=0.5, s=20)
+    
+    # Add reference line y=x
+    min_val = min(min(distances1), min(distances2))
+    max_val = max(max(distances1), max(distances2))
+    padding = (max_val - min_val) * 0.05
+    plt.plot([min_val-padding, max_val+padding], [min_val-padding, max_val+padding], 
+             'r--', alpha=0.6, label='y=x')
+    
+    # Add regression line
+    from scipy import stats
+    slope, intercept, r_value, p_value, std_err = stats.linregress(distances1, distances2)
+    plt.plot(np.array([min_val-padding, max_val+padding]), 
+             intercept + slope*np.array([min_val-padding, max_val+padding]), 
+             'g-', alpha=0.7, label=f'Regression line (slope={slope:.3f})')
+    
+    # Add axis labels and title
+    plt.xlabel(f'Pairwise distances in {label1}', fontsize=14)
+    plt.ylabel(f'Pairwise distances in {label2}', fontsize=14)
+    plt.title(f'Correlation between Pairwise Sample Distances\nr = {correlation:.4f}', fontsize=16)
+    
+    # Add text with correlation and sample count
+    plt.text(0.05, 0.95, 
+             f"r = {correlation:.4f}\nSamples: {n_samples}\nPairs: {len(distances1)}", 
+             transform=plt.gca().transAxes, 
+             bbox=dict(facecolor='white', alpha=0.8),
+             fontsize=12, verticalalignment='top')
+    
+    # Add legend
+    plt.legend(loc='lower right')
+    
+    plt.grid(alpha=0.2)
+    plt.tight_layout()
+    
+    # Create output directory if it doesn't exist
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Save the plot
+    output_path = os.path.join(output_dir, "distance_correlation_plot.png")
+    plt.savefig(output_path, dpi=300)
+    print(f"Saved distance correlation plot to {output_path}")
+    
+    # Create plot showing the distribution of distance ratios
+    plt.figure(figsize=(12, 6))
+    
+    # Calculate the ratio of distances (method2 / method1)
+    ratios = np.array(distances2) / np.array(distances1)
+    
+    # Create histogram of ratios in the left subplot
+    plt.subplot(1, 2, 1)
+    plt.hist(ratios, bins=30, alpha=0.7, color='skyblue', edgecolor='black')
+    plt.axvline(x=1.0, color='r', linestyle='--', alpha=0.8, label='Equal ratio (1.0)')
+    plt.axvline(x=np.median(ratios), color='g', linestyle='-', alpha=0.8, 
+                label=f'Median ratio ({np.median(ratios):.3f})')
+    
+    plt.xlabel('Distance Ratio (Method 2 / Method 1)', fontsize=12)
+    plt.ylabel('Frequency', fontsize=12)
+    plt.title('Distribution of Distance Ratios', fontsize=14)
+    plt.legend()
+    plt.grid(alpha=0.2)
+    
+    # Plot sorted ratios in the right subplot to show pattern
+    plt.subplot(1, 2, 2)
+    sorted_ratios = np.sort(ratios)
+    plt.plot(np.arange(len(sorted_ratios)), sorted_ratios, 'b-', alpha=0.7)
+    plt.axhline(y=1.0, color='r', linestyle='--', alpha=0.8, label='Equal ratio (1.0)')
+    plt.axhline(y=np.median(ratios), color='g', linestyle='-', alpha=0.8, 
+                label=f'Median ratio ({np.median(ratios):.3f})')
+    
+    plt.xlabel('Sorted Pair Index', fontsize=12)
+    plt.ylabel('Distance Ratio (Method 2 / Method 1)', fontsize=12)
+    plt.title('Sorted Distance Ratios', fontsize=14)
+    plt.legend()
+    plt.grid(alpha=0.2)
+    
+    plt.tight_layout()
+    
+    # Save the plot
+    ratio_path = os.path.join(output_dir, "distance_ratio_analysis.png")
+    plt.savefig(ratio_path, dpi=300)
+    print(f"Saved distance ratio analysis to {ratio_path}")
+    
+    # Identify pairs with the largest distance differences
+    distance_diffs = np.abs(np.array(distances1) - np.array(distances2))
+    largest_diff_indices = np.argsort(distance_diffs)[-20:]  # Get indices of 20 largest differences
+    
+    # Create a table of the largest differences
+    largest_diff_data = []
+    for idx in largest_diff_indices[::-1]:  # Reverse to show largest first
+        i, j = pair_indices[idx]
+        largest_diff_data.append({
+            'Sample 1': ordered_common_ids[i],
+            'Sample 2': ordered_common_ids[j],
+            f'Distance in {label1}': distances1[idx],
+            f'Distance in {label2}': distances2[idx],
+            'Absolute Difference': distance_diffs[idx],
+            'Ratio (M2/M1)': distances2[idx] / distances1[idx]
+        })
+    
+    # Create DataFrame for displaying the results
+    diff_df = pd.DataFrame(largest_diff_data)
+    
+    # Save to CSV
+    diff_csv_path = os.path.join(output_dir, "largest_distance_differences.csv")
+    diff_df.to_csv(diff_csv_path, index=False)
+    print(f"Saved list of largest distance differences to {diff_csv_path}")
+    
+    plt.close('all')
+    return output_path
+
+def analyze_distance_ratio_preservation(csv_path1, csv_path2, output_dir, label1="Method 1", label2="Method 2"):
+    """
+    Analyze how well pairwise distance ratios are preserved between two methods.
+    
+    This function compares the preservation of relative distances between sample pairs across two methods:
+    - For each sample (s1), we analyze whether the distance ratios between pairs (s1,s2) and (s1,s3) are preserved
+    - A high correlation of distance ratios indicates that the relative distances between samples are preserved,
+      even if the absolute scaling of the distances changes.
+      
+    Args:
+        csv_path1: Path to first feature CSV file
+        csv_path2: Path to second feature CSV file
+        output_dir: Directory to save the visualization
+        label1: Label for first dataset
+        label2: Label for second dataset
+    """
+    print("\n" + "="*80)
+    print("Analyzing distance ratio preservation...")
+    
+    # Load feature data from both CSV files using the same logic as other functions
+    dataframes = []
+    feature_sets = []
+    sample_ids = []
+    
+    for i, csv_path in enumerate([csv_path1, csv_path2]):
+        print(f"Loading features from {csv_path}")
+        df = pd.read_csv(csv_path)
+        
+        # Figure out the feature columns using the same logic as in create_comparative_umap
+        feature_cols = []
+        layer_cols = [col for col in df.columns if col.startswith('layer20_feat_')]
+        if layer_cols:
+            feature_cols = layer_cols
+            print(f"Found {len(feature_cols)} feature columns with prefix 'layer20_feat_'")
+        else:
+            feat_cols = [col for col in df.columns if col.startswith('feat_')]
+            if feat_cols:
+                feature_cols = feat_cols
+                print(f"Found {len(feature_cols)} feature columns with prefix 'feat_'")
+            else:
+                for prefix in ['feature_', 'f_', 'layer']:
+                    cols = [col for col in df.columns if col.startswith(prefix)]
+                    if cols:
+                        feature_cols = cols
+                        print(f"Found {len(feature_cols)} feature columns with prefix '{prefix}'")
+                        break
+        
+        if not feature_cols:
+            non_feature_cols = ['bbox', 'cluster', 'label', 'id', 'index', 'tsne', 'umap', 'var', 'Var']
+            numeric_cols = df.select_dtypes(include=['float64', 'int64']).columns
+            feature_cols = [col for col in numeric_cols if not any(col.lower().startswith(x.lower()) for x in non_feature_cols)]
+            
+            if feature_cols:
+                print(f"Detected {len(feature_cols)} potential feature columns based on numeric data type")
+        
+        if not feature_cols:
+            print(f"No feature columns found in {csv_path}")
+            return
+        
+        # Extract features
+        features = df[feature_cols].values
+        
+        # Get sample identifiers (same logic as in create_comparative_umap)
+        if 'Var1' in df.columns:
+            ids = df['Var1'].tolist()
+        elif 'id' in df.columns:
+            ids = df['id'].tolist()
+        else:
+            ids = [f"sample_{i}" for i in range(len(df))]
+        
+        # Store data
+        dataframes.append(df)
+        feature_sets.append(features)
+        sample_ids.append(ids)
+    
+    # Standardize the features
+    scaler1 = StandardScaler()
+    scaler2 = StandardScaler()
+    scaled_features1 = scaler1.fit_transform(feature_sets[0])
+    scaled_features2 = scaler2.fit_transform(feature_sets[1])
+    
+    # Handle different dimensions if necessary
+    if feature_sets[0].shape[1] != feature_sets[1].shape[1]:
+        print(f"Feature dimensions don't match: {feature_sets[0].shape[1]} vs {feature_sets[1].shape[1]}")
+        print("Reducing feature dimensions to a common space before distance calculation")
+        
+        # Determine the target dimension - use the smaller of the two or a fixed value
+        target_dim = min(feature_sets[0].shape[1], feature_sets[1].shape[1])
+        target_dim = min(64, target_dim)  # Set a maximum dimension for computation efficiency
+        
+        print(f"Reducing both feature sets to {target_dim} dimensions")
+        
+        # Apply PCA or UMAP for dimensionality reduction
+        try:
+            # Try UMAP first for better preservation of relationships
+            reducer1 = umap.UMAP(n_components=target_dim, random_state=42)
+            reducer2 = umap.UMAP(n_components=target_dim, random_state=42)
+            reduced_features1 = reducer1.fit_transform(scaled_features1)
+            reduced_features2 = reducer2.fit_transform(scaled_features2)
+            print(f"Successfully reduced features using UMAP to dimension {target_dim}")
+        except Exception as e:
+            print(f"UMAP reduction failed: {str(e)}")
+            # Fall back to PCA if UMAP fails
+            from sklearn.decomposition import PCA
+            reducer1 = PCA(n_components=target_dim, random_state=42)
+            reducer2 = PCA(n_components=target_dim, random_state=42)
+            reduced_features1 = reducer1.fit_transform(scaled_features1)
+            reduced_features2 = reducer2.fit_transform(scaled_features2)
+            print(f"Successfully reduced features using PCA to dimension {target_dim}")
+        
+        # Update the feature sets with the reduced dimensions
+        scaled_features1 = reduced_features1
+        scaled_features2 = reduced_features2
+    
+    # Find common samples between the two datasets
+    set1 = set(sample_ids[0])
+    set2 = set(sample_ids[1])
+    common_ids = list(set1.intersection(set2))
+    
+    if not common_ids:
+        print("No common samples found between the two feature sets")
+        return
+    
+    print(f"Found {len(common_ids)} common samples between the two feature sets")
+    
+    # Create dictionaries to map sample IDs to row indices
+    id_to_idx_1 = {id_val: idx for idx, id_val in enumerate(sample_ids[0])}
+    id_to_idx_2 = {id_val: idx for idx, id_val in enumerate(sample_ids[1])}
+    
+    # Extract features for common samples only and ensure they have same ordering
+    common_features1 = []
+    common_features2 = []
+    ordered_common_ids = []
+    
+    for sample_id in common_ids:
+        idx1 = id_to_idx_1.get(sample_id)
+        idx2 = id_to_idx_2.get(sample_id)
+        
+        if idx1 is not None and idx2 is not None:
+            common_features1.append(scaled_features1[idx1])
+            common_features2.append(scaled_features2[idx2])
+            ordered_common_ids.append(sample_id)
+    
+    common_features1 = np.array(common_features1)
+    common_features2 = np.array(common_features2)
+    
+    # Compute pairwise distances within each method
+    print("Computing pairwise distances...")
+    from scipy.spatial.distance import pdist, squareform
+    
+    # Calculate full distance matrices
+    dist_matrix1 = squareform(pdist(common_features1, metric='euclidean'))
+    dist_matrix2 = squareform(pdist(common_features2, metric='euclidean'))
+    
+    # Analysis of distance ratio preservation
+    print("Analyzing distance ratio preservation...")
+    
+    n_samples = len(common_features1)
+    
+    # For each sample, calculate the ratio of distances to all other samples
+    # and compare these ratios between the two methods
+    ratio_correlations = []
+    ratio_preservation_data = []
+    
+    # Create a figure for visualizing ratio preservation for individual samples
+    n_display_samples = min(9, n_samples)  # Display max 9 samples
+    display_samples = np.random.choice(range(n_samples), n_display_samples, replace=False)
+    
+    # Create subplot grid for sample-specific visualizations
+    rows = int(np.ceil(np.sqrt(n_display_samples)))
+    cols = int(np.ceil(n_display_samples / rows))
+    fig, axes = plt.subplots(rows, cols, figsize=(15, 15))
+    if rows == 1 and cols == 1:
+        axes = np.array([axes])
+    axes = axes.flatten()
+    
+    # For each sample, calculate the preservation of distance ratios
+    for i in range(n_samples):
+        # Get distances from sample i to all other samples in both methods
+        distances1 = dist_matrix1[i, :]
+        distances2 = dist_matrix2[i, :]
+        
+        # Skip the distance to itself
+        distances1 = np.concatenate([distances1[:i], distances1[i+1:]])
+        distances2 = np.concatenate([distances2[:i], distances2[i+1:]])
+        
+        # Check if we have enough distances to calculate meaningful ratios
+        if len(distances1) < 2:
+            continue
+            
+        # Calculate all pairwise ratios within distances1
+        ratios1 = []
+        ratios2 = []
+        dist_pairs = []
+        
+        # For all pairs of distances, calculate the ratio
+        for j in range(len(distances1)):
+            for k in range(j+1, len(distances1)):
+                # Skip if distances are zero or very small
+                if distances1[j] < 1e-6 or distances1[k] < 1e-6 or distances2[j] < 1e-6 or distances2[k] < 1e-6:
+                    continue
+                    
+                # Calculate ratios: distance to j / distance to k
+                ratio1 = distances1[j] / distances1[k]
+                ratio2 = distances2[j] / distances2[k]
+                
+                # Store ratios and corresponding distance pair indices
+                ratios1.append(ratio1)
+                ratios2.append(ratio2)
+                dist_pairs.append((j, k))
+        
+        # Calculate correlation between the ratios
+        if len(ratios1) > 1:
+            correlation = np.corrcoef(ratios1, ratios2)[0, 1]
+            ratio_correlations.append(correlation)
+            
+            # Store data for the sample
+            sample_data = {
+                'sample_id': ordered_common_ids[i],
+                'ratio_correlation': correlation,
+                'mean_ratio_method1': np.mean(ratios1),
+                'mean_ratio_method2': np.mean(ratios2),
+                'std_ratio_method1': np.std(ratios1),
+                'std_ratio_method2': np.std(ratios2),
+                'num_ratios': len(ratios1)
+            }
+            ratio_preservation_data.append(sample_data)
+            
+            # If this is one of the randomly selected samples, visualize its ratio preservation
+            if i in display_samples:
+                ax_idx = np.where(display_samples == i)[0][0]
+                ax = axes[ax_idx]
+                
+                # Create scatter plot of ratios
+                ax.scatter(ratios1, ratios2, alpha=0.7, s=30, edgecolors='navy', linewidths=0.5)
+                
+                # Add reference line for y=x
+                min_val = min(min(ratios1), min(ratios2))
+                max_val = max(max(ratios1), max(ratios2))
+                padding = (max_val - min_val) * 0.05
+                ax.plot([min_val-padding, max_val+padding], [min_val-padding, max_val+padding], 'r--', alpha=0.6)
+                
+                # Add regression line
+                from scipy import stats
+                if len(ratios1) > 1:  # Need at least 2 points for regression
+                    slope, intercept, r_value, p_value, std_err = stats.linregress(ratios1, ratios2)
+                    ax.plot(np.array([min_val-padding, max_val+padding]), 
+                            intercept + slope*np.array([min_val-padding, max_val+padding]), 
+                            'g-', alpha=0.7)
+                
+                # Set axis limits with some padding
+                ax.set_xlim(min_val-padding, max_val+padding)
+                ax.set_ylim(min_val-padding, max_val+padding)
+                
+                # Add correlation coefficient to the plot
+                ax.set_title(f"Sample: {ordered_common_ids[i]}\nr = {correlation:.3f}")
+                
+                # Only add axis labels to bottom and left plots
+                if ax_idx >= (rows-1) * cols:  # Bottom row
+                    ax.set_xlabel(f"Distance Ratios in {label1}")
+                if ax_idx % cols == 0:  # Left column
+                    ax.set_ylabel(f"Distance Ratios in {label2}")
+    
+    # Hide unused subplots
+    for j in range(n_display_samples, len(axes)):
+        axes[j].axis('off')
+    
+    plt.tight_layout()
+    
+    # Create output directory if it doesn't exist
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Save the sample-specific ratio preservation plot
+    sample_ratio_path = os.path.join(output_dir, "sample_ratio_preservation.png")
+    plt.savefig(sample_ratio_path, dpi=300)
+    print(f"Saved sample-specific ratio preservation analysis to {sample_ratio_path}")
+    
+    # Create a correlation distribution plot
+    plt.figure(figsize=(10, 6))
+    plt.hist(ratio_correlations, bins=20, alpha=0.7, color='skyblue', edgecolor='black')
+    plt.axvline(x=np.mean(ratio_correlations), color='r', linestyle='-', alpha=0.7, 
+                label=f'Mean: {np.mean(ratio_correlations):.3f}')
+    plt.axvline(x=np.median(ratio_correlations), color='g', linestyle='--', alpha=0.7,
+                label=f'Median: {np.median(ratio_correlations):.3f}')
+    
+    plt.xlabel('Correlation of Distance Ratios', fontsize=14)
+    plt.ylabel('Number of Samples', fontsize=14)
+    plt.title('Distribution of Distance Ratio Correlation by Sample', fontsize=16)
+    plt.legend()
+    plt.grid(alpha=0.3)
+    
+    # Save the correlation distribution plot
+    corr_dist_path = os.path.join(output_dir, "ratio_correlation_distribution.png")
+    plt.savefig(corr_dist_path, dpi=300)
+    print(f"Saved ratio correlation distribution to {corr_dist_path}")
+    
+    # Create a DataFrame with the ratio preservation results
+    ratio_df = pd.DataFrame(ratio_preservation_data)
+    
+    # Sort by correlation (descending)
+    ratio_df = ratio_df.sort_values('ratio_correlation', ascending=False)
+    
+    # Save the results to CSV
+    ratio_csv_path = os.path.join(output_dir, "ratio_preservation_by_sample.csv")
+    ratio_df.to_csv(ratio_csv_path, index=False)
+    print(f"Saved detailed ratio preservation data to {ratio_csv_path}")
+    
+    # Calculate the preservation of the rank order of distances
+    print("Analyzing rank order preservation of distances...")
+    
+    # Flatten the distance matrices (excluding the diagonal)
+    distances1 = []
+    distances2 = []
+    sample_pairs = []
+    
+    for i in range(n_samples):
+        for j in range(i+1, n_samples):
+            distances1.append(dist_matrix1[i, j])
+            distances2.append(dist_matrix2[i, j])
+            sample_pairs.append((ordered_common_ids[i], ordered_common_ids[j]))
+    
+    # Create ranks
+    rank1 = np.argsort(np.argsort(distances1))  # Ranks of distances in method 1
+    rank2 = np.argsort(np.argsort(distances2))  # Ranks of distances in method 2
+    
+    # Calculate Spearman correlation between ranks
+    spearman_corr = np.corrcoef(rank1, rank2)[0, 1]
+    
+    print(f"Spearman rank correlation of distances: {spearman_corr:.4f}")
+    
+    # Create a scatter plot of distance ranks
+    plt.figure(figsize=(10, 8))
+    plt.scatter(rank1, rank2, alpha=0.5, s=20)
+    plt.plot([0, len(distances1)], [0, len(distances1)], 'r--', alpha=0.6)
+    
+    plt.xlabel(f'Distance Rank in {label1}', fontsize=14)
+    plt.ylabel(f'Distance Rank in {label2}', fontsize=14)
+    plt.title(f'Preservation of Distance Ranking\nSpearman Correlation: {spearman_corr:.4f}', fontsize=16)
+    plt.grid(alpha=0.3)
+    
+    # Save the rank correlation plot
+    rank_path = os.path.join(output_dir, "distance_rank_correlation.png")
+    plt.savefig(rank_path, dpi=300)
+    print(f"Saved distance rank correlation plot to {rank_path}")
+    
+    # Create a plot to visualize the overall pattern of distance ratio preservation
+    plt.figure(figsize=(12, 10))
+    
+    # For each original distance in method 1, plot the corresponding distance in method 2
+    # Color by the stability of ratios involving this distance
+    
+    # For each distance pair (i,j), calculate the consistency of its ratios
+    # with all other distances
+    ratio_consistency = np.zeros(len(distances1))
+    
+    for idx, (d1, d2) in enumerate(zip(distances1, distances2)):
+        # Skip if distance is very small
+        if d1 < 1e-6 or d2 < 1e-6:
+            continue
+            
+        # For this distance pair, get ratios with all other distances
+        curr_ratios1 = []
+        curr_ratios2 = []
+        
+        for other_idx, (other_d1, other_d2) in enumerate(zip(distances1, distances2)):
+            if idx == other_idx or other_d1 < 1e-6 or other_d2 < 1e-6:
+                continue
+                
+            # Calculate ratio
+            curr_ratios1.append(d1 / other_d1)
+            curr_ratios2.append(d2 / other_d2)
+        
+        # Calculate correlation of ratios for this distance pair
+        if len(curr_ratios1) > 1:
+            ratio_consistency[idx] = np.corrcoef(curr_ratios1, curr_ratios2)[0, 1]
+        
+    # Use a colormap to visualize the ratio consistency
+    plt.scatter(distances1, distances2, c=ratio_consistency, cmap='viridis', 
+                s=30, alpha=0.7, edgecolors='gray', linewidths=0.5)
+    
+    # Add colorbar
+    cbar = plt.colorbar()
+    cbar.set_label('Ratio Preservation (Correlation)', fontsize=12)
+    
+    # Add reference line
+    min_val = min(min(distances1), min(distances2))
+    max_val = max(max(distances1), max(distances2))
+    padding = (max_val - min_val) * 0.05
+    plt.plot([min_val-padding, max_val+padding], [min_val-padding, max_val+padding], 'r--', alpha=0.6)
+    
+    # Add regression line
+    slope, intercept, r_value, p_value, std_err = stats.linregress(distances1, distances2)
+    plt.plot(np.array([min_val-padding, max_val+padding]), 
+             intercept + slope*np.array([min_val-padding, max_val+padding]), 
+             'g-', alpha=0.7, label=f'Regression line (slope={slope:.3f})')
+    
+    plt.xlabel(f'Distances in {label1}', fontsize=14)
+    plt.ylabel(f'Distances in {label2}', fontsize=14)
+    plt.title(f'Distance Correlation with Ratio Preservation Coloring\nMean Ratio Correlation: {np.mean(ratio_correlations):.4f}', fontsize=16)
+    plt.legend()
+    plt.grid(alpha=0.3)
+    
+    # Save the ratio preservation plot
+    ratio_pres_path = os.path.join(output_dir, "distance_ratio_preservation.png")
+    plt.savefig(ratio_pres_path, dpi=300)
+    print(f"Saved distance ratio preservation analysis to {ratio_pres_path}")
+    
+    # Create a comprehensive report
+    report = {
+        'mean_ratio_correlation': float(np.mean(ratio_correlations)),
+        'median_ratio_correlation': float(np.median(ratio_correlations)),
+        'distance_spearman_correlation': float(spearman_corr),
+        'num_samples': n_samples,
+        'total_distance_pairs': len(distances1),
+        'feature_dimensions': {'method1': feature_sets[0].shape[1], 'method2': feature_sets[1].shape[1]},
+        'distance_correlation': float(np.corrcoef(distances1, distances2)[0, 1]),
+        'distance_ratio': float(np.mean(np.array(distances2) / np.array(distances1)))
+    }
+    
+    # Save report to JSON
+    report_path = os.path.join(output_dir, "distance_ratio_analysis_report.json")
+    with open(report_path, 'w') as f:
+        json.dump(report, f, indent=4)
+    print(f"Saved comprehensive analysis report to {report_path}")
+    
+    # Print summary
+    print("\nAnalysis Summary:")
+    print(f"Mean ratio correlation: {report['mean_ratio_correlation']:.4f}")
+    print(f"Distance rank correlation: {report['distance_spearman_correlation']:.4f}")
+    print(f"Distance correlation: {report['distance_correlation']:.4f}")
+    print(f"Average distance scaling factor (Method2/Method1): {report['distance_ratio']:.4f}")
+    
+    # Interpretation
+    print("\nInterpretation:")
+    if report['mean_ratio_correlation'] > 0.7:
+        print("EXCELLENT ratio preservation: The methods preserve distance ratios very well")
+    elif report['mean_ratio_correlation'] > 0.5:
+        print("GOOD ratio preservation: The methods generally preserve distance ratios")
+    elif report['mean_ratio_correlation'] > 0.3:
+        print("MODERATE ratio preservation: The methods somewhat preserve distance ratios")
+    else:
+        print("POOR ratio preservation: The methods do not preserve distance ratios well")
+        
+    if report['distance_spearman_correlation'] > 0.7:
+        print("EXCELLENT rank preservation: The relative ordering of distances is well preserved")
+    elif report['distance_spearman_correlation'] > 0.5:
+        print("GOOD rank preservation: The relative ordering of distances is largely preserved")
+    elif report['distance_spearman_correlation'] > 0.3:
+        print("MODERATE rank preservation: The relative ordering of distances is somewhat preserved")
+    else:
+        print("POOR rank preservation: The relative ordering of distances is not well preserved")
+    
+    # Return success
+    plt.close('all')
+    return True
+
+def main():
+    # for feature extraction stage specific layer20 and standard comparison
+    # default_csv_file1 = r"C:\Users\alim9\Documents\codes\synapse2\results\features\intelligent_cropping\layer20\features_extraction_stage_specific_layer20_segNone_alphaNone_intelligent_crop_w7\features_layer20_segNone_alphaNone.csv"
+    # default_csv_file2 = r"C:\Users\alim9\Documents\codes\synapse2\results\features\intelligent_cropping\standard\features_extraction_standard_segNone_alphaNone_intelligent_crop_w7\features_segNone_alphaNone.csv"
+    # default_output_dir = r"C:\Users\alim9\Documents\codes\synapse2\results\features\intelligent_cropping\method_comparision"
+    # method1_label = "layer20"
+    # method2_label = "standard"
+    # # for preprocessing method comparison
+    default_csv_file1 = r"C:\Users\alim9\Documents\codes\synapse2\results\features\layer20\intelligent_cropping\features_extraction_stage_specific_layer20_segNone_alphaNone\features_layer20_segNone_alphaNone.csv"
+    default_csv_file2 = r"C:\Users\alim9\Documents\codes\synapse2\results\features\layer20\normal\features_extraction_stage_specific_layer20_segNone_alphaNone_intelligent_crop_w7\features_layer20_segNone_alphaNone.csv"
+    default_output_dir = r"C:\Users\alim9\Documents\codes\synapse2\results\features\layer20\comparision"
+    method1_label = "Intelligent Cropping"
+    method2_label = "Normal"
+    parser = argparse.ArgumentParser(description="Compare features from different CSV files and create visualizations")
+    parser.add_argument("--csv1", default=default_csv_file1, help="Path to first feature CSV file")
+    parser.add_argument("--csv2", default=default_csv_file2, help="Path to second feature CSV file")
+    parser.add_argument("--output_dir", default=default_output_dir, help="Directory to save visualizations")
+    parser.add_argument("--label1", default=method1_label, help="Label for first dataset")
+    parser.add_argument("--label2", default=method2_label, help="Label for second dataset")
+    parser.add_argument("--max_pairs", type=int, default=50, help="Maximum number of connected sample pairs to display")
+    parser.add_argument("--visualization", choices=["umap", "correlation", "2d_correlation", "distance_correlation", "ratio_preservation", "all"], default="all", 
+                        help="Type of visualization to create")
+    
+    args = parser.parse_args()
+    
+    # Create output directory
+    os.makedirs(args.output_dir, exist_ok=True)
+    
+    # Create visualizations based on the selected type
+    if args.visualization in ["umap", "all"]:
+        create_comparative_umap(
+            args.csv1, 
+            args.csv2, 
+            args.output_dir,
+            label1=args.label1,
+            label2=args.label2,
+            max_pairs=args.max_pairs
+        )
+    
+    if args.visualization in ["correlation", "all"]:
+        create_correlation_scatter_plot(
+            args.csv1,
+            args.csv2,
+            args.output_dir,
+            label1=args.label1,
+            label2=args.label2
+        )
+    
+    if args.visualization in ["2d_correlation", "all"]:
+        create_2d_correlation_scatter_plot(
+            args.csv1,
+            args.csv2,
+            args.output_dir,
+            label1=args.label1,
+            label2=args.label2
+        )
+        
+    if args.visualization in ["distance_correlation", "all"]:
+        create_distance_correlation_plot(
+            args.csv1,
+            args.csv2,
+            args.output_dir,
+            label1=args.label1,
+            label2=args.label2
+        )
+        
+    if args.visualization in ["ratio_preservation", "all"]:
+        analyze_distance_ratio_preservation(
+            args.csv1,
+            args.csv2,
+            args.output_dir,
+            label1=args.label1,
+            label2=args.label2
+        )
 
 if __name__ == "__main__":
     main() 
