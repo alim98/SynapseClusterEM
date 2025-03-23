@@ -6,9 +6,9 @@ class SynapseConfig:
         self.raw_base_dir = 'data3/7_bboxes_plus_seg/raw'
         self.seg_base_dir = 'data3/7_bboxes_plus_seg/seg'
         self.add_mask_base_dir = 'data3/vesicle_cloud__syn_interface__mitochondria_annotation'
-        # self.bbox_name = ['bbox1']
-        self.bbox_name = ['bbox1', 'bbox2', 'bbox3', 'bbox4', 'bbox5', 'bbox6', 'bbox7']
-        self.excel_file = 'data/7_bboxes_plus_seg'
+        self.bbox_name = ['bbox1']
+        # self.bbox_name = ['bbox1', 'bbox2', 'bbox3', 'bbox4', 'bbox5', 'bbox6', 'bbox7']
+        self.excel_file = 'data3/7_bboxes_plus_seg'
         self.csv_output_dir = 'results/csv_outputs'
         self.size = (80, 80)
         self.subvol_size = 80
