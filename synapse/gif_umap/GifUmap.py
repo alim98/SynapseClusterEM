@@ -975,7 +975,7 @@ if __name__ == "__main__":
     
     # Define paths
     csv_path = r"C:\Users\alim9\Documents\codes\synapse2\results\run_2025-03-14_15-50-53\features_layer20_seg10_alpha1.0\features_layer20_seg10_alpha1_0.csv"  # Replace with your actual CSV path
-    output_path = "results/test5"  # Replace with your desired output directory
+    output_path = "results/test66"  # Replace with your desired output directory
     # Create output directory if it doesn't exist
     output_dir = Path(output_path)
     output_dir.mkdir(parents=True, exist_ok=True)
