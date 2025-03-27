@@ -1,5 +1,5 @@
 """
-Utility functions and helpers.
+Utility functions and configuration for synapse analysis.
 """
 
 from synapse.utils.config import SynapseConfig

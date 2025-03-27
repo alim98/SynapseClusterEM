@@ -1,15 +1,13 @@
 """
-Synapse Analysis Package
-
-A framework for 3D synapse data analysis, feature extraction and clustering.
+Synapse package for synapse analysis and visualization.
 """
 
 __version__ = '0.1.0'
 
 # Import commonly used components
 from synapse.models import Vgg3D, load_model_from_checkpoint
-from newdl.dataset2 import SynapseDataset, SynapseDataset2
-from newdl.dataloader2 import Synapse3DProcessor, SynapseDataLoader
+from synapse.data.dataset import SynapseDataset, SynapseDataset2
+from synapse.data.dataloader import Synapse3DProcessor, SynapseDataLoader
 from synapse.utils import config
 from synapse.visualization import create_gif_from_volume, visualize_specific_sample, visualize_all_samples_from_bboxes
 from synapse.clustering import (

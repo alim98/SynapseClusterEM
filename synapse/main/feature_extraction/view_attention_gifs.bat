@@ -1,0 +1,3 @@
+@echo off
+echo Starting Attention GIF Viewer...
+python view_attention_gifs.py 

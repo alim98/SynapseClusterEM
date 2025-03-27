@@ -431,8 +431,8 @@ def main():
     model = model.to(device)
     
     # Define layers to analyze (early, middle, late)
-    layers = ["features.3", "features.6", "features.9", "features.20", "features.27"]
-    layer_names = ["Early (Layer 3)", "Early-Mid (Layer 6)", "Mid-Low (Layer 9)", "Mid-High (Layer 20)", "Late (Layer 27)"]
+    layers = ["features.20"]
+    layer_names = ["Mid-High (Layer 20)"]
     
     # Determine which samples to process
     if args.specific_indices is not None:
