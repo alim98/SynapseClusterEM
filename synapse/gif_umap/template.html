@@ -37,6 +37,23 @@
             height: 6px;
             border-radius: 50%;
             transform: translate(-50%, -50%);
+            cursor: pointer; /* Add cursor pointer for points */
+        }
+        /* Add tooltip style for points */
+        .point:hover::after {
+            content: attr(data-tooltip);
+            position: absolute;
+            top: -30px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            white-space: nowrap;
+            z-index: 100;
+            pointer-events: none;
         }
         .gif-container {
             position: absolute;
@@ -486,6 +503,9 @@
                     pointElem.style.left = `${plotX}px`;
                     pointElem.style.top = `${plotY}px`;
                     pointElem.style.backgroundColor = sample.color;
+                    
+                    // Add tooltip data for hovering
+                    pointElem.setAttribute('data-tooltip', ` ${sample.bbox_name}, ${sample.var1}`);
                     
                     // Make points with GIFs larger
                     if (sample.hasGif) {

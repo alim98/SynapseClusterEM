@@ -689,6 +689,21 @@ def create_animated_gif_visualization(features_df, gif_paths, output_dir, dim_re
             else:
                 color = 'rgb(100, 100, 100)'
             
+            # Get bbox_name and Var1 for tooltip
+            bbox_name = row.get('bbox_name', 'unknown')
+            var1 = row.get('Var1', f'sample_{idx}')
+            
+            # Convert to strings and escape any special characters
+            if hasattr(bbox_name, 'item'):
+                bbox_name = str(bbox_name.item())
+            else:
+                bbox_name = str(bbox_name)
+                
+            if hasattr(var1, 'item'):
+                var1 = str(var1.item())
+            else:
+                var1 = str(var1)
+                
             # Add this point to the samples array - make sure we have a valid number before adding
             if not (np.isnan(x) or np.isnan(y)):
                 points_content += f"""
@@ -697,7 +712,9 @@ def create_animated_gif_visualization(features_df, gif_paths, output_dir, dim_re
                     "x": {x},
                     "y": {y},
                     "color": "{color}",
-                    "hasGif": {str(idx in gif_paths).lower()}
+                    "hasGif": {str(idx in gif_paths).lower()},
+                    "bbox_name": "{bbox_name}",
+                    "var1": "{var1}"
                 }},"""
     
     # Count how many valid points we have
