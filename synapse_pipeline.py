@@ -424,9 +424,9 @@ class SynapsePipeline:
             self.extract_features(seg_type, alpha, extraction_method, layer_num)
             self.cluster_features()
             self.create_dimension_reduction_visualizations()
-            self.create_cluster_sample_visualizations(num_samples, attention_layer)
-            self.analyze_bounding_boxes_in_clusters()
-            self.run_presynapse_analysis()
+            # self.create_cluster_sample_visualizations(num_samples, attention_layer)
+            # self.analyze_bounding_boxes_in_clusters()
+            # self.run_presynapse_analysis()
             
             print(f"Pipeline completed successfully! All results are in: {self.results_parent_dir}")
             

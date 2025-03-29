@@ -133,6 +133,7 @@ def initialize_dataset_from_newdl():
                 
         # Initialize processor
         processor = Synapse3DProcessor(size=config.size)
+        processor.normalize_volume = False  # Disable volume normalization
         
         # Create dataset
         dataset = SynapseDataset(
@@ -142,7 +143,8 @@ def initialize_dataset_from_newdl():
             segmentation_type=config.segmentation_type,
             subvol_size=config.subvol_size,
             num_frames=config.num_frames,
-            alpha= config.alpha
+            alpha=config.alpha,
+            normalize_across_volume=False  # Disable volume normalization
         )
         
         print(f"Successfully created dataset with {len(dataset)} samples")
@@ -224,7 +226,7 @@ def create_gif_from_volume(volume, output_path, fps=10):
         fps: Frames per second
         
     Returns:
-        Tuple of (output_path, frames) where frames is a list of normalized frame data
+        Tuple of (output_path, frames) where frames is a list of frame data for web display
     """
     # Convert PyTorch tensor to numpy if needed
     if isinstance(volume, torch.Tensor):
@@ -238,33 +240,29 @@ def create_gif_from_volume(volume, output_path, fps=10):
     if volume.ndim > 3:
         volume = np.squeeze(volume)
     
-    # Apply min-max normalization to enhance contrast
-    enhanced_frames = []
+    # Prepare frames for GIF
+    frames = []
     
-    # Calculate global min/max for consistent scaling
-    vol_min, vol_max = volume.min(), volume.max()
-    scale_factor = vol_max - vol_min
-    
-    if scale_factor > 0:  # Avoid division by zero
-        for i in range(volume.shape[0]):
-            frame = volume[i]
-            # Normalize using global min/max
-            normalized = (frame - vol_min) / scale_factor
-            enhanced_frames.append((normalized * 255).astype(np.uint8))
-    else:
-        # If all values are the same, create blank frames
-        for i in range(volume.shape[0]):
-            enhanced_frames.append(np.zeros_like(volume[i], dtype=np.uint8))
+    # Just convert the frames to uint8 range without normalization to preserve consistent gray values
+    for i in range(volume.shape[0]):
+        frame = volume[i]
+        # Scale to 0-255 if not already in that range
+        if frame.max() <= 1.0:
+            frame = (frame * 255).astype(np.uint8)
+        else:
+            # Clip to valid range if needed
+            frame = np.clip(frame, 0, 255).astype(np.uint8)
+        frames.append(frame)
     
     # Create directory if it doesn't exist
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     
-    # Save as GIF with reduced size (lower fps and scale)
-    imageio.mimsave(output_path, enhanced_frames, fps=fps)
+    # Save as GIF
+    imageio.mimsave(output_path, frames, fps=fps)
     
     # Convert frames to base64-encoded PNGs for web display
     frame_data = []
-    for frame in enhanced_frames:
+    for frame in frames:
         # Convert frame to PNG and then to base64
         with io.BytesIO() as output:
             Image.fromarray(frame).save(output, format="PNG")
@@ -975,7 +973,9 @@ if __name__ == "__main__":
     
     # Define paths
     csv_path = r"C:\Users\alim9\Documents\codes\synapse2\results\run_2025-03-14_15-50-53\features_layer20_seg10_alpha1.0\features_layer20_seg10_alpha1_0.csv"  # Replace with your actual CSV path
-    output_path = "results/test66"  # Replace with your desired output directory
+    output_path = "results/test5"  # Replace with your desired output directory
+    csv_path = r"C:\Users\alim9\Documents\codes\synapse2\results\extracted\seg12alpha1intelw7noprenorm\features_layer20_seg12_alpha1.0\features_layer20_seg12_alpha1_0.csv"
+    output_path = r"C:\Users\alim9\Documents\codes\synapse2\results\extracted\seg12alpha1intelw7noprenorm"
     # Create output directory if it doesn't exist
     output_dir = Path(output_path)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -1004,13 +1004,8 @@ if __name__ == "__main__":
     # Try to get dataset from different sources
     dataset = None
     
-    # First try to import from Clustering
-    try:
-        from Clustering import dataset
-        print("Using dataset from Clustering module")
-    except ImportError:
-        print("Dataset not available from Clustering module, trying to initialize from newdl...")
-        dataset = initialize_dataset_from_newdl()
+    print("Dataset not available from Clustering module, trying to initialize from newdl...")
+    dataset = initialize_dataset_from_newdl()
     
     # If we have a dataset, create the visualization
     if dataset is not None:

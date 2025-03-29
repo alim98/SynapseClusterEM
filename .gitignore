@@ -67,3 +67,5 @@ newdl/crop_comparison/preprocessing.7z
 newdl/crop_comparison/preprocessing/
 comparison_results3/
 synapse/gif_umap - Copy/
+test_output/*
+test_output_real/*

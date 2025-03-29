@@ -17,12 +17,14 @@ from sklearn.manifold import TSNE
 from datetime import datetime
 
 
-def load_feature_data(csv_path):
+def load_feature_data(csv_path, feature_prefix='feat_'):
     """
     Load feature data from CSV file and identify feature columns.
     
     Args:
         csv_path (str): Path to the CSV file containing feature data
+        feature_prefix (str): Prefix to identify feature columns (default: 'feat_')
+                              Can also be set to 'layer20_feat_' for layer-specific features.
         
     Returns:
         tuple: (DataFrame with all data, feature columns only, boolean indicating if cluster column exists)
@@ -30,11 +32,25 @@ def load_feature_data(csv_path):
     print(f"Loading data from {csv_path}")
     df = pd.read_csv(csv_path)
     
-    # Identify feature columns (assuming they start with 'feat_')
-    feature_cols = [col for col in df.columns if col.startswith('feat_')]
+    # Check for specific feature patterns
+    feat_cols = [col for col in df.columns if "feat_" in col]
+    layer20_feat_cols = [col for col in df.columns if "layer20_feat_" in col]
+    
+    # Prioritize layer20_feat_ columns if they exist
+    if layer20_feat_cols:
+        feature_cols = layer20_feat_cols
+        print(f"Found {len(feature_cols)} layer20_feat_* columns to use as features")
+    elif feat_cols:
+        feature_cols = feat_cols
+        print(f"Found {len(feature_cols)} feat_* columns to use as features")
+    else:
+        # If still no features found with the standard patterns, use the provided prefix
+        feature_cols = [col for col in df.columns if col.startswith(feature_prefix)]
+        if feature_cols:
+            print(f"Found {len(feature_cols)} columns starting with '{feature_prefix}'")
     
     if not feature_cols:
-        raise ValueError("No feature columns found in CSV. Feature columns should start with 'feat_'")
+        raise ValueError(f"No feature columns found in CSV. Feature columns should contain 'feat_' or 'layer20_feat_'")
     
     # Check if required columns exist
     has_cluster = 'cluster' in df.columns
@@ -47,7 +63,10 @@ def load_feature_data(csv_path):
         df['bbox_number'] = df['bbox_name']
     
     if not has_bbox:
-        raise ValueError("No bbox_name or bbox_number column found in CSV")
+        print("Warning: No bbox_name or bbox_number column found. Creating a dummy column.")
+        df['bbox_name'] = 1
+        df['bbox_number'] = 1
+        has_bbox = True
     
     # Check for vesicle_cloud_size
     has_vesicle_size = 'vesicle_cloud_size' in df.columns
@@ -507,6 +526,8 @@ def main():
                         help="Perplexity parameter for t-SNE (default: 30, will be automatically reduced for small datasets)")
     parser.add_argument("--n-neighbors", "-n", type=int, default=15,
                         help="Number of neighbors for UMAP (default: 15, will be automatically reduced for small datasets)")
+    parser.add_argument("--feature-prefix", "-f", type=str, default='feat_',
+                        help="Prefix for feature columns (default: 'feat_'). Only used if no columns with 'feat_' or 'layer20_feat_' are found.")
     
     args = parser.parse_args()
     # Create output directory if not specified
@@ -523,7 +544,7 @@ def main():
             timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
             args.output_dir = f"projections_{timestamp}"
     # Load data and create projections
-    df, feature_cols, has_cluster, has_vesicle_size = load_feature_data(args.csv_file)
+    df, feature_cols, has_cluster, has_vesicle_size = load_feature_data(args.csv_file, args.feature_prefix)
     
     # Small dataset warning
     if len(df) < 20:

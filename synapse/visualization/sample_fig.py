@@ -37,17 +37,30 @@ def create_gif_from_volume(volume, output_path, fps=10, loop=0):
         fps (int): Frames per second
         loop (int): Number of loops (0 for infinite)
     """
-    # Normalize to 0-255 for GIF
-    volume = (volume - volume.min()) / (volume.max() - volume.min()) * 255
-    volume = volume.astype(np.uint8)
+    # Import the normalize_cube_globally function for consistent grayscale
+    from newdl.dataloader2 import normalize_cube_globally
+    
+    # Convert PyTorch tensor to numpy if needed
+    if isinstance(volume, torch.Tensor):
+        volume = volume.cpu().detach().numpy()
+    
+    # If volume has more than 3 dimensions, squeeze it
+    if volume.ndim > 3:
+        volume = np.squeeze(volume)
+    
+    # Apply global normalization to ensure consistent grayscale values
+    normalized_volume = normalize_cube_globally(volume)
+    
+    # Scale to 8-bit for GIF
+    volume_8bit = (normalized_volume * 255).astype(np.uint8)
     
     # Create directory if it doesn't exist
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     
     # Save as GIF
     with imageio.get_writer(output_path, mode='I', fps=fps, loop=loop) as writer:
-        for i in range(volume.shape[0]):
-            writer.append_data(volume[i])
+        for i in range(volume_8bit.shape[0]):
+            writer.append_data(volume_8bit[i])
     
     logger.info(f"GIF saved to {output_path}")
 

@@ -15,7 +15,7 @@ class SynapseConfig:
         self.num_frames = 80
         self.save_gifs_dir = 'results/gifs'
         self.alpha = 1.0
-        self.segmentation_type = 10
+        self.segmentation_type = 12
         
         self.gray_color = 0.6
         
@@ -29,7 +29,7 @@ class SynapseConfig:
         self.dbscan_min_samples = 5  # Default min_samples parameter for DBSCAN
         
         # Feature extraction parameters
-        self.extraction_method = "standard"  # Options: "standard" or "stage_specific"
+        self.extraction_method = "stage_specific"  # Options: "standard" or "stage_specific"
         self.layer_num = 20  # Layer to extract features from when using stage_specific method
         self.preprocessing = 'intelligent_cropping'  # Options: 'normal' or 'intelligent_cropping'
         self.preprocessing_weights = 0.7 # it has opitons like 0.3 0.5 and 0.7

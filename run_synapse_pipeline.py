@@ -169,7 +169,7 @@ def main():
             # Continue with vesicle analysis
             if result is not None and 'features_df' in result:
                 log_print("Starting vesicle analysis...")
-                vesicle_analysis_results = analyze_vesicle_sizes(pipeline, result['features_df'])
+                # vesicle_analysis_results = analyze_vesicle_sizes(pipeline, result['features_df'])
                 log_print("Pipeline and vesicle analysis completed successfully!")
             else:
                 log_print("Pipeline failed to return usable results.")

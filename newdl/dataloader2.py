@@ -444,6 +444,99 @@ class SynapseDataLoader:
                 (add_mask_vol == cleft_label), z_start, z_end, y_start, y_end, x_start, x_end, (cx, cy, cz)
             )
             combined_mask_full = np.logical_or(cleft_closest,vesicle_closest)
+        elif segmentation_type == 11: # segtype 10 without mito
+            # Get cleft mask
+            cleft_closest = self.get_closest_component_mask(
+                (add_mask_vol == cleft_label), z_start, z_end, y_start, y_end, x_start, x_end, (cx, cy, cz)
+            )
+            pre_mask_full = mask_1_full if presynapse_side == 1 else mask_2_full
+            all_mito_mask = (add_mask_vol == mito_label)
+            
+            # Dilate the mitochondria mask by 2 voxels to create a safety margin
+            from scipy import ndimage
+            dilated_mito_mask = ndimage.binary_dilation(all_mito_mask, iterations=2)
+            
+            combined_temp = np.logical_or(cleft_closest, pre_mask_full)
+            # Exclude dilated mitochondria mask from the combined mask
+            combined_mask_full = np.logical_and(combined_temp, np.logical_not(dilated_mito_mask))
+        elif segmentation_type == 12: # vescile cloud with 25x25x25 bounding box
+            # Get the vesicle cloud mask
+            vesicle_cloud = self.get_closest_component_mask(
+                (add_mask_vol == vesicle_label), z_start, z_end, y_start, y_end, x_start, x_end, (cx, cy, cz)
+            )
+            
+            # Initial check - just make sure we have any vesicle pixels at all
+            vesicle_pixel_count = np.sum(vesicle_cloud)
+            total_volume_size = vesicle_cloud.size
+            vesicle_percentage = vesicle_pixel_count / total_volume_size
+            
+            # Only discard if there are literally no vesicle pixels found
+            if vesicle_pixel_count == 0:
+                print(f"Discarding sample: No vesicle pixels found at all (0 pixels)")
+                return None
+                
+            print(f"Initial vesicle cloud size: {vesicle_pixel_count} pixels ({vesicle_percentage:.6f}% of volume)")
+            
+            # Create a 25×25×25 bounding box around the center of the vesicle cloud
+            # but shifted toward the center of synapse (cx, cy, cz)
+            vesicle_coords = np.where(vesicle_cloud)
+            if len(vesicle_coords[0]) > 0:
+                # Find the center of the vesicle cloud
+                v_cz = int(np.mean(vesicle_coords[0]))
+                v_cy = int(np.mean(vesicle_coords[1]))
+                v_cx = int(np.mean(vesicle_coords[2]))
+                
+                # Calculate the shift vector from vesicle center toward synapse center
+                # Use a shift factor (0.5 means halfway toward synapse center)
+                shift_factor = 0.7
+                shift_z = int((cz - v_cz) * shift_factor)
+                shift_y = int((cy - v_cy) * shift_factor)
+                shift_x = int((cx - v_cx) * shift_factor)
+                
+                # Apply the shift to the vesicle center coordinates
+                v_cz += shift_z
+                v_cy += shift_y
+                v_cx += shift_x
+                
+                # Create a new empty mask
+                box_mask = np.zeros_like(vesicle_cloud, dtype=bool)
+                
+                # Define bounds for the 25×25×25 box
+                box_size = 12  # Half of 25 (12 on each side plus the center point)
+                z_min = max(0, v_cz - box_size)
+                z_max = min(box_mask.shape[0], v_cz + box_size + 1)
+                y_min = max(0, v_cy - box_size)
+                y_max = min(box_mask.shape[1], v_cy + box_size + 1)
+                x_min = max(0, v_cx - box_size)
+                x_max = min(box_mask.shape[2], v_cx + box_size + 1)
+                
+                # Set the box region to True
+                box_mask[z_min:z_max, y_min:y_max, x_min:x_max] = True
+                
+                # Calculate the total size of the bounding box (which might be smaller than 25×25×25 if near edges)
+                box_size_actual = np.sum(box_mask)
+                
+                # Intersection of vesicle cloud and the box
+                combined_mask_full = np.logical_and(vesicle_cloud, box_mask)
+                
+                # Check if the vesicle cloud occupies at least 5% of the 25×25×25 bounding box
+                # Reduced from 20% to 5% to be more lenient
+                min_box_percentage = 5.0 / 100  # 5% of the bounding box (reduced from 20%)
+                vesicle_in_box_count = np.sum(combined_mask_full)
+                box_percentage = vesicle_in_box_count / box_size_actual
+                
+                # Even for very small vesicle clouds, if they have at least 100 pixels, we'll keep them
+                min_pixel_count = 100
+                
+                if box_percentage < min_box_percentage and vesicle_in_box_count < min_pixel_count:
+                    print(f"Discarding sample: vesicle cloud too small in 25×25×25 box ({box_percentage:.2f}% < {min_box_percentage:.2f}%) and only {vesicle_in_box_count} pixels")
+                    print(f"Vesicle pixels in box: {vesicle_in_box_count} out of {box_size_actual} box pixels")
+                    return None
+                    
+                print(f"Vesicle in 25×25×25 box: {vesicle_in_box_count} pixels ({box_percentage:.2f}% of box)")
+            else:
+                # If no vesicle cloud is found, just use the original vesicle mask
+                combined_mask_full = vesicle_cloud
         else:
             raise ValueError(f"Unsupported segmentation type: {segmentation_type}")
 
