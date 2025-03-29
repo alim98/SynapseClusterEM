@@ -190,8 +190,7 @@ def run_cam_visualization(seg_types=[10, 11, 12, 13], n_samples=4):
     print("Loading data...")
     vol_data_dict, syn_df = load_and_prepare_data(config)
     processor = Synapse3DProcessor(size=config.size)
-    processor.normalize_volume = True  # Ensure volume-wide normalization
-    
+
     # Set device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = model.to(device)

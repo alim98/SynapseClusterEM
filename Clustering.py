@@ -41,8 +41,6 @@ syn_df = pd.concat([
 ])
 
 processor = Synapse3DProcessor(size=config.size)
-# Disable normalization for consistent gray values
-processor.normalize_volume = False
 
 dataset = SynapseDataset(
     vol_data_dict=vol_data_dict,

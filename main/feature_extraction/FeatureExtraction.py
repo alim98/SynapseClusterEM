@@ -80,8 +80,7 @@ class FeatureExtraction:
         
         # Initialize processor with volume-wide normalization
         self.processor = Synapse3DProcessor(size=self.config.size)
-        self.processor.normalize_volume = True  # Enable consistent normalization across volume
-        
+
         self.dataset = SynapseDataset(
             self.vol_data_dict, 
             self.syn_df, 

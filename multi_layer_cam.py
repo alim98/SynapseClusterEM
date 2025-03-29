@@ -400,12 +400,7 @@ def main():
     print("Loading data...")
     vol_data_dict, syn_df = load_and_prepare_data(config)
     processor = Synapse3DProcessor(size=config.size)
-    
-    # Set normalization settings - explicitly enforce volume-wide normalization
-    if hasattr(processor, 'normalize_volume'):
-        processor.normalize_volume = True
-        print("Set processor.normalize_volume = True")
-    
+   
     # Create dataset with explicit volume-wide normalization
     dataset = SynapseDataset(
         vol_data_dict=vol_data_dict,

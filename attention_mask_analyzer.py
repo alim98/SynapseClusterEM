@@ -1089,11 +1089,6 @@ def main():
     vol_data_dict, syn_df = load_and_prepare_data(config)
     processor = Synapse3DProcessor(size=config.size)
     
-    # Set normalization settings
-    if hasattr(processor, 'normalize_volume'):
-        processor.normalize_volume = True
-        print("Set processor.normalize_volume = True")
-    
     # Use the segmentation type specified in args
     segmentation_type = args.segmentation_type
     print(f"Using segmentation type: {segmentation_type}")
