@@ -27,13 +27,14 @@ from pathlib import Path
 import argparse
 from sklearn.cluster import KMeans
 
+# Import from newdl module instead of synapse
+from newdl.dataloader2 import SynapseDataLoader, Synapse3DProcessor
+from newdl.dataset2 import SynapseDataset
 from synapse import (
-    Synapse3DProcessor, 
-    SynapseDataLoader, 
+
     Vgg3D, 
     load_model_from_checkpoint,
-    SynapseDataset,
-    SynapseDataset2,
+
     config
 )
 

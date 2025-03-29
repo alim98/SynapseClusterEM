@@ -133,7 +133,6 @@ def initialize_dataset_from_newdl():
                 
         # Initialize processor
         processor = Synapse3DProcessor(size=config.size)
-        processor.normalize_volume = False  # Disable volume normalization
         
         # Create dataset
         dataset = SynapseDataset(
@@ -144,7 +143,7 @@ def initialize_dataset_from_newdl():
             subvol_size=config.subvol_size,
             num_frames=config.num_frames,
             alpha=config.alpha,
-            normalize_across_volume=False  # Disable volume normalization
+
         )
         
         print(f"Successfully created dataset with {len(dataset)} samples")

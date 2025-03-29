@@ -18,7 +18,10 @@ import imageio
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.append(project_root)
 
-from synapse import config, SynapseDataset, Synapse3DProcessor
+# Import from newdl module instead of synapse
+from newdl.dataloader2 import SynapseDataLoader, Synapse3DProcessor
+from newdl.dataset2 import SynapseDataset
+from synapse import config
 from synapse.data.dataloader import SynapseDataLoader
 from synapse.data.sample_fig import visualize_specific_sample
 from inference import (

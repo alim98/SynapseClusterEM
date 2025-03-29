@@ -17,8 +17,10 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 import seaborn as sns
 from sklearn.metrics import roc_curve, auc
 
-from synapse import config, SynapseDataset, Synapse3DProcessor
-from newdl.dataloader2 import SynapseDataLoader
+# Import from newdl module instead of synapse
+from newdl.dataloader2 import SynapseDataLoader, Synapse3DProcessor
+from newdl.dataset2 import SynapseDataset
+from synapse import config
 from inference import VGG3D, load_and_prepare_data
 # Import classes from multi_layer_cam.py
 from multi_layer_cam import SimpleGradCAM, normalize_globally, process_single_sample
@@ -1077,7 +1079,6 @@ def main():
     from synapse import config
     from newdl.dataset2 import SynapseDataset
     from inference import VGG3D, load_and_prepare_data
-    from synapse import Synapse3DProcessor
     
     print("Initializing model...")
     model = VGG3D()

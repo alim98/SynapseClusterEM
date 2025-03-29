@@ -23,9 +23,10 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..
 sys.path.append(project_root)
 print(f"Added project root to path: {project_root}")
 
+# Import from newdl module instead of synapse
+from newdl.dataloader2 import SynapseDataLoader, Synapse3DProcessor
+from newdl.dataset2 import SynapseDataset
 from synapse import config
-from synapse.data.dataloader import Synapse3DProcessor, SynapseDataLoader
-from synapse.data.dataset import SynapseDataset
 from inference import VGG3D, load_and_prepare_data
 from multi_layer_cam import SimpleGradCAM, process_single_sample  # Import the necessary functions
 

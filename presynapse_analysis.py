@@ -16,12 +16,11 @@ from sklearn.preprocessing import StandardScaler
 
 from presynapse_distance_analysis import compare_intra_inter_presynapse_distances, add_distance_comparison_to_report
 
-from synapse import (
-    SynapseDataLoader,
-    Synapse3DProcessor,
-    SynapseDataset,
-    config
-)
+# Import from newdl module instead of synapse
+from newdl.dataloader2 import SynapseDataLoader, Synapse3DProcessor
+from newdl.dataset2 import SynapseDataset
+from synapse import config
+
 
 
 def load_feature_data(feature_csv_path):

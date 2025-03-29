@@ -17,8 +17,11 @@ from pathlib import Path
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from multi_layer_cam import visualize_cluster_attention
 
+# Import from newdl module instead of synapse
+from newdl.dataloader2 import SynapseDataLoader, Synapse3DProcessor
+from newdl.dataset2 import SynapseDataset
 # Import necessary modules without implementing their functionality
-from synapse import config, SynapseDataset, Synapse3DProcessor
+from synapse import config
 from newdl.dataloader2 import SynapseDataLoader
 from inference import (
     extract_features, 

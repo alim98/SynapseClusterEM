@@ -364,7 +364,6 @@ class SynapseGUI:
     def setup_visualization_tab(self):
         """Set up the visualization tab for sample figure creation and preview"""
         try:
-            from synapse import SynapseDataLoader, Synapse3DProcessor, SynapseDataset, config
             import pandas as pd
             import torch
         except ImportError as e:
@@ -1065,7 +1064,11 @@ class SynapseGUI:
     
     def create_visualization(self):
         """Create a visualization for the selected sample"""
-        from synapse import Synapse3DProcessor, SynapseDataset, config
+        
+        # Import from newdl module instead of synapse
+        from newdl.dataloader2 import SynapseDataLoader, Synapse3DProcessor
+        from newdl.dataset2 import SynapseDataset
+        from synapse import  config
         import numpy as np
         from PIL import Image, ImageTk
         import matplotlib.pyplot as plt

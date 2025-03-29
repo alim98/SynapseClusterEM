@@ -8,12 +8,11 @@ import os
 import matplotlib.pyplot as plt
 from pathlib import Path
 
-from synapse import (
-    SynapseDataLoader, 
-    Synapse3DProcessor, 
-    SynapseDataset, 
-    config
-)
+# Import from newdl module instead of synapse
+from newdl.dataloader2 import SynapseDataLoader, Synapse3DProcessor
+from newdl.dataset2 import SynapseDataset
+from synapse import config
+
 from synapse.clustering import (
     load_and_cluster_features, 
     apply_tsne, 
@@ -42,6 +41,8 @@ syn_df = pd.concat([
 ])
 
 processor = Synapse3DProcessor(size=config.size)
+# Disable normalization for consistent gray values
+processor.normalize_volume = False
 
 dataset = SynapseDataset(
     vol_data_dict=vol_data_dict,
@@ -50,7 +51,11 @@ dataset = SynapseDataset(
     segmentation_type=config.segmentation_type,
     subvol_size=config.subvol_size,
     num_frames=config.num_frames,
-    alpha=config.alpha
+    alpha=config.alpha,
+    # No need to set normalize_across_volume as it defaults to False in the new version
+    smart_crop=False,
+    presynapse_weight=0.5,
+    normalize_presynapse_size=False
 )
 
 color_mapping = {

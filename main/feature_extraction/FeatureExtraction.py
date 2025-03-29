@@ -14,12 +14,14 @@ from pathlib import Path
 import numpy as np
 import imageio
 
+# Import from newdl module instead of synapse
+from newdl.dataloader2 import SynapseDataLoader, Synapse3DProcessor
+from newdl.dataset2 import SynapseDataset
 # Add the project root directory to the Python path
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.append(project_root)
 
-from synapse import config, SynapseDataset, Synapse3DProcessor
-from newdl.dataloader2 import SynapseDataLoader
+from synapse import config
 from newdl.sample_fig2 import visualize_specific_sample
 from inference import (
     extract_and_save_features,

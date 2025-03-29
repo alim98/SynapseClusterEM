@@ -22,7 +22,6 @@ class Synapse3DProcessor:
         ])
         self.mean = mean
         self.std = std
-        self.normalize_volume = True  # New flag to control volume-wide normalization
 
     def __call__(self, frames, return_tensors=None):
         processed_frames = []
@@ -43,21 +42,6 @@ class Synapse3DProcessor:
             # This should not happen due to transforms.Grayscale, but just in case
             pixel_values = pixel_values.mean(dim=1, keepdim=True)
         
-        # Apply volume-wide normalization to ensure consistent grayscale values across slices
-        if self.normalize_volume:
-            # Method 1: Min-max normalization across the entire volume
-            min_val = pixel_values.min()
-            max_val = pixel_values.max()
-            if max_val > min_val:  # Avoid division by zero
-                pixel_values = (pixel_values - min_val) / (max_val - min_val)
-            
-            # Method 2: Alternative - Z-score normalization using mean and std
-            # pixel_values = (pixel_values - pixel_values.mean()) / (pixel_values.std() + 1e-6)
-            # pixel_values = torch.clamp((pixel_values * 0.5) + 0.5, 0, 1)  # Rescale to [0,1]
-            
-            # Method 3: Histogram matching across slices (would require more complex implementation)
-            # This would ensure all slices have similar intensity distributions
-            
         if return_tensors == "pt":
             return {"pixel_values": pixel_values}
         else:
@@ -237,7 +221,6 @@ class SynapseDataLoader:
         subvolume_size: int = 80,
         alpha: float = 0.3,
         bbox_name: str = "",
-        normalize_across_volume: bool = True,  # Add parameter to control normalization
         smart_crop: bool = False,  # New parameter to enable intelligent cropping
         presynapse_weight: float = 0.5,  # New parameter to control the shift toward presynapse (0.0-1.0)
         normalize_presynapse_size: bool = False,  # New parameter to enable presynapse size normalization
@@ -725,25 +708,13 @@ class SynapseDataLoader:
 
         sub_raw = sub_raw.astype(np.float32)
         
-        # Apply normalization across the entire volume or per slice
-        if normalize_across_volume:
-            # Global normalization across the entire volume
-            min_val = np.min(sub_raw)
-            max_val = np.max(sub_raw)
-            range_val = max_val - min_val if max_val > min_val else 1.0
-            normalized = (sub_raw - min_val) / range_val
-            
-            # Print for debugging
-            print(f"Global normalization: min={min_val:.4f}, max={max_val:.4f}, range={range_val:.4f}")
-        else:
-            # Original per-slice normalization
-            mins = np.min(sub_raw, axis=(1, 2), keepdims=True)
-            maxs = np.max(sub_raw, axis=(1, 2), keepdims=True)
-            ranges = np.where(maxs > mins, maxs - mins, 1.0)
-            normalized = (sub_raw - mins) / ranges
-            
-            # Print for debugging
-            print(f"Per-slice normalization: shape of mins={mins.shape}, maxs={maxs.shape}")
+        # Skip normalization to maintain consistent gray values 
+        # This replaces the previous normalization code
+        # The normalized variable now directly uses sub_raw without modifications
+        normalized = sub_raw
+        
+        # Print a message indicating we're using consistent gray values
+        print(f"Using consistent gray values (no normalization) for {bbox_name}")
 
         # Convert to RGB here ONLY for visualization purposes
         # The data processing pipeline uses grayscale (1-channel) format
@@ -797,28 +768,4 @@ class SynapseDataLoader:
         plt.savefig(output_path, dpi=300, bbox_inches='tight', pad_inches=0.0)
         plt.close()
         
-        return output_path
-
-def normalize_cube_globally(cube):
-    """
-    Apply global normalization to a cube to ensure consistent grayscale values across slices.
-    
-    Args:
-        cube (numpy.ndarray): The cube to normalize, expected to be in format (y, x, c, z)
-        
-    Returns:
-        numpy.ndarray: Normalized cube with consistent grayscale values
-    """
-    # Make a copy to avoid modifying the original
-    cube_copy = cube.copy()
-    
-    # Calculate global min and max across all dimensions
-    min_val = np.min(cube_copy)
-    max_val = np.max(cube_copy)
-    
-    # Avoid division by zero
-    if max_val > min_val:
-        # Apply global normalization
-        cube_copy = (cube_copy - min_val) / (max_val - min_val)
-        
-    return cube_copy 
+        return output_path 
