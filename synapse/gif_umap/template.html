@@ -163,6 +163,15 @@
             border-radius: 4px;
             border: 1px solid #4CAF50;
         }
+        /* Color scheme switch button */
+        .color-scheme-toggle {
+            margin-top: 10px;
+            text-align: center;
+            padding: 8px;
+            background-color: #e8f5ff;
+            border-radius: 4px;
+            border: 1px solid #0078d7;
+        }
     </style>
     <script>
         // Track whether GIFs are visible
@@ -263,6 +272,11 @@
                 <button id="play-pause">Play/Pause</button>
                 <button id="show-max-cleft">Show Max Cleft Slices</button>
             </div>
+        </div>
+        
+        <div class="color-scheme-toggle">
+            <span class="control-label">Color Scheme:</span>
+            <button id="toggle-color-scheme">Toggle Colors (Current: Cluster)</button>
         </div>
         
         <div class="cluster-filter" id="cluster-filter">
@@ -492,9 +506,23 @@
                 return;
             }
             
+            // Store samples globally for later recoloring
+            window.allSamples = samples;
+            
             // Add points to the plot
+            addPointsWithCurrentColorScheme();
+        }
+        
+        // Current color scheme: 'cluster' or 'bbox'
+        let currentColorScheme = 'cluster';
+        
+        // Function to add points with the current color scheme
+        function addPointsWithCurrentColorScheme() {
+            // Clear existing points
+            document.querySelectorAll('.point').forEach(point => point.remove());
+            
             let pointsAdded = 0;
-            samples.forEach(sample => {
+            window.allSamples.forEach(sample => {
                 try {
                     const [plotX, plotY] = mapToPlot(sample.x, sample.y, plotWidth, plotHeight);
                     
@@ -502,7 +530,13 @@
                     pointElem.className = 'point';
                     pointElem.style.left = `${plotX}px`;
                     pointElem.style.top = `${plotY}px`;
-                    pointElem.style.backgroundColor = sample.color;
+                    
+                    // Set color based on current color scheme
+                    if (currentColorScheme === 'bbox') {
+                        pointElem.style.backgroundColor = sample.bbox_color || 'rgb(100, 100, 100)';
+                    } else {
+                        pointElem.style.backgroundColor = sample.color || 'rgb(100, 100, 100)';
+                    }
                     
                     // Add tooltip data for hovering
                     pointElem.setAttribute('data-tooltip', ` ${sample.bbox_name}, ${sample.var1}`);
@@ -521,8 +555,6 @@
                     log(`Error adding point: ${e.message}`);
                 }
             });
-            
-            // log(`Successfully added ${pointsAdded} background points`);
         }
         
         // Function to add GIFs
@@ -925,56 +957,119 @@
         
         // Create cluster filter checkboxes
         function createClusterFilter() {
+            updateFilterSection();
+        }
+        
+        // Function to update the filter section based on current color scheme
+        function updateFilterSection() {
             const clusterFilter = document.getElementById('cluster-filter');
-            const clusters = new Set();
             
-            // Get unique clusters
-            allGifData.forEach(sample => {
-                if (sample['cluster'] !== 'N/A') {
-                    clusters.add(sample['cluster']);
-                }
-            });
+            // Clear existing content
+            clusterFilter.innerHTML = '';
             
-            // Create a checkbox for each cluster
-            clusters.forEach(cluster => {
-                const label = document.createElement('label');
-                label.className = 'cluster-label';
+            if (currentColorScheme === 'cluster') {
+                // Add cluster filter title
+                const title = document.createElement('span');
+                title.className = 'control-label';
+                title.textContent = 'Filter by Cluster:';
+                clusterFilter.appendChild(title);
                 
-                const checkbox = document.createElement('input');
-                checkbox.type = 'checkbox';
-                checkbox.className = 'cluster-checkbox';
-                checkbox.value = cluster;
-                checkbox.checked = true;
-                checkbox.id = `cluster-${cluster}`;
+                // Get unique clusters
+                const clusters = new Set();
+                allGifData.forEach(sample => {
+                    if (sample['cluster'] !== 'N/A' && sample['cluster'] !== 'unknown') {
+                        clusters.add(sample['cluster']);
+                    }
+                });
                 
-                checkbox.addEventListener('change', updateVisibleGifs);
+                // Create a checkbox for each cluster
+                clusters.forEach(cluster => {
+                    const label = document.createElement('label');
+                    label.className = 'cluster-label';
+                    
+                    const checkbox = document.createElement('input');
+                    checkbox.type = 'checkbox';
+                    checkbox.className = 'cluster-checkbox';
+                    checkbox.value = cluster;
+                    checkbox.checked = true;
+                    checkbox.id = `cluster-${cluster}`;
+                    
+                    checkbox.addEventListener('change', updateVisibleGifs);
+                    
+                    label.appendChild(checkbox);
+                    label.appendChild(document.createTextNode(`Cluster ${cluster}`));
+                    
+                    clusterFilter.appendChild(label);
+                });
+            } else {
+                // Add bbox filter title
+                const title = document.createElement('span');
+                title.className = 'control-label';
+                title.textContent = 'Filter by Bbox:';
+                clusterFilter.appendChild(title);
                 
-                label.appendChild(checkbox);
-                label.appendChild(document.createTextNode(`Cluster ${cluster}`));
+                // Get unique bboxes
+                const bboxes = new Set();
+                allGifData.forEach(sample => {
+                    if (sample['bbox'] && sample['bbox'] !== 'unknown') {
+                        bboxes.add(sample['bbox']);
+                    }
+                });
                 
-                clusterFilter.appendChild(label);
-            });
+                // Create a checkbox for each bbox
+                bboxes.forEach(bbox => {
+                    const label = document.createElement('label');
+                    label.className = 'cluster-label';
+                    
+                    const checkbox = document.createElement('input');
+                    checkbox.type = 'checkbox';
+                    checkbox.className = 'bbox-checkbox';
+                    checkbox.value = bbox;
+                    checkbox.checked = true;
+                    checkbox.id = `bbox-${bbox}`;
+                    
+                    checkbox.addEventListener('change', updateVisibleGifs);
+                    
+                    label.appendChild(checkbox);
+                    label.appendChild(document.createTextNode(`${bbox}`));
+                    
+                    clusterFilter.appendChild(label);
+                });
+            }
             
             // Add "Select All" and "Deselect All" buttons
+            clusterFilter.appendChild(document.createElement('br'));
+            
             const selectAllBtn = document.createElement('button');
             selectAllBtn.textContent = 'Select All';
             selectAllBtn.addEventListener('click', () => {
-                document.querySelectorAll('.cluster-checkbox').forEach(cb => {
-                    cb.checked = true;
-                });
+                if (currentColorScheme === 'cluster') {
+                    document.querySelectorAll('.cluster-checkbox').forEach(cb => {
+                        cb.checked = true;
+                    });
+                } else {
+                    document.querySelectorAll('.bbox-checkbox').forEach(cb => {
+                        cb.checked = true;
+                    });
+                }
                 updateVisibleGifs();
             });
             
             const deselectAllBtn = document.createElement('button');
             deselectAllBtn.textContent = 'Deselect All';
             deselectAllBtn.addEventListener('click', () => {
-                document.querySelectorAll('.cluster-checkbox').forEach(cb => {
-                    cb.checked = false;
-                });
+                if (currentColorScheme === 'cluster') {
+                    document.querySelectorAll('.cluster-checkbox').forEach(cb => {
+                        cb.checked = false;
+                    });
+                } else {
+                    document.querySelectorAll('.bbox-checkbox').forEach(cb => {
+                        cb.checked = false;
+                    });
+                }
                 updateVisibleGifs();
             });
             
-            clusterFilter.appendChild(document.createElement('br'));
             clusterFilter.appendChild(selectAllBtn);
             clusterFilter.appendChild(deselectAllBtn);
         }
@@ -983,12 +1078,19 @@
         function updateVisibleGifs() {
             console.log("Updating visible GIFs...");
             
-            // Get selected clusters
-            const selectedClusters = [];
-            document.querySelectorAll('.cluster-checkbox:checked').forEach(cb => {
-                selectedClusters.push(cb.value);
-            });
-            console.log("Selected clusters:", selectedClusters);
+            // Get selected filters based on current color scheme
+            const selectedFilters = [];
+            if (currentColorScheme === 'cluster') {
+                document.querySelectorAll('.cluster-checkbox:checked').forEach(cb => {
+                    selectedFilters.push(cb.value);
+                });
+                console.log("Selected clusters:", selectedFilters);
+            } else {
+                document.querySelectorAll('.bbox-checkbox:checked').forEach(cb => {
+                    selectedFilters.push(cb.value);
+                });
+                console.log("Selected bboxes:", selectedFilters);
+            }
             
             // Get max number of GIFs to show
             const maxGifs = parseInt(document.getElementById('num-gifs-slider').value);
@@ -1000,72 +1102,72 @@
                 return;
             }
             
-            // Group GIFs by cluster
-            const gifsByCluster = {};
+            // Group GIFs by filter category (cluster or bbox)
+            const gifsByCategory = {};
             window.gifContainers.forEach(container => {
-                const cluster = container.dataset.cluster;
-                if (!gifsByCluster[cluster]) {
-                    gifsByCluster[cluster] = [];
+                const category = currentColorScheme === 'cluster' ? container.dataset.cluster : container.dataset.bbox;
+                if (!gifsByCategory[category]) {
+                    gifsByCategory[category] = [];
                 }
-                gifsByCluster[cluster].push(container);
+                gifsByCategory[category].push(container);
             });
             
-            // Calculate how many GIFs to show per selected cluster
-            const selectedClusterCount = selectedClusters.length;
-            const gifsPerCluster = selectedClusterCount > 0 ? Math.ceil(maxGifs / selectedClusterCount) : 0;
-            console.log(`Showing approximately ${gifsPerCluster} GIFs per selected cluster`);
+            // Calculate how many GIFs to show per selected category
+            const selectedCategoryCount = selectedFilters.length;
+            const gifsPerCategory = selectedCategoryCount > 0 ? Math.ceil(maxGifs / selectedCategoryCount) : 0;
+            console.log(`Showing approximately ${gifsPerCategory} GIFs per selected category`);
             
-            // Track how many GIFs we've shown in total and per cluster
+            // Track how many GIFs we've shown in total and per category
             let shownCount = 0;
-            const shownPerCluster = {};
+            const shownPerCategory = {};
             
-            // First pass: Show GIFs from selected clusters up to the gifsPerCluster limit
+            // First pass: Show GIFs from selected categories up to the gifsPerCategory limit
             window.gifContainers.forEach(container => {
-                const cluster = container.dataset.cluster;
+                const category = currentColorScheme === 'cluster' ? container.dataset.cluster : container.dataset.bbox;
                 
-                // Initialize counter for this cluster if needed
-                if (!shownPerCluster[cluster]) {
-                    shownPerCluster[cluster] = 0;
+                // Initialize counter for this category if needed
+                if (!shownPerCategory[category]) {
+                    shownPerCategory[category] = 0;
                 }
                 
-                // Only show if cluster is selected, we haven't reached the per-cluster limit, 
+                // Only show if category is selected, we haven't reached the per-category limit, 
                 // and we haven't reached the total limit
-                const shouldShow = selectedClusters.includes(cluster) && 
-                                  shownPerCluster[cluster] < gifsPerCluster &&
+                const shouldShow = selectedFilters.includes(category) && 
+                                  shownPerCategory[category] < gifsPerCategory &&
                                   shownCount < maxGifs && 
                                   gifsVisible;
                 
                 if (shouldShow) {
                     container.style.display = 'block';
                     shownCount++;
-                    shownPerCluster[cluster]++;
-                    console.log(`Showing GIF ${container.dataset.id} (cluster ${cluster}, ${shownPerCluster[cluster]}/${gifsPerCluster})`);
+                    shownPerCategory[category]++;
+                    console.log(`Showing GIF ${container.dataset.id} (${currentColorScheme}: ${category}, ${shownPerCategory[category]}/${gifsPerCategory})`);
                 } else {
                     container.style.display = 'none';
                 }
             });
             
-            // Second pass: If we haven't shown enough GIFs, add more from clusters that have extras
+            // Second pass: If we haven't shown enough GIFs, add more from categories that have extras
             if (shownCount < maxGifs && gifsVisible) {
                 window.gifContainers.forEach(container => {
-                    const cluster = container.dataset.cluster;
+                    const category = currentColorScheme === 'cluster' ? container.dataset.cluster : container.dataset.bbox;
                     
-                    // Skip if cluster not selected or GIF already visible
-                    if (!selectedClusters.includes(cluster) || container.style.display === 'block') {
+                    // Skip if category not selected or GIF already visible
+                    if (!selectedFilters.includes(category) || container.style.display === 'block') {
                         return;
                     }
                     
-                    // Show additional GIFs from this cluster if we haven't reached the total limit
+                    // Show additional GIFs from this category if we haven't reached the total limit
                     if (shownCount < maxGifs) {
                         container.style.display = 'block';
                         shownCount++;
-                        shownPerCluster[cluster]++;
-                        console.log(`Showing additional GIF ${container.dataset.id} (cluster ${cluster})`);
+                        shownPerCategory[category]++;
+                        console.log(`Showing additional GIF ${container.dataset.id} (${currentColorScheme}: ${category})`);
                     }
                 });
             }
             
-            console.log(`Showing ${shownCount} total GIFs across ${selectedClusterCount} clusters`);
+            console.log(`Showing ${shownCount} total GIFs across ${selectedCategoryCount} categories`);
             
             // Update the displayed count
             document.getElementById('num-gifs-value').textContent = shownCount;
@@ -1264,6 +1366,25 @@
             
             // Add event listener for the show max cleft button
             document.getElementById('show-max-cleft').addEventListener('click', showMaxCleftSlices);
+            
+            // Setup color scheme toggle button
+            const colorToggleButton = document.getElementById('toggle-color-scheme');
+            colorToggleButton.addEventListener('click', () => {
+                // Toggle color scheme
+                currentColorScheme = currentColorScheme === 'cluster' ? 'bbox' : 'cluster';
+                
+                // Update button text
+                colorToggleButton.textContent = `Toggle Colors (Current: ${currentColorScheme === 'cluster' ? 'Cluster' : 'Bbox'})`;
+                
+                // Recolor points
+                addPointsWithCurrentColorScheme();
+                
+                // Update filter section with new categories
+                updateFilterSection();
+                
+                // Update visible GIFs based on new filters
+                updateVisibleGifs();
+            });
             
             // Initial update of visible GIFs
             updateVisibleGifs();

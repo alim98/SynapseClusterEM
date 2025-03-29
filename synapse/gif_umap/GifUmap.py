@@ -648,8 +648,10 @@ def create_animated_gif_visualization(features_df, gif_paths, output_dir, dim_re
     print(f"originalPositions JSON string length: {len(originalPositions)}")
     print(f"Sample of originalPositions: {originalPositions[:100]}...")
     
-    # Determine colors for points based on clusters or bboxes
+    # Define colors for points based on clusters or bboxes
     point_colors = {}
+    bbox_colors = {}
+    
     if 'cluster' in features_df.columns:
         # Generate colors for each cluster
         clusters = features_df['cluster'].unique()
@@ -666,6 +668,25 @@ def create_animated_gif_visualization(features_df, gif_paths, output_dir, dim_re
             r, g, b, _ = cmap(i % 10)  # Use modulo to handle more than 10 clusters
             point_colors[cluster] = f"rgb({int(r*255)}, {int(g*255)}, {int(b*255)})"
     
+    # Generate colors for bboxes
+    if 'bbox_name' in features_df.columns:
+        bboxes = features_df['bbox_name'].unique()
+        bbox_colors_list = [
+            '#FF0000', '#00FFFF', '#FFA500', '#800080', 
+            '#008000', '#0000FF', '#FF00FF', '#FFFF00', 
+            '#808080', '#000000'
+        ]
+        
+        for i, bbox in enumerate(bboxes):
+            if i < len(bbox_colors_list):
+                bbox_colors[bbox] = bbox_colors_list[i]
+            else:
+                # Generate a random color if we run out of predefined colors
+                r = random.randint(0, 255)
+                g = random.randint(0, 255) 
+                b = random.randint(0, 255)
+                bbox_colors[bbox] = f"rgb({r}, {g}, {b})"
+    
     # Generate HTML content for data points
     points_content = ""
     for idx, row in features_df.iterrows():
@@ -680,30 +701,31 @@ def create_animated_gif_visualization(features_df, gif_paths, output_dir, dim_re
             if hasattr(y, 'item'):
                 y = y.item()
             
-            # Determine color based on cluster or bbox
+            # Determine color based on cluster
+            cluster_color = 'rgb(100, 100, 100)'
+            cluster = None
             if 'cluster' in row:
                 cluster = row['cluster']
                 if hasattr(cluster, 'item'):
                     cluster = cluster.item()
-                color = point_colors.get(cluster, 'rgb(100, 100, 100)')
-            else:
-                color = 'rgb(100, 100, 100)'
+                cluster_color = point_colors.get(cluster, 'rgb(100, 100, 100)')
             
-            # Get bbox_name and Var1 for tooltip
+            # Get bbox_name and color based on bbox
             bbox_name = row.get('bbox_name', 'unknown')
-            var1 = row.get('Var1', f'sample_{idx}')
-            
-            # Convert to strings and escape any special characters
             if hasattr(bbox_name, 'item'):
                 bbox_name = str(bbox_name.item())
             else:
                 bbox_name = str(bbox_name)
-                
+            
+            bbox_color = bbox_colors.get(bbox_name, 'rgb(100, 100, 100)')
+            
+            # Get Var1 for tooltip
+            var1 = row.get('Var1', f'sample_{idx}')
             if hasattr(var1, 'item'):
                 var1 = str(var1.item())
             else:
                 var1 = str(var1)
-                
+            
             # Add this point to the samples array - make sure we have a valid number before adding
             if not (np.isnan(x) or np.isnan(y)):
                 points_content += f"""
@@ -711,7 +733,9 @@ def create_animated_gif_visualization(features_df, gif_paths, output_dir, dim_re
                     "id": {idx},
                     "x": {x},
                     "y": {y},
-                    "color": "{color}",
+                    "color": "{cluster_color}",
+                    "bbox_color": "{bbox_color}",
+                    "cluster": "{str(cluster) if cluster is not None else 'unknown'}",
                     "hasGif": {str(idx in gif_paths).lower()},
                     "bbox_name": "{bbox_name}",
                     "var1": "{var1}"
