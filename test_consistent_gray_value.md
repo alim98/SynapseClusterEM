@@ -1,5 +1,19 @@
 
 """
+Segmentation Type: 10
+  Alpha: 1
+  Extraction Method: stage_specific
+  Layer Number: 20
+  Normalize Volume: False
+  Normalize Across Volume: True
+  Smart Crop: True
+  Presynapse Weight: 0.7
+  Normalize Presynapse Size: True
+  Target Percentage: None
+  Size Tolerance: 0.1
+
+  others are different config 
+  
 CONSISTENT GRAY VALUE GUIDE
 
 This guide explains how to maintain consistent gray values across the entire pipeline

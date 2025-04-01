@@ -6,7 +6,7 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from newdl.sample_fig_compare_crop import visualize_comparison
 from synapse.utils.config import config
-from newdl.dataloader2 import SynapseDataLoader, Synapse3DProcessor
+from newdl.dataloader3 import SynapseDataLoader, Synapse3DProcessor
 import pandas as pd
 
 # Configure logging

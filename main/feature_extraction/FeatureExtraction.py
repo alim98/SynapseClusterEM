@@ -15,8 +15,8 @@ import numpy as np
 import imageio
 
 # Import from newdl module instead of synapse
-from newdl.dataloader2 import SynapseDataLoader, Synapse3DProcessor
-from newdl.dataset2 import SynapseDataset
+from newdl.dataloader3 import SynapseDataLoader, Synapse3DProcessor
+from newdl.dataset3 import SynapseDataset
 # Add the project root directory to the Python path
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.append(project_root)

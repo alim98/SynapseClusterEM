@@ -37,8 +37,6 @@ def create_gif_from_volume(volume, output_path, fps=10, loop=0):
         fps (int): Frames per second
         loop (int): Number of loops (0 for infinite)
     """
-    # Import the normalize_cube_globally function for consistent grayscale
-    from newdl.dataloader2 import normalize_cube_globally
     
     # Convert PyTorch tensor to numpy if needed
     if isinstance(volume, torch.Tensor):
@@ -49,7 +47,7 @@ def create_gif_from_volume(volume, output_path, fps=10, loop=0):
         volume = np.squeeze(volume)
     
     # Apply global normalization to ensure consistent grayscale values
-    normalized_volume = normalize_cube_globally(volume)
+    normalized_volume = volume
     
     # Scale to 8-bit for GIF
     volume_8bit = (normalized_volume * 255).astype(np.uint8)

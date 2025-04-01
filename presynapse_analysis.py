@@ -1382,20 +1382,8 @@ def create_gif_from_volume(volume, output_path, fps=10, loop=0):
     if volume.ndim > 3:
         volume = np.squeeze(volume)
     
-    # Import normalize_cube_globally for consistent grayscale values
-    from newdl.dataloader2 import normalize_cube_globally
-    
-    # Apply global normalization to the entire volume - this is key for consistent grayscale
-    if volume.ndim == 4:  # For volumes in format (y, x, c, z)
-        normalized_volume = normalize_cube_globally(volume)
-        # Transpose to (z, y, x, c) format for consistent frame extraction
-        normalized_volume = np.transpose(normalized_volume, (3, 0, 1, 2))
-    else:  # For volumes in format (z, y, x)
-        # Use the same global normalization function to ensure consistency
-        normalized_volume = normalize_cube_globally(volume)
-    
     # Scale to 8-bit for GIF
-    volume_8bit = (normalized_volume * 255).astype(np.uint8)
+    volume_8bit = (volume * 255).astype(np.uint8)
     
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     

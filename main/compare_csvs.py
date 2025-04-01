@@ -25,6 +25,7 @@ import matplotlib.colors as mcolors
 from sklearn.preprocessing import StandardScaler
 import umap
 import json
+import random
 
 def create_comparative_umap(csv_path1, csv_path2, output_dir, label1="Method 1", label2="Method 2", max_pairs=None):
     """
@@ -94,10 +95,8 @@ def create_comparative_umap(csv_path1, csv_path2, output_dir, label1="Method 1",
         if 'Var1' in df.columns:
             ids = df['Var1'].tolist()
         elif 'id' in df.columns:
-            ids = df['id'].tolist()
-        else:
-            # Create arbitrary ids based on row number
-            ids = [f"sample_{i}" for i in range(len(df))]
+            print("var1 not found, error")
+            exit()
         
         # Store data
         dataframes.append(df)
@@ -120,20 +119,9 @@ def create_comparative_umap(csv_path1, csv_path2, output_dir, label1="Method 1",
         
         # If max_pairs is specified, select a subset of samples
         if max_pairs is not None and max_pairs < len(common_ids):
-            # Sort common_ids by distance to select the most interesting pairs
-            distances = []
-            for sample_id in common_ids:
-                idx1 = sample_ids[0].index(sample_id)
-                idx2 = sample_ids[1].index(sample_id)
-                x1, y1 = feature_sets[0][idx1, 0], feature_sets[0][idx1, 1]
-                x2, y2 = feature_sets[1][idx2, 0], feature_sets[1][idx2, 1]
-                distance = np.sqrt((x2 - x1)**2 + (y2 - y1)**2)
-                distances.append((sample_id, distance))
-            
-            # Sort by distance and take the top max_pairs
-            distances.sort(key=lambda x: x[1], reverse=True)
-            common_ids = [x[0] for x in distances[:max_pairs]]
-            print(f"Selected {max_pairs} sample pairs with the largest distances for visualization")
+            # Randomly select max_pairs samples instead of using distance-based selection
+            common_ids = random.sample(list(common_ids), max_pairs)
+            print(f"Randomly selected {max_pairs} sample pairs for visualization")
     
     # Check if feature dimensions are the same
     if feature_sets[0].shape[1] != feature_sets[1].shape[1]:
@@ -316,7 +304,7 @@ def create_comparative_umap(csv_path1, csv_path2, output_dir, label1="Method 1",
         # Add a note about the connections with better formatting
         note_text = f"Showing {len(common_ids)} sample pairs with connections. "
         if max_pairs is not None and max_pairs < len(set1.intersection(set2)):
-            note_text += f"Selected {max_pairs} pairs with largest distances."
+            note_text += f"Randomly selected {max_pairs} pairs for visualization."
         note_text += " Color and opacity indicate distance (red = larger distance)."
         
         plt.figtext(0.5, 0.02, note_text,
@@ -1971,18 +1959,18 @@ def main():
     # method1_label = "layer20"
     # method2_label = "standard"
     # # for preprocessing method comparison
-    default_csv_file1 = r"C:\Users\alim9\Documents\codes\synapse2\results\features\layer20\intelligent_cropping\features_extraction_stage_specific_layer20_segNone_alphaNone\features_layer20_segNone_alphaNone.csv"
-    default_csv_file2 = r"C:\Users\alim9\Documents\codes\synapse2\results\features\layer20\normal\features_extraction_stage_specific_layer20_segNone_alphaNone_intelligent_crop_w7\features_layer20_segNone_alphaNone.csv"
-    default_output_dir = r"C:\Users\alim9\Documents\codes\synapse2\results\features\layer20\comparision"
-    method1_label = "Intelligent Cropping"
-    method2_label = "Normal"
+    default_csv_file1 = r"C:\Users\alim9\Documents\codes\synapse2\results\extracted\seg10\features_layer20_seg10_alpha1.0\features_layer20_seg10_alpha1_0.csv"
+    default_csv_file2 = r"C:\Users\alim9\Documents\codes\synapse2\results\extracted\seg12\features_layer20_seg12_alpha1.0\features_layer20_seg12_alpha1_0.csv"
+    default_output_dir = r"C:\Users\alim9\Documents\codes\synapse2\results\extracted\comparision12"
+    method1_label = "segmentation 10"
+    method2_label = "segmentation 12"
     parser = argparse.ArgumentParser(description="Compare features from different CSV files and create visualizations")
     parser.add_argument("--csv1", default=default_csv_file1, help="Path to first feature CSV file")
     parser.add_argument("--csv2", default=default_csv_file2, help="Path to second feature CSV file")
     parser.add_argument("--output_dir", default=default_output_dir, help="Directory to save visualizations")
     parser.add_argument("--label1", default=method1_label, help="Label for first dataset")
     parser.add_argument("--label2", default=method2_label, help="Label for second dataset")
-    parser.add_argument("--max_pairs", type=int, default=50, help="Maximum number of connected sample pairs to display")
+    parser.add_argument("--max_pairs", type=int, default=100, help="Maximum number of connected sample pairs to display")
     parser.add_argument("--visualization", choices=["umap", "correlation", "2d_correlation", "distance_correlation", "ratio_preservation", "all"], default="all", 
                         help="Type of visualization to create")
     

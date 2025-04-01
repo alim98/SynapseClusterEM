@@ -1,0 +1,9 @@
+Sample: spine_synapse_072 from bbox6
+Segmentation Type: 5
+Presynapse Weight: 0.7
+Size Normalization: Enabled
+Target Percentage: 0.15
+Size Tolerance: ±10.0%
+Original Center: (353, 102, 250)
+Standard Range: min=0.0000, max=0.8414
+Intelligent Range: min=0.0000, max=0.8414

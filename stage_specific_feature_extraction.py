@@ -16,8 +16,8 @@ from sklearn.preprocessing import StandardScaler
 import umap
 
 # Import from newdl module instead of synapse
-from newdl.dataloader2 import SynapseDataLoader, Synapse3DProcessor
-from newdl.dataset2 import SynapseDataset
+from newdl.dataloader3 import SynapseDataLoader, Synapse3DProcessor
+from newdl.dataset3 import SynapseDataset
 from synapse import (
     Vgg3D, 
     load_model_from_checkpoint,

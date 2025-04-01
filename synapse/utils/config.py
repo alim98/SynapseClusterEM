@@ -6,8 +6,8 @@ class SynapseConfig:
         self.raw_base_dir = 'data/7_bboxes_plus_seg/raw'
         self.seg_base_dir = 'data/7_bboxes_plus_seg/seg'
         self.add_mask_base_dir = 'data/vesicle_cloud__syn_interface__mitochondria_annotation'
-        self.bbox_name = ['bbox1']
-        # self.bbox_name = ['bbox1', 'bbox2', 'bbox3', 'bbox4', 'bbox5', 'bbox6', 'bbox7']
+        self.bbox_name = ['bbox2']
+        # self.bbox_name = ['bbox1', 'bbox2', 'bbox3','bbox4','bbox5','bbox6','bbox7']
         self.excel_file = 'data3/7_bboxes_plus_seg'
         self.csv_output_dir = 'results/csv_outputs'
         self.size = (80, 80)
@@ -15,8 +15,8 @@ class SynapseConfig:
         self.num_frames = 80
         self.save_gifs_dir = 'results/gifs'
         self.alpha = 1.0
-        self.segmentation_type = 12
-        
+        self.segmentation_type = 13
+        # self.segmentation_type = [12, 10,11]  
         self.gray_color = 0.6
         
         self.clustering_output_dir = 'results/clustering_results_final'
@@ -27,7 +27,18 @@ class SynapseConfig:
         self.n_clusters = 10 # Default number of clusters for KMeans
         self.dbscan_eps = 0.5  # Default epsilon parameter for DBSCAN
         self.dbscan_min_samples = 5  # Default min_samples parameter for DBSCAN
-        
+        # Segmentation Type: 10
+#   Alpha: 1
+#   Extraction Method: stage_specific
+#   Layer Number: 20
+#   Normalize Volume: False
+#   Normalize Across Volume: True
+#   Smart Crop: True
+#   Presynapse Weight: 0.7
+#   Normalize Presynapse Size: True
+#   Target Percentage: None
+#   Size Tolerance: 0.1
+#   Absolute Difference: 0.00000578
         # Feature extraction parameters
         self.extraction_method = "stage_specific"  # Options: "standard" or "stage_specific"
         self.layer_num = 20  # Layer to extract features from when using stage_specific method

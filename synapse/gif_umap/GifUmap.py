@@ -96,8 +96,8 @@ def initialize_dataset_from_newdl():
         print("Initializing dataset from newdl...")
         # Import required classes from newdl
 
-        from newdl.dataset2 import SynapseDataset
-        from newdl.dataloader2 import SynapseDataLoader, Synapse3DProcessor
+        from newdl.dataset3 import SynapseDataset
+        from newdl.dataloader3 import SynapseDataLoader, Synapse3DProcessor
 
         # Initialize data loader
         data_loader = SynapseDataLoader(
@@ -133,6 +133,7 @@ def initialize_dataset_from_newdl():
                 
         # Initialize processor
         processor = Synapse3DProcessor(size=config.size)
+        processor.normalize_volume = False
         
         # Create dataset
         dataset = SynapseDataset(
@@ -143,7 +144,7 @@ def initialize_dataset_from_newdl():
             subvol_size=config.subvol_size,
             num_frames=config.num_frames,
             alpha=config.alpha,
-
+            normalize_across_volume=False  # Set to False for consistent gray values
         )
         
         print(f"Successfully created dataset with {len(dataset)} samples")
@@ -242,16 +243,27 @@ def create_gif_from_volume(volume, output_path, fps=10):
     # Prepare frames for GIF
     frames = []
     
-    # Just convert the frames to uint8 range without normalization to preserve consistent gray values
+    # Use absolute fixed scaling to match dataloader2.py behavior
+    # This ensures completely consistent gray values across all samples
+    
+    # Define same fixed values as in dataloader2.py
+    fixed_min = 0.0
+    fixed_max = 255.0
+    
+    # If values are in 0-1 range, scale to 0-255 for processing
+    if volume.max() <= 1.0:
+        volume = volume * 255.0
+        
+    print(f"Using ABSOLUTE fixed gray values: min={fixed_min}, max={fixed_max}")
+    print(f"Volume range before clipping: {volume.min():.4f}-{volume.max():.4f}")
+        
     for i in range(volume.shape[0]):
         frame = volume[i]
-        # Scale to 0-255 if not already in that range
-        if frame.max() <= 1.0:
-            frame = (frame * 255).astype(np.uint8)
-        else:
-            # Clip to valid range if needed
-            frame = np.clip(frame, 0, 255).astype(np.uint8)
-        frames.append(frame)
+        # Clip to fixed range without any normalization
+        clipped = np.clip(frame, fixed_min, fixed_max)
+        # Convert to uint8 for GIF
+        scaled = clipped.astype(np.uint8)
+        frames.append(scaled)
     
     # Create directory if it doesn't exist
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
@@ -1009,14 +1021,15 @@ if __name__ == "__main__":
                        type=int,
                        default=20,
                        help='Number of random samples to show with GIFs (default: 20)')
+    parser.add_argument('--custom-clusters',
+                       type=str,
+                       default=r"C:\Users\alim9\Documents\codes\synapse2\results\extracted\clusters\clustered_features.csv",
+                       help='Path to custom cluster assignments CSV file')
     args, unknown = parser.parse_known_args()
     
     # Define paths
-    csv_path = r"C:\Users\alim9\Documents\codes\synapse2\results\run_2025-03-14_15-50-53\features_layer20_seg10_alpha1.0\features_layer20_seg10_alpha1_0.csv"  # Replace with your actual CSV path
-    output_path = "results/test5"  # Replace with your desired output directory
-    csv_path = r"C:\Users\alim9\Documents\codes\synapse2\results\extracted\seg12alpha1intelw7noprenorm\features_layer20_seg12_alpha1.0\features_layer20_seg12_alpha1_0.csv"
-    output_path = r"C:\Users\alim9\Documents\codes\synapse2\results\extracted\seg12alpha1intelw7noprenorm"
-    # Create output directory if it doesn't exist
+    csv_path = r"C:\Users\alim9\Documents\codes\synapse2\results\extracted\stable\13\features_layer20_seg13_alpha1.0\features_layer20_seg13_alpha1_0.csv"
+    output_path = r"C:\Users\alim9\Documents\codes\synapse2\results\extracted\stable\13"
     output_dir = Path(output_path)
     output_dir.mkdir(parents=True, exist_ok=True)
     
@@ -1024,7 +1037,158 @@ if __name__ == "__main__":
     
     # Load existing features_df if it exists to avoid re-running clustering
     clustered_features_path = output_dir / "clustered_features.csv"
-    if os.path.exists(clustered_features_path):
+    
+    # First check for custom cluster file at the specified path
+    custom_cluster_path = args.custom_clusters
+    
+    if os.path.exists(custom_cluster_path):
+        print(f"Loading custom cluster assignments from {custom_cluster_path}")
+        custom_clusters_df = pd.read_csv(custom_cluster_path)
+        
+        # Check if it has the required columns
+        if 'bbox' in custom_clusters_df.columns and 'Var1' in custom_clusters_df.columns and 'cluster' in custom_clusters_df.columns:
+            print(f"Custom cluster file contains {len(custom_clusters_df)} cluster assignments")
+            print(f"Sample of cluster data: {custom_clusters_df.head(3)}")
+            
+            # Load the feature file
+            if os.path.exists(csv_path):
+                print(f"Loading features from {csv_path}")
+                features_df = pd.read_csv(csv_path)
+                print(f"Features file contains {len(features_df)} samples")
+                
+                # Ensure index column is used as actual index
+                if 'Unnamed: 0' in features_df.columns:
+                    features_df.set_index('Unnamed: 0', inplace=True)
+                elif 'index' in features_df.columns:
+                    features_df.set_index('index', inplace=True)
+                
+                # Check for bbox column name variations
+                bbox_col = None
+                for col in ['bbox_name', 'bbox', 'bounding_box']:
+                    if col in features_df.columns:
+                        bbox_col = col
+                        print(f"Found bbox column: {bbox_col}")
+                        break
+                
+                if bbox_col is None:
+                    print("Warning: Could not find bbox column in features file")
+                    print(f"Available columns: {features_df.columns.tolist()}")
+                
+                # Check for Var1 column
+                var1_col = None
+                if 'Var1' in features_df.columns:
+                    var1_col = 'Var1'
+                    print(f"Found Var1 column: {var1_col}")
+                
+                if var1_col is None:
+                    print("Warning: Could not find Var1 column in features file")
+                    print(f"Available columns: {features_df.columns.tolist()}")
+                
+                # Create a mapping dictionary from (bbox, Var1) to cluster
+                cluster_mapping = {}
+                for _, row in custom_clusters_df.iterrows():
+                    key = (row['bbox'], row['Var1'])
+                    cluster_mapping[key] = row['cluster']
+                
+                print(f"Created cluster mapping with {len(cluster_mapping)} entries")
+                
+                # Apply the mapping to the features_df if we have the necessary columns
+                if bbox_col is not None and var1_col is not None:
+                    # Print a few samples before mapping
+                    print(f"Sample data before mapping: {features_df[[bbox_col, var1_col]].head(3)}")
+                    
+                    # Apply the mapping
+                    features_df['cluster'] = features_df.apply(
+                        lambda row: cluster_mapping.get((row[bbox_col], row[var1_col]), -1), axis=1
+                    )
+                    
+                    # Check if we successfully mapped clusters
+                    mapped_count = sum(features_df['cluster'] != -1)
+                    print(f"Successfully mapped {mapped_count} out of {len(features_df)} samples to clusters")
+                    
+                    if mapped_count == 0:
+                        print("WARNING: No clusters were mapped! Check for data format issues:")
+                        print(f"Cluster file bbox column sample: {custom_clusters_df['bbox'].head(3)}")
+                        print(f"Features file {bbox_col} column sample: {features_df[bbox_col].head(3)}")
+                        print(f"Cluster file Var1 column sample: {custom_clusters_df['Var1'].head(3)}")
+                        print(f"Features file {var1_col} column sample: {features_df[var1_col].head(3)}")
+                        
+                        # Try to find matching entries manually for debugging
+                        found_match = False
+                        for _, feature_row in features_df.head(10).iterrows():
+                            bbox_value = feature_row[bbox_col]
+                            var1_value = feature_row[var1_col]
+                            for _, cluster_row in custom_clusters_df.head(20).iterrows():
+                                if cluster_row['bbox'] == bbox_value and cluster_row['Var1'] == var1_value:
+                                    print(f"Found match: ({bbox_value}, {var1_value}) -> Cluster {cluster_row['cluster']}")
+                                    found_match = True
+                                    break
+                        
+                        if not found_match:
+                            print("No matches found in the first 10 samples. Trying an alternative mapping approach...")
+                            # Try a different mapping approach
+                            # Strip any leading/trailing whitespace and handle case sensitivity
+                            features_df['_bbox_clean'] = features_df[bbox_col].str.strip().str.lower()
+                            features_df['_var1_clean'] = features_df[var1_col].str.strip().str.lower()
+                            
+                            custom_clusters_df['_bbox_clean'] = custom_clusters_df['bbox'].str.strip().str.lower()
+                            custom_clusters_df['_var1_clean'] = custom_clusters_df['Var1'].str.strip().str.lower()
+                            
+                            # Create new mapping with cleaned values
+                            clean_mapping = {}
+                            for _, row in custom_clusters_df.iterrows():
+                                clean_key = (row['_bbox_clean'], row['_var1_clean'])
+                                clean_mapping[clean_key] = row['cluster']
+                            
+                            # Apply the cleaned mapping
+                            features_df['cluster'] = features_df.apply(
+                                lambda row: clean_mapping.get((row['_bbox_clean'], row['_var1_clean']), -1), axis=1
+                            )
+                            
+                            # Check results of cleaned mapping
+                            clean_mapped_count = sum(features_df['cluster'] != -1)
+                            print(f"After cleaning: Mapped {clean_mapped_count} out of {len(features_df)} samples")
+                            
+                            # Remove temporary columns
+                            features_df.drop(['_bbox_clean', '_var1_clean'], axis=1, inplace=True)
+                    
+                    # Save the clustered features
+                    features_df.to_csv(clustered_features_path)
+                    print(f"Saved clustered features to {clustered_features_path}")
+                else:
+                    print(f"Warning: Features file does not have necessary bbox and Var1 columns needed for mapping")
+                    
+                    # Fall back to regular clustering
+                    if os.path.exists(clustered_features_path):
+                        print(f"Loading existing clustered features from {clustered_features_path}")
+                        features_df = pd.read_csv(clustered_features_path)
+                        # Ensure index column is used as actual index
+                        if 'Unnamed: 0' in features_df.columns:
+                            features_df = features_df.set_index('Unnamed: 0')
+                        elif 'index' in features_df.columns:
+                            features_df = features_df.set_index('index')
+                    else:
+                        # Run clustering analysis
+                        features_df = perform_clustering_analysis(config, csv_path, output_path)
+            else:
+                print(f"Error: Features file {csv_path} not found")
+                sys.exit(1)
+        else:
+            print(f"Warning: Custom cluster file does not have required columns (bbox, Var1, cluster)")
+            print(f"Columns in custom cluster file: {custom_clusters_df.columns.tolist()}")
+            # Fall back to regular clustering path
+            if os.path.exists(clustered_features_path):
+                print(f"Loading existing clustered features from {clustered_features_path}")
+                features_df = pd.read_csv(clustered_features_path)
+                # Ensure index column is used as actual index
+                if 'Unnamed: 0' in features_df.columns:
+                    features_df = features_df.set_index('Unnamed: 0')
+                elif 'index' in features_df.columns:
+                    features_df = features_df.set_index('index')
+            else:
+                # Run clustering analysis
+                features_df = perform_clustering_analysis(config, csv_path, output_path)
+    elif os.path.exists(clustered_features_path):
         print(f"Loading existing clustered features from {clustered_features_path}")
         features_df = pd.read_csv(clustered_features_path)
         # Ensure index column is used as actual index

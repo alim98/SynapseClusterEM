@@ -26,18 +26,18 @@ from sklearn.preprocessing import StandardScaler
 import umap
 import json
 
-def create_comparative_umap(csv_path1, csv_path2, output_dir, label1="Method 1", label2="Method 2", max_pairs=None):
+def create_comparative_umap(csv_path1, csv_path2, output_dir, max_pairs=None, label1="Method 1", label2="Method 2"):
     """
-    Create a UMAP visualization comparing features extracted with different preprocessing methods.
-    Points from the same sample are connected with lines to visualize the effect of preprocessing.
+    Create a comparative UMAP visualization from two feature CSV files. This helps
+    illustrate how different preprocessing methods affect feature representation.
     
     Args:
         csv_path1: Path to first feature CSV file
         csv_path2: Path to second feature CSV file
         output_dir: Directory to save the visualization
+        max_pairs: Maximum number of sample pairs to show in the visualization
         label1: Label for first dataset in the legend
         label2: Label for second dataset in the legend
-        max_pairs: Maximum number of sample pairs to display with connections (None for all)
     """
     print("\n" + "="*80)
     print("Creating comparative UMAP visualization...")
@@ -89,14 +89,19 @@ def create_comparative_umap(csv_path1, csv_path2, output_dir, label1="Method 1",
         # Extract features
         features = df[feature_cols].values
         
-        # Get sample identifiers
-        # First check if Var1 column exists (synapse identifier)
-        if 'Var1' in df.columns:
+        # Get sample identifiers using the composite ID approach
+        if 'bbox_name' in df.columns and 'Var1' in df.columns:
+            print(f"Creating composite identifiers using both bbox_name and Var1")
+            ids = [f"{row['bbox_name']}_{row['Var1']}" for _, row in df.iterrows()]
+        elif 'Var1' in df.columns:
+            print(f"Using only Var1 as identifier (bbox_name not found)")
             ids = df['Var1'].tolist()
         elif 'id' in df.columns:
+            print(f"Using id column as identifier")
             ids = df['id'].tolist()
         else:
             # Create arbitrary ids based on row number
+            print(f"No standard identifiers found, using row numbers")
             ids = [f"sample_{i}" for i in range(len(df))]
         
         # Store data
@@ -107,33 +112,73 @@ def create_comparative_umap(csv_path1, csv_path2, output_dir, label1="Method 1",
         # Add preprocessing method tag
         df['preprocessing'] = label1 if i == 0 else label2
     
-    # Check if both datasets have the same sample ids
+    # Find common samples between the two datasets using the composite identifiers
     set1 = set(sample_ids[0])
     set2 = set(sample_ids[1])
     common_ids = set1.intersection(set2)
     
     if not common_ids:
         print("No common samples found between the two feature sets")
-        # If no common IDs, we'll create a UMAP plot without connecting lines
+        
+        # Check if we can create a mapping manually using bbox_name and Var1 fields
+        if ('bbox_name' in dataframes[0].columns and 'Var1' in dataframes[0].columns and
+            'bbox_name' in dataframes[1].columns and 'Var1' in dataframes[1].columns):
+            
+            print("Attempting to create manual mapping using bbox_name and Var1 fields...")
+            df1_pairs = set([(row['bbox_name'], row['Var1']) for _, row in dataframes[0].iterrows()])
+            df2_pairs = set([(row['bbox_name'], row['Var1']) for _, row in dataframes[1].iterrows()])
+            common_pairs = df1_pairs.intersection(df2_pairs)
+            
+            if common_pairs:
+                print(f"Found {len(common_pairs)} common samples using manual bbox_name+Var1 mapping")
+                
+                # Create new mappings
+                common_ids = [f"{bbox}_{var1}" for bbox, var1 in common_pairs]
+                
+                # Recreate the id mappings
+                for i in range(2):
+                    df = dataframes[i]
+                    sample_ids[i] = [f"{row['bbox_name']}_{row['Var1']}" for _, row in df.iterrows()]
+            else:
+                print("No common samples found even with manual mapping")
+                return
+        else:
+            print("Cannot create comparison without common samples. Aborting.")
+            return
     else:
         print(f"Found {len(common_ids)} common samples between the two feature sets")
         
+    # Include detailed information about the common samples for debugging
+    print("\nCommon sample details:")
+    common_ids_list = list(common_ids)
+    for i, sample_id in enumerate(common_ids_list[:min(10, len(common_ids_list))]):
+        print(f"  Sample {i}: {sample_id}")
+    if len(common_ids_list) > 10:
+        print(f"  ... and {len(common_ids_list) - 10} more")
+        
         # If max_pairs is specified, select a subset of samples
         if max_pairs is not None and max_pairs < len(common_ids):
+        # Create dictionaries to map sample IDs to row indices
+        id_to_idx_1 = {id_val: idx for idx, id_val in enumerate(sample_ids[0])}
+        id_to_idx_2 = {id_val: idx for idx, id_val in enumerate(sample_ids[1])}
+        
             # Sort common_ids by distance to select the most interesting pairs
             distances = []
             for sample_id in common_ids:
-                idx1 = sample_ids[0].index(sample_id)
-                idx2 = sample_ids[1].index(sample_id)
-                x1, y1 = feature_sets[0][idx1, 0], feature_sets[0][idx1, 1]
-                x2, y2 = feature_sets[1][idx2, 0], feature_sets[1][idx2, 1]
-                distance = np.sqrt((x2 - x1)**2 + (y2 - y1)**2)
+            idx1 = id_to_idx_1.get(sample_id)
+            idx2 = id_to_idx_2.get(sample_id)
+            
+            if idx1 is not None and idx2 is not None:
+                # Use L2 norm of all feature dimensions for better distance measure
+                feat1 = feature_sets[0][idx1]
+                feat2 = feature_sets[1][idx2]
+                distance = np.linalg.norm(feat1 - feat2)
                 distances.append((sample_id, distance))
             
             # Sort by distance and take the top max_pairs
             distances.sort(key=lambda x: x[1], reverse=True)
-            common_ids = [x[0] for x in distances[:max_pairs]]
-            print(f"Selected {max_pairs} sample pairs with the largest distances for visualization")
+        common_ids = set([x[0] for x in distances[:max_pairs]])
+        print(f"Selected {max_pairs} sample pairs with the largest feature distances for visualization")
     
     # Check if feature dimensions are the same
     if feature_sets[0].shape[1] != feature_sets[1].shape[1]:
@@ -180,7 +225,7 @@ def create_comparative_umap(csv_path1, csv_path2, output_dir, label1="Method 1",
         # Split embedding back into the two sets
         n_samples_1 = feature_sets[0].shape[0]
         embedding_1 = embedding[:n_samples_1]
-        embedding_2 = embedding[n_samples_1:]
+        embedding_2 = embedding[n_samples_1:n_samples_1+len(feature_sets[1])]
     
     # Create plot with larger size
     plt.figure(figsize=(16, 14))
@@ -237,7 +282,7 @@ def create_comparative_umap(csv_path1, csv_path2, output_dir, label1="Method 1",
     standard_scatter = plt.scatter(embedding_2[:, 0], embedding_2[:, 1], 
                                 c=color2, label=label2, 
                                 alpha=0.7, s=point_size, 
-                                edgecolors='darkred', linewidths=0.7,
+                                 edgecolors='maroon', linewidths=0.7,
                                 zorder=10)
     
     # If we have common samples, draw connecting lines
@@ -696,20 +741,21 @@ def create_comparative_umap(csv_path1, csv_path2, output_dir, label1="Method 1",
 
 def create_correlation_scatter_plot(csv_path1, csv_path2, output_dir, label1="Method 1", label2="Method 2"):
     """
-    Create a correlation scatter plot between feature values from two CSV files.
+    Create a scatter plot comparing the correlation between feature dimensions
+    in two different preprocessing methods. This plot helps visualize how much
+    the feature representation changes between methods.
     
     Args:
         csv_path1: Path to first feature CSV file
         csv_path2: Path to second feature CSV file
         output_dir: Directory to save the visualization
-        label1: Label for first dataset
-        label2: Label for second dataset
+        label1: Label for first dataset in the legend  
+        label2: Label for second dataset in the legend
     """
     print("\n" + "="*80)
     print("Creating correlation scatter plot...")
     
-    # Load feature data from both CSV files
-    dataframes = []
+    # Load feature data from both preprocessing methods
     feature_sets = []
     sample_ids = []
     
@@ -717,18 +763,21 @@ def create_correlation_scatter_plot(csv_path1, csv_path2, output_dir, label1="Me
         print(f"Loading features from {csv_path}")
         df = pd.read_csv(csv_path)
         
-        # Figure out the feature columns using the same logic as in create_comparative_umap
+        # Figure out the feature columns
         feature_cols = []
+        # First try layer20_feat_ prefix (from stage-specific extraction)
         layer_cols = [col for col in df.columns if col.startswith('layer20_feat_')]
         if layer_cols:
             feature_cols = layer_cols
             print(f"Found {len(feature_cols)} feature columns with prefix 'layer20_feat_'")
         else:
+            # Try feat_ prefix (from standard extraction)
             feat_cols = [col for col in df.columns if col.startswith('feat_')]
             if feat_cols:
                 feature_cols = feat_cols
                 print(f"Found {len(feature_cols)} feature columns with prefix 'feat_'")
             else:
+                # Try other common prefixes
                 for prefix in ['feature_', 'f_', 'layer']:
                     cols = [col for col in df.columns if col.startswith(prefix)]
                     if cols:
@@ -736,6 +785,7 @@ def create_correlation_scatter_plot(csv_path1, csv_path2, output_dir, label1="Me
                         print(f"Found {len(feature_cols)} feature columns with prefix '{prefix}'")
                         break
         
+        # If still no feature columns, try to infer from numeric columns
         if not feature_cols:
             non_feature_cols = ['bbox', 'cluster', 'label', 'id', 'index', 'tsne', 'umap', 'var', 'Var']
             numeric_cols = df.select_dtypes(include=['float64', 'int64']).columns
@@ -751,208 +801,101 @@ def create_correlation_scatter_plot(csv_path1, csv_path2, output_dir, label1="Me
         # Extract features
         features = df[feature_cols].values
         
-        # Get sample identifiers (same logic as in create_comparative_umap)
-        if 'Var1' in df.columns:
+        # Get sample identifiers using the same composite ID approach
+        if 'bbox_name' in df.columns and 'Var1' in df.columns:
+            print(f"Creating composite identifiers using both bbox_name and Var1")
+            ids = [f"{row['bbox_name']}_{row['Var1']}" for _, row in df.iterrows()]
+        elif 'Var1' in df.columns:
+            print(f"Using only Var1 as identifier (bbox_name not found)")
             ids = df['Var1'].tolist()
         elif 'id' in df.columns:
+            print(f"Using id column as identifier")
             ids = df['id'].tolist()
         else:
+            # Create arbitrary ids based on row number
+            print(f"No standard identifiers found, using row numbers")
             ids = [f"sample_{i}" for i in range(len(df))]
         
         # Store data
-        dataframes.append(df)
         feature_sets.append(features)
         sample_ids.append(ids)
     
-    # Check if both feature sets have the same dimensions
+    # Check if feature dimensions match
     if feature_sets[0].shape[1] != feature_sets[1].shape[1]:
         print(f"Feature dimensions don't match: {feature_sets[0].shape[1]} vs {feature_sets[1].shape[1]}")
-        print("Reducing feature dimensions to a common space before correlation analysis")
-        
-        # Standardize the features
-        scaler1 = StandardScaler()
-        scaler2 = StandardScaler()
-        scaled_features1 = scaler1.fit_transform(feature_sets[0])
-        scaled_features2 = scaler2.fit_transform(feature_sets[1])
-        
-        # Determine the target dimension - use the smaller of the two or a fixed value
-        target_dim = min(feature_sets[0].shape[1], feature_sets[1].shape[1])
-        target_dim = min(64, target_dim)  # Set a maximum dimension for computation efficiency
-        
-        print(f"Reducing both feature sets to {target_dim} dimensions")
-        
-        # Apply PCA or UMAP for dimensionality reduction
-        try:
-            # Try UMAP first for better preservation of relationships
-            reducer1 = umap.UMAP(n_components=target_dim, random_state=42)
-            reducer2 = umap.UMAP(n_components=target_dim, random_state=42)
-            reduced_features1 = reducer1.fit_transform(scaled_features1)
-            reduced_features2 = reducer2.fit_transform(scaled_features2)
-            print(f"Successfully reduced features using UMAP to dimension {target_dim}")
-        except Exception as e:
-            print(f"UMAP reduction failed: {str(e)}")
-            # Fall back to PCA if UMAP fails
-            from sklearn.decomposition import PCA
-            reducer1 = PCA(n_components=target_dim, random_state=42)
-            reducer2 = PCA(n_components=target_dim, random_state=42)
-            reduced_features1 = reducer1.fit_transform(scaled_features1)
-            reduced_features2 = reducer2.fit_transform(scaled_features2)
-            print(f"Successfully reduced features using PCA to dimension {target_dim}")
-        
-        # Update the feature sets with the reduced dimensions
-        feature_sets[0] = reduced_features1
-        feature_sets[1] = reduced_features2
+        print("Correlation analysis requires the same feature dimensions. Aborting.")
+        return
     
     # Find common samples between the two datasets
     set1 = set(sample_ids[0])
     set2 = set(sample_ids[1])
-    common_ids = list(set1.intersection(set2))
+    common_ids = set1.intersection(set2)
     
     if not common_ids:
         print("No common samples found between the two feature sets")
-        return
-    
-    print(f"Found {len(common_ids)} common samples between the two feature sets")
-    
-    # Create dictionaries to map sample IDs to row indices
-    id_to_idx_1 = {id_val: idx for idx, id_val in enumerate(sample_ids[0])}
-    id_to_idx_2 = {id_val: idx for idx, id_val in enumerate(sample_ids[1])}
-    
-    # Calculate correlation coefficient for each feature
-    feature_correlations = []
-    for feature_idx in range(feature_sets[0].shape[1]):
-        values_1 = []
-        values_2 = []
         
-        for sample_id in common_ids:
-            idx1 = id_to_idx_1.get(sample_id)
-            idx2 = id_to_idx_2.get(sample_id)
+        # Check if we can create a mapping manually using bbox_name and Var1 fields
+        df1 = pd.read_csv(csv_path1)
+        df2 = pd.read_csv(csv_path2)
+        
+        if ('bbox_name' in df1.columns and 'Var1' in df1.columns and
+            'bbox_name' in df2.columns and 'Var1' in df2.columns):
             
-            if idx1 is not None and idx2 is not None:
-                values_1.append(feature_sets[0][idx1, feature_idx])
-                values_2.append(feature_sets[1][idx2, feature_idx])
-        
-        correlation = np.corrcoef(values_1, values_2)[0, 1]
-        feature_correlations.append((feature_idx, correlation))
-    
-    # Sort features by correlation
-    feature_correlations.sort(key=lambda x: x[1], reverse=True)
-    
-    # Select 9 features for visualization, prioritizing strong correlations and some weaker ones
-    num_features_to_plot = min(9, len(feature_correlations))
-    selected_features = []
-    
-    # Select high correlation features
-    high_corr = [fc for fc in feature_correlations if fc[1] > 0.7][:3]
-    selected_features.extend(high_corr)
-    
-    # Select medium correlation features
-    medium_corr = [fc for fc in feature_correlations if 0.3 <= fc[1] <= 0.7][:3]
-    selected_features.extend(medium_corr)
-    
-    # Select low correlation features
-    low_corr = [fc for fc in feature_correlations if fc[1] < 0.3][:3]
-    selected_features.extend(low_corr)
-    
-    # If we don't have enough features for each category, take from the remaining features
-    if len(selected_features) < num_features_to_plot:
-        remaining = [fc for fc in feature_correlations if fc not in selected_features]
-        remaining_needed = num_features_to_plot - len(selected_features)
-        selected_features.extend(remaining[:remaining_needed])
-    
-    # Create a subplot grid
-    num_plots = min(9, len(selected_features))
-    rows = int(np.ceil(np.sqrt(num_plots)))
-    cols = int(np.ceil(num_plots / rows))
-    
-    fig, axes = plt.subplots(rows, cols, figsize=(15, 15))
-    if rows == 1 and cols == 1:
-        axes = np.array([axes])
-    axes = axes.flatten()
-    
-    # Generate scatter plots for each selected feature
-    for i, (feature_idx, correlation) in enumerate(selected_features[:num_plots]):
-        ax = axes[i]
-        
-        # Get feature values for the common samples
-        values_1 = []
-        values_2 = []
-        
-        for sample_id in common_ids:
-            idx1 = id_to_idx_1.get(sample_id)
-            idx2 = id_to_idx_2.get(sample_id)
+            print("Attempting to create manual mapping using bbox_name and Var1 fields...")
+            df1_pairs = set([(row['bbox_name'], row['Var1']) for _, row in df1.iterrows()])
+            df2_pairs = set([(row['bbox_name'], row['Var1']) for _, row in df2.iterrows()])
+            common_pairs = df1_pairs.intersection(df2_pairs)
             
-            if idx1 is not None and idx2 is not None:
-                values_1.append(feature_sets[0][idx1, feature_idx])
-                values_2.append(feature_sets[1][idx2, feature_idx])
-        
-        # Create scatter plot
-        ax.scatter(values_1, values_2, alpha=0.7, s=30, edgecolors='navy', linewidths=0.5)
-        
-        # Add reference line for y=x
-        min_val = min(min(values_1), min(values_2))
-        max_val = max(max(values_1), max(values_2))
-        padding = (max_val - min_val) * 0.05
-        ax.plot([min_val-padding, max_val+padding], [min_val-padding, max_val+padding], 'r--', alpha=0.6)
-        
-        # Set axis limits with some padding
-        ax.set_xlim(min_val-padding, max_val+padding)
-        ax.set_ylim(min_val-padding, max_val+padding)
-        
-        # Add correlation coefficient to the plot
-        ax.set_title(f"Feature {feature_idx}, r = {correlation:.3f}")
-        
-        # Set axis labels
-        if i >= (rows-1) * cols:  # Only bottom row gets x-axis label
-            ax.set_xlabel(f"{label1}")
-        if i % cols == 0:  # Only leftmost column gets y-axis label
-            ax.set_ylabel(f"{label2}")
+            if common_pairs:
+                print(f"Found {len(common_pairs)} common samples using manual bbox_name+Var1 mapping")
+                
+                # Create new mappings
+                common_ids = [f"{bbox}_{var1}" for bbox, var1 in common_pairs]
+                
+                # Recreate the id mappings
+                df1 = pd.read_csv(csv_path1)
+                df2 = pd.read_csv(csv_path2)
+                sample_ids[0] = [f"{row['bbox_name']}_{row['Var1']}" for _, row in df1.iterrows()]
+                sample_ids[1] = [f"{row['bbox_name']}_{row['Var1']}" for _, row in df2.iterrows()]
+            else:
+                print("No common samples found even with manual mapping")
+                return
+        else:
+            print("Cannot proceed with correlation analysis without common samples.")
+            return
+    else:
+        print(f"Found {len(common_ids)} common samples between the two feature sets")
     
-    # Hide unused subplots
-    for j in range(num_plots, len(axes)):
-        axes[j].axis('off')
+    # Create a scatter plot comparing the correlation between feature dimensions
+    plt.figure(figsize=(12, 10))
     
+    # Plot correlation matrix
+    corr_matrix = np.corrcoef(feature_sets[0].T, feature_sets[1].T)
+    
+    # Create a heatmap of the correlation matrix
+    plt.imshow(corr_matrix, cmap='coolwarm', vmin=-1, vmax=1, aspect='auto')
+    plt.colorbar()
+    
+    # Add feature names to the plot
+    feature_names = [f"Feature {i+1}" for i in range(feature_sets[0].shape[1])]
+    plt.xticks(np.arange(len(feature_names)), feature_names, rotation=45, ha='right')
+    plt.yticks(np.arange(len(feature_names)), feature_names)
+    
+    plt.title(f"Correlation between Feature Dimensions\n{label1} vs {label2}")
     plt.tight_layout()
     
-    # Create output directory if it doesn't exist
-    os.makedirs(output_dir, exist_ok=True)
-    
     # Save the plot
-    output_path = os.path.join(output_dir, "correlation_scatter_plot.png")
+    output_path = os.path.join(output_dir, "feature_correlation_scatter.png")
     plt.savefig(output_path, dpi=300)
-    print(f"Saved correlation scatter plot to {output_path}")
+    print(f"Saved feature correlation scatter plot to {output_path}")
     
-    # Create a single summary correlation plot
-    plt.figure(figsize=(10, 6))
+    # Create a table of the correlation coefficients
+    corr_df = pd.DataFrame(corr_matrix, index=feature_names, columns=feature_names)
     
-    # Calculate overall correlation for each feature
-    all_correlations = [corr for _, corr in feature_correlations]
-    feature_indices = np.arange(len(all_correlations))
-    
-    plt.bar(feature_indices, all_correlations, alpha=0.7)
-    plt.axhline(y=0, color='r', linestyle='-', alpha=0.3)
-    
-    # Add horizontal lines for correlation reference
-    plt.axhline(y=0.5, color='g', linestyle='--', alpha=0.5)
-    plt.axhline(y=-0.5, color='g', linestyle='--', alpha=0.5)
-    
-    plt.title(f"Feature Correlation between {label1} and {label2}")
-    plt.xlabel("Feature Index")
-    plt.ylabel("Correlation Coefficient")
-    plt.ylim(-1.05, 1.05)
-    
-    # Add mean correlation as text
-    mean_corr = np.mean(all_correlations)
-    plt.text(0.02, 0.95, f"Mean correlation: {mean_corr:.3f}", 
-             transform=plt.gca().transAxes, bbox=dict(facecolor='white', alpha=0.8))
-    
-    # Save the summary plot
-    summary_path = os.path.join(output_dir, "correlation_summary.png")
-    plt.savefig(summary_path, dpi=300)
-    print(f"Saved correlation summary to {summary_path}")
-    
-    plt.close('all')
-    return output_path
+    # Save the table to CSV
+    corr_csv_path = os.path.join(output_dir, "feature_correlation_matrix.csv")
+    corr_df.to_csv(corr_csv_path)
+    print(f"Saved feature correlation matrix to {corr_csv_path}")
 
 def create_2d_correlation_scatter_plot(csv_path1, csv_path2, output_dir, label1="Method 1", label2="Method 2"):
     """
@@ -1971,11 +1914,11 @@ def main():
     # method1_label = "layer20"
     # method2_label = "standard"
     # # for preprocessing method comparison
-    default_csv_file1 = r"C:\Users\alim9\Documents\codes\synapse2\results\features\layer20\intelligent_cropping\features_extraction_stage_specific_layer20_segNone_alphaNone\features_layer20_segNone_alphaNone.csv"
-    default_csv_file2 = r"C:\Users\alim9\Documents\codes\synapse2\results\features\layer20\normal\features_extraction_stage_specific_layer20_segNone_alphaNone_intelligent_crop_w7\features_layer20_segNone_alphaNone.csv"
-    default_output_dir = r"C:\Users\alim9\Documents\codes\synapse2\results\features\layer20\comparision"
-    method1_label = "Intelligent Cropping"
-    method2_label = "Normal"
+    default_csv_file1 = r"C:\Users\alim9\Documents\codes\synapse2\results\extracted\seg10\features_layer20_seg10_alpha1.0\features_layer20_seg10_alpha1_0.csv"
+    default_csv_file2 = r"C:\Users\alim9\Documents\codes\synapse2\results\extracted\seg11\features_layer20_seg11_alpha1.0\features_layer20_seg11_alpha1_0.csv"
+    default_output_dir = r"C:\Users\alim9\Documents\codes\synapse2\results\extracted\comparision3"
+    method1_label = "segmentation 10"
+    method2_label = "segmentation 11"
     parser = argparse.ArgumentParser(description="Compare features from different CSV files and create visualizations")
     parser.add_argument("--csv1", default=default_csv_file1, help="Path to first feature CSV file")
     parser.add_argument("--csv2", default=default_csv_file2, help="Path to second feature CSV file")
@@ -1997,9 +1940,9 @@ def main():
             args.csv1, 
             args.csv2, 
             args.output_dir,
+            max_pairs=args.max_pairs,
             label1=args.label1,
-            label2=args.label2,
-            max_pairs=args.max_pairs
+            label2=args.label2
         )
     
     if args.visualization in ["correlation", "all"]:

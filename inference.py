@@ -28,8 +28,8 @@ import argparse
 from sklearn.cluster import KMeans
 
 # Import from newdl module instead of synapse
-from newdl.dataloader2 import SynapseDataLoader, Synapse3DProcessor
-from newdl.dataset2 import SynapseDataset
+from newdl.dataloader3 import SynapseDataLoader, Synapse3DProcessor
+from newdl.dataset3 import SynapseDataset
 from synapse import (
 
     Vgg3D, 

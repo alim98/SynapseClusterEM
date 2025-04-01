@@ -1,0 +1,9 @@
+Sample: explorative_2024-09-02_Ali_Karimi_040 from bbox4
+Segmentation Type: 10
+Presynapse Weight: 0.7
+Size Normalization: Enabled
+Target Percentage: 0.15
+Size Tolerance: ±10.0%
+Original Center: (342, 215, 386)
+Standard Range: min=0.0000, max=0.9434
+Intelligent Range: min=0.0000, max=0.9569

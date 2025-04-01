@@ -18,11 +18,11 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 from multi_layer_cam import visualize_cluster_attention
 
 # Import from newdl module instead of synapse
-from newdl.dataloader2 import SynapseDataLoader, Synapse3DProcessor
-from newdl.dataset2 import SynapseDataset
+from newdl.dataloader3 import SynapseDataLoader, Synapse3DProcessor
+from newdl.dataset3 import SynapseDataset
 # Import necessary modules without implementing their functionality
 from synapse import config
-from newdl.dataloader2 import SynapseDataLoader
+from newdl.dataloader3 import SynapseDataLoader
 from inference import (
     extract_features, 
     create_plots, 
@@ -107,13 +107,17 @@ class SynapsePipeline:
         
         # Initialize processor
         self.processor = Synapse3DProcessor(size=self.config.size)
+        # Disable normalization for consistent gray values
+        self.processor.normalize_volume = False
+        
         # Create dataset with segmentation_type parameter
         self.dataset = SynapseDataset(
             self.vol_data_dict, 
             self.syn_df, 
             processor=self.processor,
             segmentation_type=self.config.segmentation_type,
-            alpha=self.config.alpha
+            alpha=self.config.alpha,
+            normalize_across_volume=False  # Set to False for consistent gray values
         )
         
         # Create dataloader if needed for batch processing

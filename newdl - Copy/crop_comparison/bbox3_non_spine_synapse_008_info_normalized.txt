@@ -1,0 +1,9 @@
+Sample: non_spine_synapse_008 from bbox3
+Segmentation Type: 10
+Presynapse Weight: 0.7
+Size Normalization: Enabled
+Target Percentage: 0.15
+Size Tolerance: ±10.0%
+Original Center: (291, 226, 455)
+Standard Range: min=0.0000, max=0.9806
+Intelligent Range: min=0.0000, max=0.9855

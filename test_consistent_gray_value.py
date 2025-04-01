@@ -133,16 +133,27 @@ def create_modified_gif_from_volume(volume, output_path, fps=10, apply_normaliza
             for i in range(volume.shape[0]):
                 frames.append(np.zeros_like(volume[i], dtype=np.uint8))
     else:
-        # Just convert the frames to uint8 range without normalization
+        # Use absolute fixed scaling to match dataloader2.py behavior
+        # This ensures completely consistent gray values across all samples
+        
+        # Define same fixed values as in dataloader2.py
+        fixed_min = 0.0
+        fixed_max = 255.0
+        
+        # If values are in 0-1 range, scale to 0-255 for processing
+        if volume.max() <= 1.0:
+            volume = volume * 255.0
+            
         for i in range(volume.shape[0]):
             frame = volume[i]
-            # Scale to 0-255 if not already in that range
-            if frame.max() <= 1.0:
-                frame = (frame * 255).astype(np.uint8)
-            else:
-                # Clip to valid range if needed
-                frame = np.clip(frame, 0, 255).astype(np.uint8)
-            frames.append(frame)
+            # Clip to fixed range without any normalization
+            clipped = np.clip(frame, fixed_min, fixed_max)
+            # Convert to uint8 for GIF
+            scaled = clipped.astype(np.uint8)
+            frames.append(scaled)
+            
+        print(f"Using ABSOLUTE fixed gray values: min={fixed_min}, max={fixed_max}")
+        print(f"Volume range before clipping: {volume.min():.4f}-{volume.max():.4f}")
     
     # Create directory if it doesn't exist
     os.makedirs(os.path.dirname(output_path), exist_ok=True)

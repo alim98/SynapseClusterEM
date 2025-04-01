@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from synapse import config
 from newdl.dataset2 import SynapseDataset
-from newdl.dataloader2 import Synapse3DProcessor, SynapseDataLoader, normalize_cube_globally
+from newdl.dataloader2 import Synapse3DProcessor, SynapseDataLoader
 from inference import VGG3D, load_and_prepare_data
 
 def normalize_globally(array):
