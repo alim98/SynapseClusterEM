@@ -642,246 +642,322 @@ class SynapseDataLoader:
                 # Intersection of combined masks and the box - include everything within the box
                 combined_mask_full = np.logical_and(combined_masks, box_mask)
                 
+                # Check if the combined mask fills 100% of the 25×25×25 bounding box
+                box_volume = (z_max - z_min) * (y_max - y_min) * (x_max - x_min)
+                filled_volume = np.sum(combined_mask_full[z_min:z_max, y_min:y_max, x_min:x_max])
+                fill_percentage = (filled_volume / box_volume) * 100.0
+                
+                print(f"Type 13 box with center at ({v_cx}, {v_cy}, {v_cz}) has {fill_percentage:.2f}% fill")
+                
+                # If box is not fully filled, try shifting up to 10 pixels
+                if fill_percentage < 100.0:
+                    print(f"Box not fully filled. Attempting to shift box up to 10 pixels.")
+                    
+                    # Find empty regions to determine shift direction
+                    box_mask_region = np.zeros((z_max - z_min, y_max - y_min, x_max - x_min), dtype=bool)
+                    box_mask_region[:,:,:] = True
+                    filled_region = combined_mask_full[z_min:z_max, y_min:y_max, x_min:x_max]
+                    empty_region = np.logical_and(box_mask_region, np.logical_not(filled_region))
+                    
+                    # Get coordinates of empty regions
+                    empty_coords = np.where(empty_region)
+                    if len(empty_coords[0]) > 0:
+                        # Calculate center of empty region
+                        empty_z = np.mean(empty_coords[0])
+                        empty_y = np.mean(empty_coords[1]) 
+                        empty_x = np.mean(empty_coords[2])
+                        
+                        # Calculate shift direction (opposite of empty region)
+                        z_dir = -1 if empty_z > (z_max - z_min) / 2 else 1
+                        y_dir = -1 if empty_y > (y_max - y_min) / 2 else 1
+                        x_dir = -1 if empty_x > (x_max - x_min) / 2 else 1
+                        
+                        # Try different shift amounts, up to max 10 pixels
+                        max_shift = 10
+                        best_fill = fill_percentage
+                        best_box = (z_min, z_max, y_min, y_max, x_min, x_max)
+                        
+                        for shift in range(1, max_shift + 1):
+                            # Calculate new box coordinates with shift
+                            new_z_min = max(0, z_min + z_dir * shift)
+                            new_z_max = min(box_mask.shape[0], z_max + z_dir * shift)
+                            new_y_min = max(0, y_min + y_dir * shift)
+                            new_y_max = min(box_mask.shape[1], y_max + y_dir * shift)
+                            new_x_min = max(0, x_min + x_dir * shift)
+                            new_x_max = min(box_mask.shape[2], x_max + x_dir * shift)
+                            
+                            # Create new box mask
+                            new_box_mask = np.zeros_like(vesicle_cloud, dtype=bool)
+                            new_box_mask[new_z_min:new_z_max, new_y_min:new_y_max, new_x_min:new_x_max] = True
+                            
+                            # Get new combined mask with the shifted box
+                            new_combined_mask = np.logical_and(combined_masks, new_box_mask)
+                            
+                            # Check fill percentage
+                            new_box_volume = (new_z_max - new_z_min) * (new_y_max - new_y_min) * (new_x_max - new_x_min)
+                            new_filled_volume = np.sum(new_combined_mask[new_z_min:new_z_max, new_y_min:new_y_max, new_x_min:new_x_max])
+                            new_fill_percentage = (new_filled_volume / new_box_volume) * 100.0
+                            
+                            print(f"Shift {shift}: fill percentage = {new_fill_percentage:.2f}%")
+                            
+                            # If better fill percentage, update best
+                            if new_fill_percentage > best_fill:
+                                best_fill = new_fill_percentage
+                                best_box = (new_z_min, new_z_max, new_y_min, new_y_max, new_x_min, new_x_max)
+                                
+                                # If fully filled, exit loop
+                                if new_fill_percentage >= 100.0:
+                                    print(f"Found fully filled box after shifting {shift} pixels")
+                                    break
+                        
+                        # Update box and fill percentage with best found
+                        z_min, z_max, y_min, y_max, x_min, x_max = best_box
+                        fill_percentage = best_fill
+                        
+                        # Update box mask and combined mask
+                        box_mask = np.zeros_like(vesicle_cloud, dtype=bool)
+                        box_mask[z_min:z_max, y_min:y_max, x_min:x_max] = True
+                        combined_mask_full = np.logical_and(combined_masks, box_mask)
+                        
+                        print(f"After shifting: Box now at z[{z_min}:{z_max}], y[{y_min}:{y_max}], x[{x_min}:{x_max}] with {fill_percentage:.2f}% fill")
+                
+                # Discard sample if the box is still not 100% filled after shifting
+                if fill_percentage < 100.0:
+                    print(f"Discarding sample: Box not completely filled ({fill_percentage:.2f}%) even after shifting")
+                    return None
+                
                 print(f"Type 13 box with center at ({v_cx}, {v_cy}, {v_cz}) includes vesicle, pre, and cleft masks, excluding mito")
+                
+                # Now center the 25×25×25 box in the middle of the 80×80×80 cube for better visualization
+                print(f"Centering the 25×25×25 box in the middle of the 80×80×80 cube")
+                
+                # Extract the region of interest from the combined_mask_full and raw volume
+                box_region = combined_mask_full[z_min:z_max, y_min:y_max, x_min:x_max]
+                raw_region = raw_vol[z_min:z_max, y_min:y_max, x_min:x_max]
+                box_size = z_max - z_min  # Should be 25
+                
+                # Create new arrays of full subvolume_size (80×80×80)
+                centered_mask = np.zeros((subvolume_size, subvolume_size, subvolume_size), dtype=bool)
+                centered_raw = np.zeros((subvolume_size, subvolume_size, subvolume_size), dtype=raw_vol.dtype)
+                
+                # Calculate the starting positions to center the box
+                start_z = (subvolume_size - box_size) // 2
+                start_y = (subvolume_size - box_size) // 2
+                start_x = (subvolume_size - box_size) // 2
+                
+                # Place the mask and raw data in the center of the new arrays
+                centered_mask[start_z:start_z+box_size, start_y:start_y+box_size, start_x:start_x+box_size] = box_region
+                centered_raw[start_z:start_z+box_size, start_y:start_y+box_size, start_x:start_x+box_size] = raw_region
+                
+                # Use the centered data
+                combined_mask_full = centered_mask
+                
+                # Update the coordinates for further processing
+                z_start = 0
+                z_end = subvolume_size
+                y_start = 0
+                y_end = subvolume_size
+                x_start = 0
+                x_end = subvolume_size
+                
+                # Also update raw_vol for this region
+                raw_vol_section = np.zeros_like(raw_vol[:subvolume_size, :subvolume_size, :subvolume_size])
+                raw_vol_section = centered_raw
+                
+                print(f"Box centered in 80×80×80 cube at position [{start_z}:{start_z+box_size}, {start_y}:{start_y+box_size}, {start_x}:{start_x+box_size}]")
             else:
-                # If no vesicle cloud is found, try to place box at the center of pre+cleft
-                pre_cleft_mask = np.logical_or(pre_mask_full, cleft_closest)
-                
-                # Exclude dilated mitochondria from the pre+cleft mask
-                pre_cleft_mask = np.logical_and(pre_cleft_mask, np.logical_not(dilated_mito_mask))
-                
-                pre_cleft_coords = np.where(pre_cleft_mask)
-                
-                if len(pre_cleft_coords[0]) > 0:
-                    # Find the center of the pre+cleft mask
-                    pc_cz = int(np.mean(pre_cleft_coords[0]))
-                    pc_cy = int(np.mean(pre_cleft_coords[1]))
-                    pc_cx = int(np.mean(pre_cleft_coords[2]))
-                    
-                    # Create a 25×25×25 box around this center
-                    box_mask = np.zeros_like(vesicle_cloud, dtype=bool)
-                    
-                    # Define bounds for the 25×25×25 box
-                    box_size = 12  # Half of 25 (12 on each side plus the center point)
-                    z_min = max(0, pc_cz - box_size)
-                    z_max = min(box_mask.shape[0], pc_cz + box_size + 1)
-                    y_min = max(0, pc_cy - box_size)
-                    y_max = min(box_mask.shape[1], pc_cy + box_size + 1)
-                    x_min = max(0, pc_cx - box_size)
-                    x_max = min(box_mask.shape[2], pc_cx + box_size + 1)
-                    
-                    # Set the box region to True
-                    box_mask[z_min:z_max, y_min:y_max, x_min:x_max] = True
-                    
-                    # Intersection of combined masks and the box
-                    combined_mask_full = np.logical_and(pre_cleft_mask, box_mask)
-                    
-                    print(f"Type 13 fallback: Using pre+cleft center at ({pc_cx}, {pc_cy}, {pc_cz}), excluding mito")
-                else:
-                    # If nothing else works, use central coordinate
-                    box_mask = np.zeros_like(vesicle_cloud, dtype=bool)
-                    
-                    # Define bounds for the 25×25×25 box
-                    box_size = 12
-                    z_min = max(0, cz - box_size)
-                    z_max = min(box_mask.shape[0], cz + box_size + 1)
-                    y_min = max(0, cy - box_size)
-                    y_max = min(box_mask.shape[1], cy + box_size + 1)
-                    x_min = max(0, cx - box_size)
-                    x_max = min(box_mask.shape[2], cx + box_size + 1)
-                    
-                    # Set the box region to True
-                    box_mask[z_min:z_max, y_min:y_max, x_min:x_max] = True
-                    
-                    # Use all available masks in this region, excluding mitochondria
-                    all_masks = np.logical_or(vesicle_cloud, np.logical_or(pre_mask_full, cleft_closest))
-                    all_masks = np.logical_and(all_masks, np.logical_not(dilated_mito_mask))
-                    combined_mask_full = np.logical_and(all_masks, box_mask)
-                    
-                    print(f"Type 13 fallback: Using central coordinate at ({cx}, {cy}, {cz}), excluding mito")
-  
+                # Discard the sample if no vesicle cloud is found
+                print(f"Discarding sample: No vesicle coordinates found for segmentation type 13")
+                return None
         else:
             raise ValueError(f"Unsupported segmentation type: {segmentation_type}")
 
-        sub_raw = raw_vol[z_start:z_end, y_start:y_end, x_start:x_end]
-        sub_combined_mask = combined_mask_full[z_start:z_end, y_start:y_end, x_start:x_end]
-        
-        # Extract the presynapse mask for the final bounding box
-        sub_presynapse_mask = presynapse_mask_full[z_start:z_end, y_start:y_end, x_start:x_end]
-        
-        # Apply presynapse size normalization if enabled
-        if normalize_presynapse_size and np.any(sub_presynapse_mask):
-            print(f"Applying presynapse size normalization for {bbox_name}")
-            # Calculate the current percentage of presynapse pixels in the cube
-            total_pixels = sub_presynapse_mask.size
-            presynapse_pixels = np.sum(sub_presynapse_mask)
-            current_percentage = presynapse_pixels / total_pixels
+        # For segmentation type 13, we directly use the centered data
+        if segmentation_type == 13:
+            sub_raw = raw_vol_section
+            sub_combined_mask = combined_mask_full
+        else:
+            # Regular processing for other segmentation types
+            sub_raw = raw_vol[z_start:z_end, y_start:y_end, x_start:x_end]
+            sub_combined_mask = combined_mask_full[z_start:z_end, y_start:y_end, x_start:x_end]
             
-            # Use the provided target percentage or set to current (no change)
-            if target_percentage is None:
-                target_percentage = current_percentage
-                print(f"Using current percentage as target: {target_percentage:.4f}")
-            else:
-                print(f"Using provided target percentage: {target_percentage:.4f}")
+            # Extract the presynapse mask for the final bounding box
+            sub_presynapse_mask = presynapse_mask_full[z_start:z_end, y_start:y_end, x_start:x_end]
             
-            # Calculate the lower and upper bounds of the acceptable range
-            lower_bound = target_percentage * (1 - size_tolerance)
-            upper_bound = target_percentage * (1 + size_tolerance)
-            
-            print(f"Presynapse size: Current {current_percentage:.4f}, Target {target_percentage:.4f}, Range [{lower_bound:.4f}-{upper_bound:.4f}]")
-            print(f"Presynapse pixels: {presynapse_pixels} out of {total_pixels} total pixels")
-            
-            # Only adjust if outside the acceptable range
-            if current_percentage < lower_bound or current_percentage > upper_bound:
-                # Get the coordinates of the presynapse voxels
-                presynapse_coords = np.array(np.where(sub_presynapse_mask)).T
+            # Apply presynapse size normalization if enabled
+            if normalize_presynapse_size and np.any(sub_presynapse_mask):
+                print(f"Applying presynapse size normalization for {bbox_name}")
+                # Calculate the current percentage of presynapse pixels in the cube
+                total_pixels = sub_presynapse_mask.size
+                presynapse_pixels = np.sum(sub_presynapse_mask)
+                current_percentage = presynapse_pixels / total_pixels
                 
-                if len(presynapse_coords) > 0:
-                    print(f"Found {len(presynapse_coords)} presynapse coordinates")
-                    # Calculate the centroid of the presynapse
-                    centroid = np.mean(presynapse_coords, axis=0)
-                    print(f"Centroid: {centroid}")
-                    
-                    # Calculate distance of each voxel from the centroid
-                    distances = np.sqrt(np.sum((presynapse_coords - centroid)**2, axis=1))
-                    
-                    # Sort distances to enable manipulation from outside in or inside out
-                    sorted_indices = np.argsort(distances)
-                    sorted_coords = presynapse_coords[sorted_indices]
-                    
-                    if current_percentage > upper_bound:
-                        # Presynapse is too large - shrink it by removing outer voxels
-                        # Calculate how many voxels to remove
-                        target_voxels = int(total_pixels * target_percentage)
-                        voxels_to_remove = presynapse_pixels - target_voxels
-                        
-                        print(f"Presynapse too large: removing {voxels_to_remove} voxels (target: {target_voxels})")
-                        
-                        # Remove voxels from outside in (largest distances first)
-                        for i in range(int(voxels_to_remove)):
-                            if i < len(sorted_coords):
-                                # Start from the end (furthest from centroid)
-                                coord = sorted_coords[-(i+1)]
-                                sub_presynapse_mask[coord[0], coord[1], coord[2]] = False
-                        
-                        print(f"Presynapse shrunk: removed {voxels_to_remove} voxels")
-                        
-                    elif current_percentage < lower_bound:
-                        # Presynapse is too small - grow it by adding neighboring voxels
-                        # Calculate how many voxels to add
-                        target_voxels = int(total_pixels * target_percentage)
-                        voxels_to_add = target_voxels - presynapse_pixels
-                        
-                        print(f"Presynapse too small: adding {voxels_to_add} voxels (target: {target_voxels})")
-                        
-                        # Create a distance map from the presynapse
-                        # First, create a copy of the mask and expand it
-                        expanded_mask = sub_presynapse_mask.copy()
-                        added_voxels = 0
-                        
-                        # Grow by dilation (adding neighboring voxels layer by layer)
-                        from scipy import ndimage
-                        
-                        # Continue dilating until we've added enough voxels or can't add more
-                        iterations = 0
-                        max_iterations = 10  # Prevent infinite loops
-                        
-                        while added_voxels < voxels_to_add and iterations < max_iterations:
-                            # Dilate the mask by 1 voxel
-                            dilated = ndimage.binary_dilation(expanded_mask)
-                            
-                            # Find new voxels (in dilated but not in original)
-                            new_voxels = np.logical_and(dilated, ~expanded_mask)
-                            
-                            # Count new voxels
-                            num_new = np.sum(new_voxels)
-                            print(f"Iteration {iterations}: Found {num_new} new voxels")
-                            
-                            if num_new == 0:
-                                # No more voxels can be added (reached the boundary)
-                                print("No more voxels can be added - reached boundary")
-                                break
-                                
-                            # If adding all new voxels would exceed the target, select a subset
-                            if added_voxels + num_new > voxels_to_add:
-                                # Get indices of new voxels
-                                new_coords = np.array(np.where(new_voxels)).T
-                                
-                                # Calculate distances from centroid
-                                new_distances = np.sqrt(np.sum((new_coords - centroid)**2, axis=1))
-                                
-                                # Sort by distance (closest first)
-                                new_sorted_indices = np.argsort(new_distances)
-                                
-                                # Select only the needed number of voxels (closest to centroid)
-                                voxels_needed = int(voxels_to_add - added_voxels)
-                                selected_coords = new_coords[new_sorted_indices[:voxels_needed]]
-                                
-                                print(f"Selecting {voxels_needed} closest voxels from {len(new_coords)} candidates")
-                                
-                                # Clear the new voxels mask and set only selected voxels
-                                new_voxels = np.zeros_like(new_voxels)
-                                for coord in selected_coords:
-                                    new_voxels[coord[0], coord[1], coord[2]] = True
-                                
-                                num_new = voxels_needed
-                            
-                            # Update the presynapse mask with the new voxels
-                            sub_presynapse_mask = np.logical_or(sub_presynapse_mask, new_voxels)
-                            
-                            # Update the expanded mask for next iteration
-                            expanded_mask = dilated
-                            
-                            # Update the count of added voxels
-                            added_voxels += num_new
-                            iterations += 1
-                        
-                        print(f"Presynapse expanded: added {added_voxels} voxels in {iterations} iterations")
+                # Use the provided target percentage or set to current (no change)
+                if target_percentage is None:
+                    target_percentage = current_percentage
+                    print(f"Using current percentage as target: {target_percentage:.4f}")
                 else:
-                    print("Error: No presynapse coordinates found despite mask having True values")
+                    print(f"Using provided target percentage: {target_percentage:.4f}")
                 
-                # Recalculate the percentage after adjustment
-                new_percentage = np.sum(sub_presynapse_mask) / total_pixels
-                print(f"Adjusted presynapse size: {new_percentage:.4f} (target was {target_percentage:.4f})")
+                # Calculate the lower and upper bounds of the acceptable range
+                lower_bound = target_percentage * (1 - size_tolerance)
+                upper_bound = target_percentage * (1 + size_tolerance)
                 
-                # Update the combined mask with the normalized presynapse
-                if segmentation_type == 1:  # Segmentation type that only uses presynapse
-                    # For segmentation types that directly use the presynapse mask
-                    print(f"Segmentation type {segmentation_type} directly uses presynapse - replacing combined mask")
-                    sub_combined_mask = sub_presynapse_mask
-                elif segmentation_type == 10:  # Special handling for type 10 which combines cleft and presynapse
-                    # For segmentation type 10, we need to preserve the cleft part and update only the presynapse part
-                    print(f"Segmentation type 10 combines cleft and presynapse - preserving cleft while updating presynapse")
+                print(f"Presynapse size: Current {current_percentage:.4f}, Target {target_percentage:.4f}, Range [{lower_bound:.4f}-{upper_bound:.4f}]")
+                print(f"Presynapse pixels: {presynapse_pixels} out of {total_pixels} total pixels")
+                
+                # Only adjust if outside the acceptable range
+                if current_percentage < lower_bound or current_percentage > upper_bound:
+                    # Get the coordinates of the presynapse voxels
+                    presynapse_coords = np.array(np.where(sub_presynapse_mask)).T
                     
-                    # Get the original combined mask from the full volume
-                    orig_combined_mask = combined_mask_full[z_start:z_end, y_start:y_end, x_start:x_end]
+                    if len(presynapse_coords) > 0:
+                        print(f"Found {len(presynapse_coords)} presynapse coordinates")
+                        # Calculate the centroid of the presynapse
+                        centroid = np.mean(presynapse_coords, axis=0)
+                        print(f"Centroid: {centroid}")
+                        
+                        # Calculate distance of each voxel from the centroid
+                        distances = np.sqrt(np.sum((presynapse_coords - centroid)**2, axis=1))
+                        
+                        # Sort distances to enable manipulation from outside in or inside out
+                        sorted_indices = np.argsort(distances)
+                        sorted_coords = presynapse_coords[sorted_indices]
+                        
+                        if current_percentage > upper_bound:
+                            # Presynapse is too large - shrink it by removing outer voxels
+                            # Calculate how many voxels to remove
+                            target_voxels = int(total_pixels * target_percentage)
+                            voxels_to_remove = presynapse_pixels - target_voxels
+                            
+                            print(f"Presynapse too large: removing {voxels_to_remove} voxels (target: {target_voxels})")
+                            
+                            # Remove voxels from outside in (largest distances first)
+                            for i in range(int(voxels_to_remove)):
+                                if i < len(sorted_coords):
+                                    # Start from the end (furthest from centroid)
+                                    coord = sorted_coords[-(i+1)]
+                                    sub_presynapse_mask[coord[0], coord[1], coord[2]] = False
+                            
+                            print(f"Presynapse shrunk: removed {voxels_to_remove} voxels")
+                            
+                        elif current_percentage < lower_bound:
+                            # Presynapse is too small - grow it by adding neighboring voxels
+                            # Calculate how many voxels to add
+                            target_voxels = int(total_pixels * target_percentage)
+                            voxels_to_add = target_voxels - presynapse_pixels
+                            
+                            print(f"Presynapse too small: adding {voxels_to_add} voxels (target: {target_voxels})")
+                            
+                            # Create a distance map from the presynapse
+                            # First, create a copy of the mask and expand it
+                            expanded_mask = sub_presynapse_mask.copy()
+                            added_voxels = 0
+                            
+                            # Grow by dilation (adding neighboring voxels layer by layer)
+                            from scipy import ndimage
+                            
+                            # Continue dilating until we've added enough voxels or can't add more
+                            iterations = 0
+                            max_iterations = 10  # Prevent infinite loops
+                            
+                            while added_voxels < voxels_to_add and iterations < max_iterations:
+                                # Dilate the mask by 1 voxel
+                                dilated = ndimage.binary_dilation(expanded_mask)
+                                
+                                # Find new voxels (in dilated but not in original)
+                                new_voxels = np.logical_and(dilated, ~expanded_mask)
+                                
+                                # Count new voxels
+                                num_new = np.sum(new_voxels)
+                                print(f"Iteration {iterations}: Found {num_new} new voxels")
+                                
+                                if num_new == 0:
+                                    # No more voxels can be added (reached the boundary)
+                                    print("No more voxels can be added - reached boundary")
+                                    break
+                                    
+                                # If adding all new voxels would exceed the target, select a subset
+                                if added_voxels + num_new > voxels_to_add:
+                                    # Get indices of new voxels
+                                    new_coords = np.array(np.where(new_voxels)).T
+                                    
+                                    # Calculate distances from centroid
+                                    new_distances = np.sqrt(np.sum((new_coords - centroid)**2, axis=1))
+                                    
+                                    # Sort by distance (closest first)
+                                    new_sorted_indices = np.argsort(new_distances)
+                                    
+                                    # Select only the needed number of voxels (closest to centroid)
+                                    voxels_needed = int(voxels_to_add - added_voxels)
+                                    selected_coords = new_coords[new_sorted_indices[:voxels_needed]]
+                                    
+                                    print(f"Selecting {voxels_needed} closest voxels from {len(new_coords)} candidates")
+                                    
+                                    # Clear the new voxels mask and set only selected voxels
+                                    new_voxels = np.zeros_like(new_voxels)
+                                    for coord in selected_coords:
+                                        new_voxels[coord[0], coord[1], coord[2]] = True
+                                    
+                                    num_new = voxels_needed
+                                
+                                # Update the presynapse mask with the new voxels
+                                sub_presynapse_mask = np.logical_or(sub_presynapse_mask, new_voxels)
+                                
+                                # Update the expanded mask for next iteration
+                                expanded_mask = dilated
+                                
+                                # Update the count of added voxels
+                                added_voxels += num_new
+                                iterations += 1
+                            
+                            print(f"Presynapse expanded: added {added_voxels} voxels in {iterations} iterations")
+                    else:
+                        print("Error: No presynapse coordinates found despite mask having True values")
                     
-                    # Extract just the cleft part by subtracting the original presynapse mask
-                    # First, get the presynapse mask before normalization
-                    orig_presynapse = presynapse_mask_full[z_start:z_end, y_start:y_end, x_start:x_end]
+                    # Recalculate the percentage after adjustment
+                    new_percentage = np.sum(sub_presynapse_mask) / total_pixels
+                    print(f"Adjusted presynapse size: {new_percentage:.4f} (target was {target_percentage:.4f})")
                     
-                    # Then, extract just the cleft part (everything in combined mask that's not in the presynapse)
-                    cleft_only = np.logical_and(orig_combined_mask, ~orig_presynapse)
-                    
-                    # Now combine the cleft part with the normalized presynapse
-                    sub_combined_mask = np.logical_or(cleft_only, sub_presynapse_mask)
-                    
-                    print(f"Updated combined mask for segmentation type 10 - preserved cleft and updated presynapse")
-                else:
-                    # For segmentation types that include presynapse as part of a larger mask
-                    # Remove the original presynapse from the combined mask and add the normalized one
-                    print(f"Segmentation type {segmentation_type} includes presynapse as part - updating combined mask")
-                    sub_combined_mask = np.logical_or(
-                        np.logical_and(sub_combined_mask, ~sub_presynapse_mask),  # Other parts without presynapse
-                        sub_presynapse_mask  # Add normalized presynapse
-                    )
+                    # Update the combined mask with the normalized presynapse
+                    if segmentation_type == 1:  # Segmentation type that only uses presynapse
+                        # For segmentation types that directly use the presynapse mask
+                        print(f"Segmentation type {segmentation_type} directly uses presynapse - replacing combined mask")
+                        sub_combined_mask = sub_presynapse_mask
+                    elif segmentation_type == 10:  # Special handling for type 10 which combines cleft and presynapse
+                        # For segmentation type 10, we need to preserve the cleft part and update only the presynapse part
+                        print(f"Segmentation type 10 combines cleft and presynapse - preserving cleft while updating presynapse")
+                        
+                        # Get the original combined mask from the full volume
+                        orig_combined_mask = combined_mask_full[z_start:z_end, y_start:y_end, x_start:x_end]
+                        
+                        # Extract just the cleft part by subtracting the original presynapse mask
+                        # First, get the presynapse mask before normalization
+                        orig_presynapse = presynapse_mask_full[z_start:z_end, y_start:y_end, x_start:x_end]
+                        
+                        # Then, extract just the cleft part (everything in combined mask that's not in the presynapse)
+                        cleft_only = np.logical_and(orig_combined_mask, ~orig_presynapse)
+                        
+                        # Now combine the cleft part with the normalized presynapse
+                        sub_combined_mask = np.logical_or(cleft_only, sub_presynapse_mask)
+                        
+                        print(f"Updated combined mask for segmentation type 10 - preserved cleft and updated presynapse")
+                    else:
+                        # For segmentation types that include presynapse as part of a larger mask
+                        # Remove the original presynapse from the combined mask and add the normalized one
+                        print(f"Segmentation type {segmentation_type} includes presynapse as part - updating combined mask")
+                        sub_combined_mask = np.logical_or(
+                            np.logical_and(sub_combined_mask, ~sub_presynapse_mask),  # Other parts without presynapse
+                            sub_presynapse_mask  # Add normalized presynapse
+                        )
 
-        pad_z = subvolume_size - sub_raw.shape[0]
-        pad_y = subvolume_size - sub_raw.shape[1]
-        pad_x = subvolume_size - sub_raw.shape[2]
-        if pad_z > 0 or pad_y > 0 or pad_x > 0:
-            sub_raw = np.pad(sub_raw, ((0, pad_z), (0, pad_y), (0, pad_x)), mode='constant', constant_values=0)
-            sub_combined_mask = np.pad(sub_combined_mask, ((0, pad_z), (0, pad_y), (0, pad_x)), mode='constant', constant_values=False)
+            # Apply padding if needed
+            pad_z = subvolume_size - sub_raw.shape[0]
+            pad_y = subvolume_size - sub_raw.shape[1]
+            pad_x = subvolume_size - sub_raw.shape[2]
+            if pad_z > 0 or pad_y > 0 or pad_x > 0:
+                sub_raw = np.pad(sub_raw, ((0, pad_z), (0, pad_y), (0, pad_x)), mode='constant', constant_values=0)
+                sub_combined_mask = np.pad(sub_combined_mask, ((0, pad_z), (0, pad_y), (0, pad_x)), mode='constant', constant_values=False)
 
         sub_raw = sub_raw[:subvolume_size, :subvolume_size, :subvolume_size]
         sub_combined_mask = sub_combined_mask[:subvolume_size, :subvolume_size, :subvolume_size]

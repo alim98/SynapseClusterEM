@@ -58,7 +58,7 @@ class SynapseDataset(Dataset):
             subvolume_size=self.subvol_size,
             alpha=self.alpha,
             bbox_name=bbox_name,
-            normalize_across_volume=self.normalize_across_volume,
+            normalize_across_volume=True,
             smart_crop=self.smart_crop,
             presynapse_weight=self.presynapse_weight,
             normalize_presynapse_size=self.normalize_presynapse_size,

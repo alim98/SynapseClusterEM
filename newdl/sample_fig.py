@@ -47,6 +47,8 @@ def compare_segmentation_types(num_samples_per_bbox=2, segmentation_types=[10, 1
     os.makedirs(output_dir, exist_ok=True)
     
     logger.info("Starting segmentation type comparison with random samples...")
+    # config.excel_file = 'data3/7_bboxes_plus_seg'
+    config.bbox_name = ['bbox3']
     
     # Initialize data loader
     data_loader = SynapseDataLoader(
@@ -202,4 +204,4 @@ def compare_segmentation_types(num_samples_per_bbox=2, segmentation_types=[10, 1
 
 if __name__ == "__main__":
 
-    compare_segmentation_types(num_samples_per_bbox=2, segmentation_types=[ 13])
+    compare_segmentation_types(num_samples_per_bbox=5, segmentation_types=[ 13])

@@ -1027,9 +1027,18 @@ if __name__ == "__main__":
                        help='Path to custom cluster assignments CSV file')
     args, unknown = parser.parse_known_args()
     
-    # Define paths
-    csv_path = r"C:\Users\alim9\Documents\codes\synapse2\results\extracted\stable\13\features_layer20_seg13_alpha1.0\features_layer20_seg13_alpha1_0.csv"
-    output_path = r"C:\Users\alim9\Documents\codes\synapse2\results\extracted\stable\13"
+    # Define paths 10
+    # csv_path = r"C:\Users\alim9\Documents\codes\synapse2\results\extracted\stable\10\features_layer20_seg10_alpha1.0\features_layer20_seg10_alpha1_0.csv"
+    # output_path = r"C:\Users\alim9\Documents\codes\synapse2\results\extracted\stable\10"
+    # args.segtype = 10
+    # Define paths 11
+    csv_path = r"C:\Users\alim9\Documents\codes\synapse2\results\extracted\stable\11\features_layer20_seg11_alpha1.0\features_layer20_seg11_alpha1_0.csv"
+    output_path = r"C:\Users\alim9\Documents\codes\synapse2\results\extracted\stable\11temp"
+    args.segtype = 11
+    # # Define paths 13
+    # csv_path = r"C:\Users\alim9\Documents\codes\synapse2\results\extracted\stable\13\features_layer20_seg13_alpha1.0\features_layer20_seg13_alpha1_0.csv"
+    # output_path = r"C:\Users\alim9\Documents\codes\synapse2\results\extracted\stable\13"
+    # args.segtype = 13
     output_dir = Path(output_path)
     output_dir.mkdir(parents=True, exist_ok=True)
     
