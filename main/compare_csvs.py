@@ -1959,11 +1959,13 @@ def main():
     # method1_label = "layer20"
     # method2_label = "standard"
     # # for preprocessing method comparison
-    default_csv_file1 = r"C:\Users\alim9\Documents\codes\synapse2\results\extracted\seg10\features_layer20_seg10_alpha1.0\features_layer20_seg10_alpha1_0.csv"
-    default_csv_file2 = r"C:\Users\alim9\Documents\codes\synapse2\results\extracted\seg12\features_layer20_seg12_alpha1.0\features_layer20_seg12_alpha1_0.csv"
-    default_output_dir = r"C:\Users\alim9\Documents\codes\synapse2\results\extracted\comparision12"
+   
+    default_csv_file2 = r"C:\Users\alim9\Documents\codes\synapse2\results\extracted\stable\13\features_layer20_seg13_alpha1.0\features_layer20_seg13_alpha1_0.csv"
+    default_csv_file1 = r"C:\Users\alim9\Documents\codes\synapse2\results\extracted\stable\10\features_layer20_seg10_alpha1.0\features_layer20_seg10_alpha1_0.csv"
+    
+    default_output_dir = r"C:\Users\alim9\Documents\codes\synapse2\results\extracted\comparision13n"
     method1_label = "segmentation 10"
-    method2_label = "segmentation 12"
+    method2_label = "segmentation 13"
     parser = argparse.ArgumentParser(description="Compare features from different CSV files and create visualizations")
     parser.add_argument("--csv1", default=default_csv_file1, help="Path to first feature CSV file")
     parser.add_argument("--csv2", default=default_csv_file2, help="Path to second feature CSV file")

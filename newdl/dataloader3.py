@@ -244,7 +244,7 @@ class SynapseDataLoader:
         target_percentage: float = None,  # Target percentage of presynapse pixels (None = use mean)
         size_tolerance: float = 0.1,  # Tolerance range as a percentage of the target (±10% by default)
         vesicle_fill_threshold: float = 100.0,  # Required percentage of vesicle fill for type 12 (default 95%)
-
+        type13_fill_threshold: float = 100.0,  # Required percentage fill for type 13 boxes (default 95%)
     ) -> np.ndarray:
         bbox_num = bbox_name.replace("bbox", "").strip()
         
@@ -650,7 +650,7 @@ class SynapseDataLoader:
                 print(f"Type 13 box with center at ({v_cx}, {v_cy}, {v_cz}) has {fill_percentage:.2f}% fill")
                 
                 # If box is not fully filled, try shifting up to 10 pixels
-                if fill_percentage < 100.0:
+                if fill_percentage < type13_fill_threshold:
                     print(f"Box not fully filled. Attempting to shift box up to 10 pixels.")
                     
                     # Find empty regions to determine shift direction
@@ -722,8 +722,8 @@ class SynapseDataLoader:
                         print(f"After shifting: Box now at z[{z_min}:{z_max}], y[{y_min}:{y_max}], x[{x_min}:{x_max}] with {fill_percentage:.2f}% fill")
                 
                 # Discard sample if the box is still not 100% filled after shifting
-                if fill_percentage < 100.0:
-                    print(f"Discarding sample: Box not completely filled ({fill_percentage:.2f}%) even after shifting")
+                if fill_percentage < type13_fill_threshold:
+                    print(f"Discarding sample: Box not completely filled ({fill_percentage:.2f}%) even after shifting (threshold: {type13_fill_threshold:.2f}%)")
                     return None
                 
                 print(f"Type 13 box with center at ({v_cx}, {v_cy}, {v_cz}) includes vesicle, pre, and cleft masks, excluding mito")

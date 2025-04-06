@@ -39,7 +39,8 @@ class SynapseDataset(Dataset):
         bbox_name = syn_info['bbox_name']
         raw_vol, seg_vol, add_mask_vol = self.vol_data_dict.get(bbox_name, (None, None, None))
         if raw_vol is None:
-            return torch.zeros((self.num_frames, 1, self.subvol_size, self.subvol_size), dtype=torch.float32), syn_info, bbox_name
+            print(f"Volume data not found for {bbox_name}. Returning None.")
+            return None
 
         central_coord = (int(syn_info['central_coord_1']), int(syn_info['central_coord_2']), int(syn_info['central_coord_3']))
         side1_coord = (int(syn_info['side_1_coord_1']), int(syn_info['side_1_coord_2']), int(syn_info['side_1_coord_3']))
@@ -68,10 +69,10 @@ class SynapseDataset(Dataset):
             vesicle_fill_threshold=self.vesicle_fill_threshold,
         )
         
-        # Check if overlaid_cube is None - return zeros if it is
+        # Handle case when overlaid_cube is None (sample discarded)
         if overlaid_cube is None:
-            print(f"Warning: create_segmented_cube returned None for sample {idx}, bbox {bbox_name}. Returning zeros.")
-            return torch.zeros((self.num_frames, 1, self.subvol_size, self.subvol_size), dtype=torch.float32), syn_info, bbox_name
+            print(f"Sample {bbox_name} was discarded during processing. Returning None instead of zeros.")
+            return None
         
         # Extract frames from the overlaid cube
         try:
@@ -136,7 +137,8 @@ class SynapseDataset2(Dataset):
         bbox_name = syn_info['bbox_name']
         raw_vol, seg_vol, add_mask_vol = self.vol_data_dict.get(bbox_name, (None, None, None))
         if raw_vol is None:
-            return torch.zeros((self.num_frames, 1, self.subvol_size, self.subvol_size), dtype=torch.float32), syn_info, bbox_name
+            print(f"Volume data not found for {bbox_name}. Returning None.")
+            return None
 
         # If slice_number is provided in fixed_samples, use it
         slice_number = syn_info.get('slice_number', None)
@@ -168,10 +170,10 @@ class SynapseDataset2(Dataset):
             vesicle_fill_threshold=self.vesicle_fill_threshold,
         )
         
-        # Check if overlaid_cube is None - return zeros if it is
+        # Handle case when overlaid_cube is None (sample discarded)
         if overlaid_cube is None:
-            print(f"Warning: create_segmented_cube returned None for sample {idx}, bbox {bbox_name}. Returning zeros.")
-            return torch.zeros((self.num_frames, 1, self.subvol_size, self.subvol_size), dtype=torch.float32), syn_info, bbox_name
+            print(f"Sample {bbox_name} was discarded during processing. Returning None instead of zeros.")
+            return None
         
         # Extract frames from the overlaid cube
         try:

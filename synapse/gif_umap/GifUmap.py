@@ -216,7 +216,7 @@ def perform_clustering_analysis(config, csv_path, output_path):
     
     return features_df
 
-def create_gif_from_volume(volume, output_path, fps=10):
+def create_gif_from_volume(volume, output_path, fps=10, segmentation_type=None):
     """
     Create a GIF from a volume (3D array) and return the frames.
     
@@ -224,6 +224,7 @@ def create_gif_from_volume(volume, output_path, fps=10):
         volume: 3D array representing volume data
         output_path: Path to save the GIF
         fps: Frames per second
+        segmentation_type: Type of segmentation used - if type 13, only show center 25 frames
         
     Returns:
         Tuple of (output_path, frames) where frames is a list of frame data for web display
@@ -239,6 +240,11 @@ def create_gif_from_volume(volume, output_path, fps=10):
     # If volume has more than 3 dimensions, squeeze it
     if volume.ndim > 3:
         volume = np.squeeze(volume)
+    
+    # For segmentation type 13, only show the center 25 frames (27-53)
+    if segmentation_type == 13 and volume.shape[0] >= 54:
+        print(f"Segmentation type 13 detected: Using only center frames 27-53 (25 frames)")
+        volume = volume[27:54]  # Python indexing is 0-based, so 27-53 is 27:54
     
     # Prepare frames for GIF
     frames = []
@@ -1032,12 +1038,12 @@ if __name__ == "__main__":
     # output_path = r"C:\Users\alim9\Documents\codes\synapse2\results\extracted\stable\10"
     # args.segtype = 10
     # Define paths 11
-    csv_path = r"C:\Users\alim9\Documents\codes\synapse2\results\extracted\stable\11\features_layer20_seg11_alpha1.0\features_layer20_seg11_alpha1_0.csv"
-    output_path = r"C:\Users\alim9\Documents\codes\synapse2\results\extracted\stable\11temp"
-    args.segtype = 11
-    # # Define paths 13
-    # csv_path = r"C:\Users\alim9\Documents\codes\synapse2\results\extracted\stable\13\features_layer20_seg13_alpha1.0\features_layer20_seg13_alpha1_0.csv"
-    # output_path = r"C:\Users\alim9\Documents\codes\synapse2\results\extracted\stable\13"
+    # csv_path = r"C:\Users\alim9\Documents\codes\synapse2\results\extracted\stable\11\features_layer20_seg11_alpha1.0\features_layer20_seg11_alpha1_0.csv"
+    # output_path = r"C:\Users\alim9\Documents\codes\synapse2\results\extracted\stable\11temp"
+    # args.segtype = 11
+    # Define paths 13
+    csv_path = r"C:\Users\alim9\Documents\codes\synapse2\results\extracted\stable\13\features_layer20_seg13_alpha1.0\features_layer20_seg13_alpha1_0.csv"
+    output_path = r"C:\Users\alim9\Documents\codes\synapse2\results\extracted\stable\13"
     # args.segtype = 13
     output_dir = Path(output_path)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -1298,7 +1304,7 @@ if __name__ == "__main__":
             random_samples = []
             
             # Set number of samples to 40 as requested
-            num_samples = 500  # User requested 40 samples
+            num_samples = 100  # User requested 40 samples
             
             if 'cluster' in features_df.columns:
                 # Get all cluster IDs
@@ -1406,7 +1412,7 @@ if __name__ == "__main__":
                     gif_path = gifs_dir / gif_filename
                     
                     # Generate GIF with reduced quality to save space
-                    gif_path, frames = create_gif_from_volume(volume, str(gif_path), fps=8)
+                    gif_path, frames = create_gif_from_volume(volume, str(gif_path), fps=8, segmentation_type=config.segmentation_type)
                     
                     # Check if GIF was successfully created
                     if os.path.exists(gif_path) and os.path.getsize(gif_path) > 0:

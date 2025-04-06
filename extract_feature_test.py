@@ -222,9 +222,9 @@ def extract_features_with_config(
             batch_size=1,
             num_workers=0,
             collate_fn=lambda b: (
-                torch.stack([item[0] for item in b]),
-                [item[1] for item in b],
-                [item[2] for item in b]
+                torch.stack([item[0] for item in b if item is not None]) if any(item is not None for item in b) else torch.empty((0, 1, dataset.num_frames, dataset.subvol_size, dataset.subvol_size), device='cpu'),
+                [item[1] for item in b if item is not None],
+                [item[2] for item in b if item is not None]
             )
         )
         
@@ -237,6 +237,10 @@ def extract_features_with_config(
         
         with torch.no_grad():
             for batch in dataloader:
+                # Skip empty batches (can happen if all items in a batch were discarded)
+                if len(batch[0]) == 0:
+                    continue
+                    
                 pixels, info, names = batch
                 inputs = pixels.permute(0, 2, 1, 3, 4).to(device)
                 
@@ -284,9 +288,9 @@ def extract_features_with_config(
             batch_size=1,
             num_workers=0,
             collate_fn=lambda b: (
-                torch.stack([item[0] for item in b]),
-                [item[1] for item in b],
-                [item[2] for item in b]
+                torch.stack([item[0] for item in b if item is not None]),
+                [item[1] for item in b if item is not None],
+                [item[2] for item in b if item is not None]
             )
         )
 
@@ -295,6 +299,10 @@ def extract_features_with_config(
 
         with torch.no_grad():
             for batch in dataloader:
+                # Skip empty batches (can happen if all items in a batch were discarded)
+                if len(batch[0]) == 0:
+                    continue
+                    
                 pixels, info, names = batch
                 inputs = pixels.permute(0, 2, 1, 3, 4).to(device)
 
