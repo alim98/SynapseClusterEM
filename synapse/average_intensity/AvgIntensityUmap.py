@@ -13,7 +13,7 @@ import torch
 from sklearn.metrics.pairwise import pairwise_distances_argmin_min
 import matplotlib.pyplot as plt
 from matplotlib.offsetbox import OffsetImage, AnnotationBbox
-from PIL import Image, ImageSequence
+from PIL import Image, ImageSequence, ImageDraw, ImageFont
 import io
 import seaborn as sns
 import base64  # For image encoding
@@ -31,58 +31,820 @@ sys.path.append(root_dir)
 from synapse import config
 from synapse.clustering import load_and_cluster_features, apply_tsne, save_tsne_plots, find_random_samples_in_clusters, save_cluster_samples
 
-# Import functions from cleft_size.py
-from cleft_size import find_max_cleft_slices, get_cleft_label
-
-def ensure_gif_autoplay(gif_paths, loop=0):
+def create_average_intensity_projection(volume):
     """
-    Ensures all GIFs are set to autoplay by modifying their loop parameter.
+    Create average intensity projections of a 3D volume along each axis.
+    Crops the volume to 25x25x25 centered on the middle of the volume.
     
     Args:
-        gif_paths: Dictionary mapping sample indices to GIF paths
-        loop: Loop parameter (0 = infinite, -1 = no loop, n = number of loops)
+        volume: 3D array representing volume data (z, y, x)
+        
+    Returns:
+        tuple: (z_projection, y_projection, x_projection) where each is a 2D array
+    """
+    # Convert PyTorch tensor to numpy if needed
+    if isinstance(volume, torch.Tensor):
+        volume = volume.cpu().detach().numpy()
+    
+    # Ensure volume is a numpy array
+    if not isinstance(volume, np.ndarray):
+        raise TypeError(f"Volume must be a numpy array or PyTorch tensor, got {type(volume)}")
+    
+    # If volume has more than 3 dimensions, squeeze it
+    if volume.ndim > 3:
+        volume = np.squeeze(volume)
+    
+    # Crop the volume to 25x25x25 centered on the middle
+    z, y, x = volume.shape
+    z_center, y_center, x_center = z // 2, y // 2, x // 2
+    
+    # Calculate crop boundaries ensuring they're within volume bounds
+    z_min = max(0, z_center - 12)
+    z_max = min(z, z_center + 13)
+    y_min = max(0, y_center - 12)
+    y_max = min(y, y_center + 13)
+    x_min = max(0, x_center - 12)
+    x_max = min(x, x_center + 13)
+    
+    # Crop the volume
+    cropped_volume = volume[z_min:z_max, y_min:y_max, x_min:x_max]
+    print(f"Cropped volume from {volume.shape} to {cropped_volume.shape}")
+    
+    # If values are in 0-1 range, scale to 0-255 for processing
+    if cropped_volume.max() <= 1.0:
+        cropped_volume = cropped_volume * 255.0
+    
+    # Clip values to 0-255 range
+    cropped_volume = np.clip(cropped_volume, 0.0, 255.0)
+    
+    # Create projections along each axis
+    z_projection = np.mean(cropped_volume, axis=0).astype(np.uint8)  # Average along z-axis (x-y plane)
+    y_projection = np.mean(cropped_volume, axis=1).astype(np.uint8)  # Average along y-axis (x-z plane)
+    x_projection = np.mean(cropped_volume, axis=2).astype(np.uint8)  # Average along x-axis (y-z plane)
+    
+    return z_projection, y_projection, x_projection
+
+def create_gif_from_volume(volume, output_path, fps=10, segmentation_type=None):
+    """
+    Create average intensity projections from a volume and return both individual and composite projections.
+    The volume is cropped to 25x25x25 centered on the middle of the volume.
+    
+    Args:
+        volume: 3D array representing volume data
+        output_path: Path to save the projection image
+        fps: Frames per second (kept for backward compatibility)
+        segmentation_type: Type of segmentation used - if type 13, only show center 25 frames
+        
+    Returns:
+        Tuple of (output_path, projection_data) where projection_data contains base64 encoded projections
+    """
+    # Convert PyTorch tensor to numpy if needed
+    if isinstance(volume, torch.Tensor):
+        volume = volume.cpu().detach().numpy()
+    
+    # Ensure volume is a numpy array
+    if not isinstance(volume, np.ndarray):
+        raise TypeError(f"Volume must be a numpy array or PyTorch tensor, got {type(volume)}")
+    
+    # If volume has more than 3 dimensions, squeeze it
+    if volume.ndim > 3:
+        volume = np.squeeze(volume)
+    
+    # For segmentation type 13, only show the center 25 frames (27-53)
+    # This is now handled by the cropping in create_average_intensity_projection
+    # but we'll keep this for backward compatibility
+    if segmentation_type == 13 and volume.shape[0] >= 54:
+        print(f"Segmentation type 13 detected: Using only center frames 27-53 (25 frames)")
+        volume = volume[27:54]  # Python indexing is 0-based, so 27-53 is 27:54
+    
+    # Create average intensity projections (function now handles cropping)
+    z_proj, y_proj, x_proj = create_average_intensity_projection(volume)
+    
+    # Create a composite image with all three projections
+    # Use a layout with z_proj at top left, y_proj at top right, x_proj at bottom left
+    padding = 5  # pixels of padding between projections
+    max_height = max(z_proj.shape[0], x_proj.shape[0])
+    max_width = max(z_proj.shape[1], y_proj.shape[1])
+    
+    # Create a blank composite image
+    composite_height = max_height * 2 + padding 
+    composite_width = max_width * 2 + padding
+    composite = np.zeros((composite_height, composite_width), dtype=np.uint8)
+    
+    # Add z projection (top left)
+    z_h, z_w = z_proj.shape
+    composite[:z_h, :z_w] = z_proj
+    
+    # Add y projection (top right)
+    y_h, y_w = y_proj.shape
+    composite[:y_h, z_w + padding:z_w + padding + y_w] = y_proj
+    
+    # Add x projection (bottom left)
+    x_h, x_w = x_proj.shape
+    composite[z_h + padding:z_h + padding + x_h, :x_w] = x_proj
+    
+    # Add labels to the projections
+    composite_img = Image.fromarray(composite)
+    draw = ImageDraw.Draw(composite_img)
+    
+    # Try to use a default font
+    try:
+        # Try to get a default font
+        font = ImageFont.load_default()
+        
+        # Add labels
+        draw.text((10, 10), "Z projection (top view)", fill=255, font=font)
+        draw.text((z_w + padding + 10, 10), "Y projection (side view)", fill=255, font=font)
+        draw.text((10, z_h + padding + 10), "X projection (front view)", fill=255, font=font)
+    except Exception as e:
+        print(f"Warning: Could not add text labels to projection image: {e}")
+    
+    # Create directory if it doesn't exist
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    
+    # Change the extension from .gif to .png
+    output_path = output_path.replace('.gif', '.png')
+    
+    # Save the composite image
+    composite_img.save(output_path)
+    
+    # Convert projections to base64-encoded PNGs for web display
+    projection_data = {}
+    
+    # Convert z projection to base64
+    with io.BytesIO() as output:
+        Image.fromarray(z_proj).save(output, format="PNG")
+        projection_data['z_proj'] = base64.b64encode(output.getvalue()).decode('utf-8')
+    
+    # Convert y projection to base64
+    with io.BytesIO() as output:
+        Image.fromarray(y_proj).save(output, format="PNG")
+        projection_data['y_proj'] = base64.b64encode(output.getvalue()).decode('utf-8')
+    
+    # Convert x projection to base64
+    with io.BytesIO() as output:
+        Image.fromarray(x_proj).save(output, format="PNG")
+        projection_data['x_proj'] = base64.b64encode(output.getvalue()).decode('utf-8')
+    
+    # Convert composite to base64
+    with io.BytesIO() as output:
+        composite_img.save(output, format="PNG")
+        projection_data['composite'] = base64.b64encode(output.getvalue()).decode('utf-8')
+    
+    return output_path, projection_data
+
+def create_projection_visualization(features_df, projection_paths, output_dir, dim_reduction='umap', projection_data=None, dataset=None):
+    """
+    Create a simple HTML page that displays intensity projections directly at their coordinates.
+    The projections are embedded directly in the HTML as base64 data to avoid file:// protocol issues.
+    Projections are made draggable so users can rearrange them.
+    Includes a control to adjust how many projections are displayed at runtime.
+    
+    Args:
+        features_df: DataFrame with features and coordinates
+        projection_paths: Dictionary mapping sample indices to projection image paths
+        output_dir: Directory to save the HTML file
+        dim_reduction: Dimensionality reduction method ('umap' or 'tsne')
+        projection_data: Dictionary mapping sample indices to projection data (z_proj, y_proj, x_proj)
+        dataset: The dataset object to use for regenerating projections if needed
     
     Returns:
-        Dictionary with paths to modified GIFs
+        Path to the HTML file
     """
-    from PIL import Image, ImageSequence
-    import os
+    method_name = "UMAP" if dim_reduction == 'umap' else "t-SNE"
+    import base64
     
-    modified_gif_paths = {}
+    # Debug projection_data
+    if projection_data:
+        print(f"\nReceived projection_data with {len(projection_data)} entries")
+        sample_key = next(iter(projection_data))
+        print(f"Sample key: {sample_key}")
+        print(f"Projection keys for this sample: {list(projection_data[sample_key].keys())}")
+        print(f"Z projection available: {'z_proj' in projection_data[sample_key]}")
+        print(f"Y projection available: {'y_proj' in projection_data[sample_key]}")
+        print(f"X projection available: {'x_proj' in projection_data[sample_key]}")
+    else:
+        print("\nNo projection_data provided")
     
-    for idx, path in gif_paths.items():
+    # Define plot dimensions upfront
+    plot_width = 1600  # From the CSS .plot-container width
+    plot_height = 1200  # From the CSS .plot-container height
+    
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    print("Ensuring coordinates are available...")
+    
+    # Make sure we have the right coordinate columns
+    coord_columns = {
+        'umap': ['umap_x', 'umap_y'],
+        'tsne': ['tsne_x', 'tsne_y'],
+        'generic': ['x', 'y']
+    }
+    
+    # First priority: check for generic columns
+    if all(col in features_df.columns for col in coord_columns['generic']):
+        x_col, y_col = coord_columns['generic']
+        print(f"Using generic coordinate columns: {x_col}, {y_col}")
+    # Second priority: check for method-specific columns
+    elif all(col in features_df.columns for col in coord_columns[dim_reduction]):
+        x_col, y_col = coord_columns[dim_reduction]
+        print(f"Using {method_name}-specific coordinate columns: {x_col}, {y_col}")
+    # Fall back to the other method if available
+    elif dim_reduction == 'umap' and all(col in features_df.columns for col in coord_columns['tsne']):
+        x_col, y_col = coord_columns['tsne']
+        print(f"Using t-SNE coordinates as fallback: {x_col}, {y_col}")
+    elif dim_reduction == 'tsne' and all(col in features_df.columns for col in coord_columns['umap']):
+        x_col, y_col = coord_columns['umap']
+        print(f"Using UMAP coordinates as fallback: {x_col}, {y_col}")
+    else:
+        raise ValueError(f"No suitable coordinate columns found in DataFrame. Available columns: {features_df.columns.tolist()}")
+    
+    # Extract coordinates and other info for samples with projections
+    samples_with_projections = []
+    
+    # Track how many projections we have from each cluster for reporting
+    cluster_counts = {}
+    
+    for idx in projection_paths:
+        if idx in features_df.index:
+            sample = features_df.loc[idx]
+            
+            # Use the determined coordinate columns
+            if x_col in sample and y_col in sample:
+                x, y = sample[x_col], sample[y_col]
+                
+                # Extract cluster and bbox information if available
+                cluster = sample.get('cluster', 'N/A') if 'cluster' in sample else 'N/A'
+                bbox = sample.get('bbox_name', 'unknown') if 'bbox_name' in sample else 'unknown'
+                
+                # Extract central coordinates if available
+                central_coord_1 = sample.get('central_coord_1', 0) if 'central_coord_1' in sample else 0
+                central_coord_2 = sample.get('central_coord_2', 0) if 'central_coord_2' in sample else 0
+                central_coord_3 = sample.get('central_coord_3', 0) if 'central_coord_3' in sample else 0
+                
+                # Count samples per cluster
+                if cluster != 'N/A':
+                    cluster_counts[cluster] = cluster_counts.get(cluster, 0) + 1
+                
+                # Convert numpy/pandas types to Python native types for JSON serialization
+                if hasattr(idx, 'item'):
+                    idx = idx.item()
+                if hasattr(x, 'item'):
+                    x = x.item()
+                if hasattr(y, 'item'):
+                    y = y.item()
+                if hasattr(cluster, 'item'):
+                    cluster = cluster.item()
+                
+                # Load the projection file and convert to base64
+                try:
+                    with open(projection_paths[idx], 'rb') as projection_file:
+                        projection_file_data = projection_file.read()
+                        encoded_projection = base64.b64encode(projection_file_data).decode('utf-8')
+                        
+                        # Get projection data for this sample index - should be in memory after create_gif_from_volume
+                        sample_projections = {}
+                        
+                        # Use stored projection data if available (from function parameter)
+                        if projection_data:
+                            # Convert idx to string to match how it's stored in projection_data
+                            str_idx = str(idx)
+                            if str_idx in projection_data:
+                                # The base64 data from projection_data is already encoded
+                                sample_projections = projection_data[str_idx]
+                                print(f"Using provided projection data for sample {idx}")
+                            else:
+                                print(f"No provided projection data found for sample {idx}, regenerating...")
+                        else:
+                            print(f"No projection_data dictionary provided, regenerating...")
+                        
+                        # Look up the sample in the dataset and recreate the projections if needed if not available from parameter
+                        if not sample_projections and hasattr(dataset, '__getitem__') and idx < len(dataset):
+                            sample_data = dataset[idx]
+                            
+                            # Extract volume
+                            if isinstance(sample_data, tuple) and len(sample_data) > 0:
+                                volume = sample_data[0]
+                            elif isinstance(sample_data, dict):
+                                volume = sample_data.get('pixel_values', sample_data.get('raw_volume'))
+                            else:
+                                volume = sample_data
+                            
+                            # Create projections
+                            if volume is not None:
+                                try:
+                                    z_proj, y_proj, x_proj = create_average_intensity_projection(volume)
+                                    
+                                    # Convert projections to base64
+                                    with io.BytesIO() as output:
+                                        Image.fromarray(z_proj).save(output, format="PNG")
+                                        sample_projections['z_proj'] = base64.b64encode(output.getvalue()).decode('utf-8')
+                                    
+                                    with io.BytesIO() as output:
+                                        Image.fromarray(y_proj).save(output, format="PNG")
+                                        sample_projections['y_proj'] = base64.b64encode(output.getvalue()).decode('utf-8')
+                                    
+                                    with io.BytesIO() as output:
+                                        Image.fromarray(x_proj).save(output, format="PNG")
+                                        sample_projections['x_proj'] = base64.b64encode(output.getvalue()).decode('utf-8')
+                                except Exception as e:
+                                    print(f"Error creating individual projections for sample {idx}: {e}")
+                        
+                        # Add the sample with all projections
+                        sample_data = {
+                            'id': idx,
+                            'x': x,
+                            'y': y,
+                            'cluster': cluster,
+                            'bbox': bbox,
+                            'central_coord_1': central_coord_1,
+                            'central_coord_2': central_coord_2, 
+                            'central_coord_3': central_coord_3,
+                            'projectionData': encoded_projection
+                        }
+                        
+                        # Add individual projections if available
+                        if sample_projections:
+                            print(f"Adding projections for sample {idx} with keys: {list(sample_projections.keys())}")
+                            for proj_key, proj_data in sample_projections.items():
+                                try:
+                                    # Don't try to encode the data, just use it directly
+                                    # If it's already a string (base64 encoded), use it as is
+                                    if isinstance(proj_data, str):
+                                        sample_data[proj_key] = proj_data
+                                        print(f"Added {proj_key} projection to sample {idx} (string data)")
+                                    else:
+                                        sample_data[proj_key] = proj_data
+                                        print(f"Added {proj_key} projection to sample {idx} (direct data)")
+                                except Exception as e:
+                                    print(f"Error adding {proj_key} projection to sample {idx}: {e}")
+                        else:
+                            print(f"Warning: No projection data available for sample {idx}")
+                        
+                        samples_with_projections.append(sample_data)
+                except Exception as e:
+                    print(f"Error encoding projection for sample {idx}: {e}")
+            else:
+                print(f"Warning: Sample {idx} does not have required coordinates ({x_col}, {y_col}). Skipping.")
+    
+    # Print distribution of projections across clusters
+    if cluster_counts:
+        print("\nDistribution of projections across clusters:")
+        for cluster, count in sorted(cluster_counts.items()):
+            print(f"  Cluster {cluster}: {count} projections")
+    
+    if not samples_with_projections:
+        raise ValueError("No samples with projections and valid coordinates found. Cannot create visualization.")
+    
+    print(f"\nTotal samples with projections and valid coordinates: {len(samples_with_projections)}")
+    print(f"First sample for debugging: {json.dumps(samples_with_projections[0], default=str)[:200]}...")
+    
+    # Compute the bounds of the coordinate values
+    all_x_values = features_df[x_col].values
+    all_y_values = features_df[y_col].values
+    
+    print(f"X coordinate range: {min(all_x_values)} to {max(all_x_values)}")
+    print(f"Y coordinate range: {min(all_y_values)} to {max(all_y_values)}")
+    
+    x_min, x_max = float(min(all_x_values)), float(max(all_x_values))
+    y_min, y_max = float(min(all_y_values)), float(max(all_y_values))
+    
+    # Add padding
+    x_padding = (x_max - x_min) * 0.1
+    y_padding = (y_max - y_min) * 0.1
+    
+    x_min, x_max = x_min - x_padding, x_max + x_padding
+    y_min, y_max = y_min - y_padding, y_max + y_padding
+    
+    # Processing to create non-overlapping positions
+    projection_size = 50  # Default size decreased from 100 to 50px
+    shift_limit = 75  # Increased from 50 to 100px shift limit
+    max_shift_x = shift_limit
+    max_shift_y = shift_limit
+    
+    # Function to check if two rectangles overlap
+    def do_rectangles_overlap(rect1, rect2):
+        return not (rect1['right'] < rect2['left'] or 
+                   rect1['left'] > rect2['right'] or 
+                   rect1['bottom'] < rect2['top'] or 
+                   rect1['top'] > rect2['bottom'])
+    
+    # Track placed rectangles to avoid overlap
+    placed_rectangles = []
+    
+    # Function to find non-overlapping position
+    def find_non_overlapping_position(baseX, baseY, existingRects):
+        # Check if the original position works
+        half_size = projection_size / 2
+        rect = {
+            'left': baseX - half_size,
+            'right': baseX + half_size,
+            'top': baseY - half_size,
+            'bottom': baseY + half_size
+        }
+        
+        # Check if original position has no overlap
+        has_overlap = False
+        overlap_rect = None
+        
+        for existing_rect in existingRects:
+            if do_rectangles_overlap(rect, existing_rect):
+                has_overlap = True
+                overlap_rect = existing_rect
+                break
+                
+        # If no overlap, use original position
+        if not has_overlap:
+            return (baseX, baseY, rect)
+            
+        # Calculate the minimum shift needed in each direction to avoid overlap
+        if overlap_rect:
+            # Calculate overlap amounts in each direction
+            overlap_right = rect['right'] - overlap_rect['left']
+            overlap_left = overlap_rect['right'] - rect['left']
+            overlap_bottom = rect['bottom'] - overlap_rect['top']
+            overlap_top = overlap_rect['bottom'] - rect['top']
+            
+            # Find the smallest shift needed
+            shifts = [
+                {'axis': 'x', 'amount': overlap_right, 'direction': 1},   # shift right
+                {'axis': 'x', 'amount': -overlap_left, 'direction': -1},  # shift left
+                {'axis': 'y', 'amount': overlap_bottom, 'direction': 1},  # shift down
+                {'axis': 'y', 'amount': -overlap_top, 'direction': -1}    # shift up
+            ]
+            
+            # Sort by absolute amount to find smallest shift
+            shifts.sort(key=lambda s: abs(s['amount']))
+            
+            # Try each shift until we find one that works
+            for shift in shifts:
+                # Skip if shift is too large
+                if abs(shift['amount']) > shift_limit:
+                    continue
+                
+                shifted_x = baseX
+                shifted_y = baseY
+                
+                if shift['axis'] == 'x':
+                    shifted_x += shift['amount']
+                else:
+                    shifted_y += shift['amount']
+                
+                # Skip if this would move the projection out of bounds
+                if (shifted_x - half_size < 0 or shifted_x + half_size > plot_width or
+                    shifted_y - half_size < 0 or shifted_y + half_size > plot_height):
+                    continue
+                
+                # Check if this position works with all existing rectangles
+                shifted_rect = {
+                    'left': shifted_x - half_size,
+                    'right': shifted_x + half_size,
+                    'top': shifted_y - half_size,
+                    'bottom': shifted_y + half_size
+                }
+                
+                shifted_overlap = False
+                for existing_rect in existingRects:
+                    if do_rectangles_overlap(shifted_rect, existing_rect):
+                        shifted_overlap = True
+                        break
+                        
+                if not shifted_overlap:
+                    return (shifted_x, shifted_y, shifted_rect)
+        
+        # If the simple shifts didn't work, try a more general approach
+        # Try cardinal and diagonal directions with increasing distances
+        directions = [
+            (1, 0),   # right
+            (0, 1),   # down
+            (-1, 0),  # left
+            (0, -1),  # up
+            (1, 1),   # down-right
+            (1, -1),  # up-right
+            (-1, 1),  # down-left
+            (-1, -1)  # up-left
+        ]
+        
+        # Try increasing distances with smaller steps
+        for distance in range(1, int(shift_limit) + 1):
+            for dir_x, dir_y in directions:
+                shifted_x = baseX + (dir_x * distance)
+                shifted_y = baseY + (dir_y * distance)
+                
+                # Skip if this would move the projection out of bounds
+                if (shifted_x - half_size < 0 or shifted_x + half_size > plot_width or
+                    shifted_y - half_size < 0 or shifted_y + half_size > plot_height):
+                    continue
+                
+                # Check this position
+                shifted_rect = {
+                    'left': shifted_x - half_size,
+                    'right': shifted_x + half_size,
+                    'top': shifted_y - half_size,
+                    'bottom': shifted_y + half_size
+                }
+                
+                shifted_overlap = False
+                for existing_rect in existingRects:
+                    if do_rectangles_overlap(shifted_rect, existing_rect):
+                        shifted_overlap = True
+                        break
+                        
+                if not shifted_overlap:
+                    return (shifted_x, shifted_y, shifted_rect)
+        
+        # Try with slightly smaller projection size as a last resort
+        reduced_half_size = half_size * 0.8
+        for distance in range(1, int(shift_limit) + 1, 2):
+            for dir_x, dir_y in directions:
+                shifted_x = baseX + (dir_x * distance)
+                shifted_y = baseY + (dir_y * distance)
+                
+                # Skip if this would move the projection out of bounds
+                if (shifted_x - reduced_half_size < 0 or shifted_x + reduced_half_size > plot_width or
+                    shifted_y - reduced_half_size < 0 or shifted_y + reduced_half_size > plot_height):
+                    continue
+                
+                # Check this position with reduced size
+                shifted_rect = {
+                    'left': shifted_x - reduced_half_size,
+                    'right': shifted_x + reduced_half_size,
+                    'top': shifted_y - reduced_half_size,
+                    'bottom': shifted_y + reduced_half_size
+                }
+                
+                shifted_overlap = False
+                for existing_rect in existingRects:
+                    if do_rectangles_overlap(shifted_rect, existing_rect):
+                        shifted_overlap = True
+                        break
+                        
+                if not shifted_overlap:
+                    return (shifted_x, shifted_y, shifted_rect)
+        
+        # If we can't find a non-overlapping position, return null
+        return None
+    
+    # Initialize originalPositions dictionary for storing initial projection positions
+    # Note: we need to map the raw coordinates to plot coordinates
+    # For this we use the same mapping logic as in the JavaScript mapToPlot function
+    orig_positions_dict = {}
+    samples_to_remove = []
+    
+    for i, sample in enumerate(samples_with_projections):
+        id_val = sample['id']
+        if hasattr(id_val, 'item'):
+            id_val = id_val.item()  # Convert numpy types to native Python
+        
+        x_val = sample['x']
+        y_val = sample['y']
+        
+        # Map data coordinates to plot coordinates (same as JavaScript mapToPlot function)
+        plot_x = ((x_val - x_min) / (x_max - x_min)) * plot_width
+        # Invert y-axis (data coordinates increase upward, plot coordinates increase downward)
+        plot_y = plot_height - ((y_val - y_min) / (y_max - y_min)) * plot_height
+        
+        # Find non-overlapping position
+        position = find_non_overlapping_position(plot_x, plot_y, placed_rectangles)
+        
+        # If no valid position found, skip this sample
+        if position is None:
+            print(f"Skipping sample {id_val} due to overlap that couldn't be resolved")
+            samples_to_remove.append(i)
+            continue
+            
+        # Unpack the position
+        pos_x, pos_y, rect = position
+        
+        # Add to tracking for future samples
+        placed_rectangles.append(rect)
+        
+        # Use string keys for the JavaScript object
+        str_id = str(id_val)
+        orig_positions_dict[str_id] = {"x": float(pos_x), "y": float(pos_y)}
+        
+        # If position was shifted, note it
+        if pos_x != plot_x or pos_y != plot_y:
+            print(f"Sample {id_val} shifted to avoid overlap")
+    
+    # Remove samples that couldn't be placed
+    if samples_to_remove:
+        for i in sorted(samples_to_remove, reverse=True):
+            del samples_with_projections[i]
+        print(f"Removed {len(samples_to_remove)} samples that couldn't be placed without overlap")
+    
+    # Convert to JSON string for embedding in JavaScript
+    originalPositions = json.dumps(orig_positions_dict)
+    print(f"originalPositions JSON string length: {len(originalPositions)}")
+    print(f"Sample of originalPositions: {originalPositions[:100]}...")
+    
+    # Define colors for points based on clusters or bboxes
+    point_colors = {}
+    bbox_colors = {}
+    
+    if 'cluster' in features_df.columns:
+        # Generate colors for each cluster
+        clusters = features_df['cluster'].unique()
+        import matplotlib.pyplot as plt
+        
+        # Use the new recommended approach to get colormaps
         try:
-            # Open the original GIF
-            img = Image.open(path)
+            cmap = plt.colormaps['tab10']
+        except AttributeError:
+            # Fallback for older matplotlib versions
+            cmap = plt.cm.get_cmap('tab10')
+        
+        for i, cluster in enumerate(clusters):
+            r, g, b, _ = cmap(i % 10)  # Use modulo to handle more than 10 clusters
+            point_colors[cluster] = f"rgb({int(r*255)}, {int(g*255)}, {int(b*255)})"
+    
+    # Generate colors for bboxes
+    if 'bbox_name' in features_df.columns:
+        bboxes = features_df['bbox_name'].unique()
+        bbox_colors_list = [
+            '#FF0000', '#00FFFF', '#FFA500', '#800080', 
+            '#008000', '#0000FF', '#FF00FF', '#FFFF00', 
+            '#808080', '#000000'
+        ]
+        
+        for i, bbox in enumerate(bboxes):
+            if i < len(bbox_colors_list):
+                bbox_colors[bbox] = bbox_colors_list[i]
+            else:
+                # Generate a random color if we run out of predefined colors
+                r = random.randint(0, 255)
+                g = random.randint(0, 255) 
+                b = random.randint(0, 255)
+                bbox_colors[bbox] = f"rgb({r}, {g}, {b})"
+    
+    # Generate HTML content for data points
+    points_content = ""
+    for idx, row in features_df.iterrows():
+        if x_col in row and y_col in row:
+            x, y = row[x_col], row[y_col]
             
-            # Create a new file path for the modified GIF
-            dir_path = os.path.dirname(path)
-            file_name = os.path.basename(path)
-            new_path = os.path.join(dir_path, f"autoloop_{file_name}")
+            # Convert to native Python types
+            if hasattr(idx, 'item'):
+                idx = idx.item()
+            if hasattr(x, 'item'):
+                x = x.item()
+            if hasattr(y, 'item'):
+                y = y.item()
             
-            # Extract frames
-            frames = [frame.copy() for frame in ImageSequence.Iterator(img)]
+            # Determine color based on cluster
+            cluster_color = 'rgb(100, 100, 100)'
+            cluster = None
+            if 'cluster' in row:
+                cluster = row['cluster']
+                if hasattr(cluster, 'item'):
+                    cluster = cluster.item()
+                cluster_color = point_colors.get(cluster, 'rgb(100, 100, 100)')
             
-            # Save with the loop parameter
-            frames[0].save(
-                new_path,
-                save_all=True,
-                append_images=frames[1:],
-                optimize=False,
-                loop=loop,  # 0 means infinite loop
-                duration=img.info.get('duration', 100)  # Use original duration or default to 100ms
-            )
+            # Get bbox_name and color based on bbox
+            bbox_name = row.get('bbox_name', 'unknown')
+            if hasattr(bbox_name, 'item'):
+                bbox_name = str(bbox_name.item())
+            else:
+                bbox_name = str(bbox_name)
             
-            # Store the new path
-            modified_gif_paths[idx] = new_path
-            print(f"Modified GIF for sample {idx} to auto-loop")
+            bbox_color = bbox_colors.get(bbox_name, 'rgb(100, 100, 100)')
             
+            # Get Var1 for tooltip
+            var1 = row.get('Var1', f'sample_{idx}')
+            if hasattr(var1, 'item'):
+                var1 = str(var1.item())
+            else:
+                var1 = str(var1)
+            
+            # Add this point to the samples array - make sure we have a valid number before adding
+            if not (np.isnan(x) or np.isnan(y)):
+                points_content += f"""
+                {{
+                    "id": {idx},
+                    "x": {x},
+                    "y": {y},
+                    "color": "{cluster_color}",
+                    "bbox_color": "{bbox_color}",
+                    "cluster": "{str(cluster) if cluster is not None else 'unknown'}",
+                    "hasProjection": {str(idx in projection_paths).lower()},
+                    "bbox_name": "{bbox_name}",
+                    "var1": "{var1}"
+                }},"""
+    
+    # Count how many valid points we have
+    print(f"Generated points_content with {points_content.count('id:')} points")
+    print(f"Sample of points_content: {points_content[:200]}...")
+    
+    # Generate HTML content for projections
+    projections_content = ""
+    for sample in samples_with_projections:
+        # Only include projection data if we have it
+        has_projection = sample.get('projectionData') is not None and len(sample.get('projectionData', [])) > 0
+        
+        try:
+            # Build the JSON for this sample with default projectionData first
+            projection_json = f"""{{
+                "id": {sample.get('id', 0)},
+                "x": {sample.get('x', 0)},
+                "y": {sample.get('y', 0)},
+                "cluster": "{sample.get('cluster', 'N/A')}",
+                "bbox": "{sample.get('bbox', 'unknown')}",
+                "central_coord_1": {sample.get('central_coord_1', 0)},
+                "central_coord_2": {sample.get('central_coord_2', 0)},
+                "central_coord_3": {sample.get('central_coord_3', 0)}"""
+            
+            # Add projectionData if available 
+            if has_projection:
+                projection_json += f""",
+                "projectionData": "{sample['projectionData']}" """
+            
+            # Add individual projection views if available
+            for proj_type in ['z_proj', 'y_proj', 'x_proj']:
+                if proj_type in sample and sample[proj_type]:
+                    projection_json += f""",
+                "{proj_type}": "{sample[proj_type]}" """
+            
+            # Add the hasProjection flag and close the JSON object
+            projection_json += f""",
+                "hasProjection": {str(has_projection).lower()}
+            }},"""
+            
+            projections_content += projection_json
         except Exception as e:
-            print(f"Error modifying GIF for sample {idx}: {e}")
-            # Keep the original path if modification fails
-            modified_gif_paths[idx] = path
+            print(f"Error creating projection JSON for sample {sample.get('id', 0)}: {e}")
+            continue
+    
+    # Count how many valid projections we have
+    print(f"Generated projections_content with {projections_content.count('id:')} projections")
+    print(f"Sample of projections_content (truncated): {projections_content[:100]}...")
+    
+    # Read the HTML template
+    template_path = os.path.join(os.path.dirname(__file__), "average_intensity_template.html")
+    try:
+        with open(template_path, 'r', encoding='utf-8') as template_file:
+            html_content = template_file.read()
             
-    return modified_gif_paths
+        # Replace placeholders with actual data
+        html_content = html_content.replace('{method_name}', method_name)
+        html_content = html_content.replace('{x_min}', str(x_min))
+        html_content = html_content.replace('{x_max}', str(x_max))
+        html_content = html_content.replace('{y_min}', str(y_min))
+        html_content = html_content.replace('{y_max}', str(y_max))
+        html_content = html_content.replace('{originalPositions}', originalPositions)
+        html_content = html_content.replace('{points_content}', points_content)
+        html_content = html_content.replace('{projections_content}', projections_content)
+        html_content = html_content.replace('{len(samples_with_projections)}', str(len(samples_with_projections)))
+        
+        print("Successfully loaded and processed HTML template")
+    except Exception as e:
+        print(f"Error loading or processing HTML template: {e}")
+        import traceback
+        traceback.print_exc()
+        raise
+    
+    # Save the HTML file
+    html_path = output_dir / f"projected_images_{dim_reduction}_visualization.html"
+    try:
+        # Add debug statements to narrow down the error
+        print("Types of data:")
+        print("- originalPositions type:", type(originalPositions))
+        print("- points_content type:", type(points_content))
+        print("- points_content length:", len(points_content))
+        print("- projections_content type:", type(projections_content))
+        print("- projections_content length:", len(projections_content))
+        print("- First item in samples_with_projections:", samples_with_projections[0] if samples_with_projections else "No samples")
+        
+        # Check if the points_content and projections_content are empty 
+        if not points_content.strip():
+            print("WARNING: points_content is empty! No background points will be shown.")
+        
+        if not projections_content.strip():
+            print("WARNING: projections_content is empty! No projections will be shown.")
+            
+        # Write the HTML file
+        with open(html_path, 'w', encoding='utf-8') as f:
+            f.write(html_content)
+        
+        print(f"Created projected image visualization with embedded data: {html_path}")
+        
+        # Print a sample of the HTML content to verify it has data
+        html_sample = html_content[0:1000]  # Get first 1000 chars
+        print(f"Sample of HTML content: {html_sample}")
+        
+        # Check HTML file size
+        html_size = os.path.getsize(html_path)
+        print(f"HTML file size: {html_size} bytes")
+        
+        if html_size < 10000:  # If file is too small, something might be wrong
+            print("WARNING: HTML file is very small! It might not contain all necessary data.")
+            
+    except Exception as e:
+        print(f"Error creating projected image visualization: {e}")
+        import traceback
+        traceback.print_exc()  # Print the full traceback for debugging
+    
+    return html_path
 
 # Define function to initialize a dataset from the newdl folder
 def initialize_dataset_from_newdl():
@@ -216,700 +978,6 @@ def perform_clustering_analysis(config, csv_path, output_path):
     
     return features_df
 
-def create_gif_from_volume(volume, output_path, fps=10, segmentation_type=None):
-    """
-    Create a GIF from a volume (3D array) and return the frames.
-    
-    Args:
-        volume: 3D array representing volume data
-        output_path: Path to save the GIF
-        fps: Frames per second
-        segmentation_type: Type of segmentation used - if type 13, only show center 25 frames
-        
-    Returns:
-        Tuple of (output_path, frames) where frames is a list of frame data for web display
-    """
-    # Convert PyTorch tensor to numpy if needed
-    if isinstance(volume, torch.Tensor):
-        volume = volume.cpu().detach().numpy()
-    
-    # Ensure volume is a numpy array
-    if not isinstance(volume, np.ndarray):
-        raise TypeError(f"Volume must be a numpy array or PyTorch tensor, got {type(volume)}")
-    
-    # If volume has more than 3 dimensions, squeeze it
-    if volume.ndim > 3:
-        volume = np.squeeze(volume)
-    
-    # For segmentation type 13, only show the center 25 frames (27-53)
-    if segmentation_type == 13 and volume.shape[0] >= 54:
-        print(f"Segmentation type 13 detected: Using only center frames 27-53 (25 frames)")
-        volume = volume[27:54]  # Python indexing is 0-based, so 27-53 is 27:54
-    
-    # Prepare frames for GIF
-    frames = []
-    
-    # Use absolute fixed scaling to match dataloader2.py behavior
-    # This ensures completely consistent gray values across all samples
-    
-    # Define same fixed values as in dataloader2.py
-    fixed_min = 0.0
-    fixed_max = 255.0
-    
-    # If values are in 0-1 range, scale to 0-255 for processing
-    if volume.max() <= 1.0:
-        volume = volume * 255.0
-        
-    print(f"Using ABSOLUTE fixed gray values: min={fixed_min}, max={fixed_max}")
-    print(f"Volume range before clipping: {volume.min():.4f}-{volume.max():.4f}")
-        
-    for i in range(volume.shape[0]):
-        frame = volume[i]
-        # Clip to fixed range without any normalization
-        clipped = np.clip(frame, fixed_min, fixed_max)
-        # Convert to uint8 for GIF
-        scaled = clipped.astype(np.uint8)
-        frames.append(scaled)
-    
-    # Create directory if it doesn't exist
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    
-    # Save as GIF
-    imageio.mimsave(output_path, frames, fps=fps)
-    
-    # Convert frames to base64-encoded PNGs for web display
-    frame_data = []
-    for frame in frames:
-        # Convert frame to PNG and then to base64
-        with io.BytesIO() as output:
-            Image.fromarray(frame).save(output, format="PNG")
-            frame_base64 = base64.b64encode(output.getvalue()).decode('utf-8')
-            frame_data.append(frame_base64)
-    
-    return output_path, frame_data
-
-
-def create_animated_gif_visualization(features_df, gif_paths, output_dir, dim_reduction='umap', frame_data=None, max_slices_data=None):
-    """
-    Create a simple HTML page that displays animated GIFs directly at their coordinates.
-    The GIFs are embedded directly in the HTML as base64 data to avoid file:// protocol issues.
-    GIFs are made draggable so users can rearrange them.
-    Includes a control to adjust how many GIFs are displayed at runtime.
-    
-    Args:
-        features_df: DataFrame with features and coordinates
-        gif_paths: Dictionary mapping sample indices to GIF paths
-        output_dir: Directory to save the HTML file
-        dim_reduction: Dimensionality reduction method ('umap' or 'tsne')
-        frame_data: Dictionary mapping sample indices to lists of frame data (base64 encoded images)
-        max_slices_data: Dictionary mapping sample indices to max slice information
-    
-    Returns:
-        Path to the HTML file
-    """
-    method_name = "UMAP" if dim_reduction == 'umap' else "t-SNE"
-    import base64
-    
-    # Define plot dimensions upfront
-    plot_width = 1600  # From the CSS .plot-container width
-    plot_height = 1200  # From the CSS .plot-container height
-    
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    
-    print("Ensuring coordinates are available...")
-    
-    # Make sure we have the right coordinate columns
-    coord_columns = {
-        'umap': ['umap_x', 'umap_y'],
-        'tsne': ['tsne_x', 'tsne_y'],
-        'generic': ['x', 'y']
-    }
-    
-    # First priority: check for generic columns
-    if all(col in features_df.columns for col in coord_columns['generic']):
-        x_col, y_col = coord_columns['generic']
-        print(f"Using generic coordinate columns: {x_col}, {y_col}")
-    # Second priority: check for method-specific columns
-    elif all(col in features_df.columns for col in coord_columns[dim_reduction]):
-        x_col, y_col = coord_columns[dim_reduction]
-        print(f"Using {method_name}-specific coordinate columns: {x_col}, {y_col}")
-    # Fall back to the other method if available
-    elif dim_reduction == 'umap' and all(col in features_df.columns for col in coord_columns['tsne']):
-        x_col, y_col = coord_columns['tsne']
-        print(f"Using t-SNE coordinates as fallback: {x_col}, {y_col}")
-    elif dim_reduction == 'tsne' and all(col in features_df.columns for col in coord_columns['umap']):
-        x_col, y_col = coord_columns['umap']
-        print(f"Using UMAP coordinates as fallback: {x_col}, {y_col}")
-    else:
-        raise ValueError(f"No suitable coordinate columns found in DataFrame. Available columns: {features_df.columns.tolist()}")
-    
-    # Extract coordinates and other info for samples with GIFs
-    samples_with_gifs = []
-    
-    # Track how many GIFs we have from each cluster for reporting
-    cluster_counts = {}
-    
-    for idx in gif_paths:
-        if idx in features_df.index:
-            sample = features_df.loc[idx]
-            
-            # Use the determined coordinate columns
-            if x_col in sample and y_col in sample:
-                x, y = sample[x_col], sample[y_col]
-                
-                # Extract cluster and bbox information if available
-                cluster = sample.get('cluster', 'N/A') if 'cluster' in sample else 'N/A'
-                bbox = sample.get('bbox_name', 'unknown') if 'bbox_name' in sample else 'unknown'
-                
-                # Extract central coordinates if available
-                central_coord_1 = sample.get('central_coord_1', 0) if 'central_coord_1' in sample else 0
-                central_coord_2 = sample.get('central_coord_2', 0) if 'central_coord_2' in sample else 0
-                central_coord_3 = sample.get('central_coord_3', 0) if 'central_coord_3' in sample else 0
-                
-                # Count samples per cluster
-                if cluster != 'N/A':
-                    cluster_counts[cluster] = cluster_counts.get(cluster, 0) + 1
-                
-                # Convert numpy/pandas types to Python native types for JSON serialization
-                if hasattr(idx, 'item'):
-                    idx = idx.item()
-                if hasattr(x, 'item'):
-                    x = x.item()
-                if hasattr(y, 'item'):
-                    y = y.item()
-                if hasattr(cluster, 'item'):
-                    cluster = cluster.item()
-                
-                # Load the GIF file and convert to base64
-                try:
-                    with open(gif_paths[idx], 'rb') as gif_file:
-                        gif_data = gif_file.read()
-                        encoded_gif = base64.b64encode(gif_data).decode('utf-8')
-                        
-                        # Add frame data if available
-                        frames = []
-                        if frame_data and idx in frame_data:
-                            frames = frame_data[idx]
-                        
-                        # Add max slices if available
-                        max_slices = None
-                        if max_slices_data and idx in max_slices_data:
-                            max_slices = max_slices_data[idx]
-                        
-                        samples_with_gifs.append({
-                            'id': idx,
-                            'x': x,
-                            'y': y,
-                            'cluster': cluster,
-                            'bbox': bbox,
-                            'central_coord_1': central_coord_1,
-                            'central_coord_2': central_coord_2, 
-                            'central_coord_3': central_coord_3,
-                            'gifData': encoded_gif,
-                            'frames': frames,
-                            'max_slices': max_slices
-                        })
-                except Exception as e:
-                    print(f"Error encoding GIF for sample {idx}: {e}")
-            else:
-                print(f"Warning: Sample {idx} does not have required coordinates ({x_col}, {y_col}). Skipping.")
-    
-    # Print distribution of GIFs across clusters
-    if cluster_counts:
-        print("\nDistribution of GIFs across clusters:")
-        for cluster, count in sorted(cluster_counts.items()):
-            print(f"  Cluster {cluster}: {count} GIFs")
-    
-    if not samples_with_gifs:
-        raise ValueError("No samples with GIFs and valid coordinates found. Cannot create visualization.")
-    
-    print(f"\nTotal samples with GIFs and valid coordinates: {len(samples_with_gifs)}")
-    print(f"First sample for debugging: {json.dumps(samples_with_gifs[0], default=str)[:200]}...")
-    
-    # Compute the bounds of the coordinate values
-    all_x_values = features_df[x_col].values
-    all_y_values = features_df[y_col].values
-    
-    print(f"X coordinate range: {min(all_x_values)} to {max(all_x_values)}")
-    print(f"Y coordinate range: {min(all_y_values)} to {max(all_y_values)}")
-    
-    x_min, x_max = float(min(all_x_values)), float(max(all_x_values))
-    y_min, y_max = float(min(all_y_values)), float(max(all_y_values))
-    
-    # Add padding
-    x_padding = (x_max - x_min) * 0.1
-    y_padding = (y_max - y_min) * 0.1
-    
-    x_min, x_max = x_min - x_padding, x_max + x_padding
-    y_min, y_max = y_min - y_padding, y_max + y_padding
-    
-    # Processing to create non-overlapping positions
-    gif_size = 50  # Default size decreased from 100 to 50px
-    shift_limit = 75  # Increased from 50 to 100px shift limit
-    max_shift_x = shift_limit
-    max_shift_y = shift_limit
-    
-    # Function to check if two rectangles overlap
-    def do_rectangles_overlap(rect1, rect2):
-        return not (rect1['right'] < rect2['left'] or 
-                   rect1['left'] > rect2['right'] or 
-                   rect1['bottom'] < rect2['top'] or 
-                   rect1['top'] > rect2['bottom'])
-    
-    # Track placed rectangles to avoid overlap
-    placed_rectangles = []
-    
-    # Function to find non-overlapping position
-    def find_non_overlapping_position(baseX, baseY, existingRects):
-        # Check if the original position works
-        half_size = gif_size / 2
-        rect = {
-            'left': baseX - half_size,
-            'right': baseX + half_size,
-            'top': baseY - half_size,
-            'bottom': baseY + half_size
-        }
-        
-        # Check if original position has no overlap
-        has_overlap = False
-        overlap_rect = None
-        
-        for existing_rect in existingRects:
-            if do_rectangles_overlap(rect, existing_rect):
-                has_overlap = True
-                overlap_rect = existing_rect
-                break
-                
-        # If no overlap, use original position
-        if not has_overlap:
-            return (baseX, baseY, rect)
-            
-        # Calculate the minimum shift needed in each direction to avoid overlap
-        if overlap_rect:
-            # Calculate overlap amounts in each direction
-            overlap_right = rect['right'] - overlap_rect['left']
-            overlap_left = overlap_rect['right'] - rect['left']
-            overlap_bottom = rect['bottom'] - overlap_rect['top']
-            overlap_top = overlap_rect['bottom'] - rect['top']
-            
-            # Find the smallest shift needed
-            shifts = [
-                {'axis': 'x', 'amount': overlap_right, 'direction': 1},   # shift right
-                {'axis': 'x', 'amount': -overlap_left, 'direction': -1},  # shift left
-                {'axis': 'y', 'amount': overlap_bottom, 'direction': 1},  # shift down
-                {'axis': 'y', 'amount': -overlap_top, 'direction': -1}    # shift up
-            ]
-            
-            # Sort by absolute amount to find smallest shift
-            shifts.sort(key=lambda s: abs(s['amount']))
-            
-            # Try each shift until we find one that works
-            for shift in shifts:
-                # Skip if shift is too large
-                if abs(shift['amount']) > shift_limit:
-                    continue
-                
-                shifted_x = baseX
-                shifted_y = baseY
-                
-                if shift['axis'] == 'x':
-                    shifted_x += shift['amount']
-                else:
-                    shifted_y += shift['amount']
-                
-                # Skip if this would move the GIF out of bounds
-                if (shifted_x - half_size < 0 or shifted_x + half_size > plot_width or
-                    shifted_y - half_size < 0 or shifted_y + half_size > plot_height):
-                    continue
-                
-                # Check if this position works with all existing rectangles
-                shifted_rect = {
-                    'left': shifted_x - half_size,
-                    'right': shifted_x + half_size,
-                    'top': shifted_y - half_size,
-                    'bottom': shifted_y + half_size
-                }
-                
-                shifted_overlap = False
-                for existing_rect in existingRects:
-                    if do_rectangles_overlap(shifted_rect, existing_rect):
-                        shifted_overlap = True
-                        break
-                        
-                if not shifted_overlap:
-                    return (shifted_x, shifted_y, shifted_rect)
-        
-        # If the simple shifts didn't work, try a more general approach
-        # Try cardinal and diagonal directions with increasing distances
-        directions = [
-            (1, 0),   # right
-            (0, 1),   # down
-            (-1, 0),  # left
-            (0, -1),  # up
-            (1, 1),   # down-right
-            (1, -1),  # up-right
-            (-1, 1),  # down-left
-            (-1, -1)  # up-left
-        ]
-        
-        # Try increasing distances with smaller steps
-        for distance in range(1, int(shift_limit) + 1):
-            for dir_x, dir_y in directions:
-                shifted_x = baseX + (dir_x * distance)
-                shifted_y = baseY + (dir_y * distance)
-                
-                # Skip if this would move the GIF out of bounds
-                if (shifted_x - half_size < 0 or shifted_x + half_size > plot_width or
-                    shifted_y - half_size < 0 or shifted_y + half_size > plot_height):
-                    continue
-                
-                # Check this position
-                shifted_rect = {
-                    'left': shifted_x - half_size,
-                    'right': shifted_x + half_size,
-                    'top': shifted_y - half_size,
-                    'bottom': shifted_y + half_size
-                }
-                
-                shifted_overlap = False
-                for existing_rect in existingRects:
-                    if do_rectangles_overlap(shifted_rect, existing_rect):
-                        shifted_overlap = True
-                        break
-                        
-                if not shifted_overlap:
-                    return (shifted_x, shifted_y, shifted_rect)
-        
-        # Try with slightly smaller GIF size as a last resort
-        reduced_half_size = half_size * 0.8
-        for distance in range(1, int(shift_limit) + 1, 2):
-            for dir_x, dir_y in directions:
-                shifted_x = baseX + (dir_x * distance)
-                shifted_y = baseY + (dir_y * distance)
-                
-                # Skip if this would move the GIF out of bounds
-                if (shifted_x - reduced_half_size < 0 or shifted_x + reduced_half_size > plot_width or
-                    shifted_y - reduced_half_size < 0 or shifted_y + reduced_half_size > plot_height):
-                    continue
-                
-                # Check this position with reduced size
-                shifted_rect = {
-                    'left': shifted_x - reduced_half_size,
-                    'right': shifted_x + reduced_half_size,
-                    'top': shifted_y - reduced_half_size,
-                    'bottom': shifted_y + reduced_half_size
-                }
-                
-                shifted_overlap = False
-                for existing_rect in existingRects:
-                    if do_rectangles_overlap(shifted_rect, existing_rect):
-                        shifted_overlap = True
-                        break
-                        
-                if not shifted_overlap:
-                    return (shifted_x, shifted_y, shifted_rect)
-        
-        # If we can't find a non-overlapping position, return null
-        return None
-    
-    # Initialize originalPositions dictionary for storing initial GIF positions
-    # Note: we need to map the raw coordinates to plot coordinates
-    # For this we use the same mapping logic as in the JavaScript mapToPlot function
-    orig_positions_dict = {}
-    samples_to_remove = []
-    
-    for i, sample in enumerate(samples_with_gifs):
-        id_val = sample['id']
-        if hasattr(id_val, 'item'):
-            id_val = id_val.item()  # Convert numpy types to native Python
-        
-        x_val = sample['x']
-        y_val = sample['y']
-        
-        # Map data coordinates to plot coordinates (same as JavaScript mapToPlot function)
-        plot_x = ((x_val - x_min) / (x_max - x_min)) * plot_width
-        # Invert y-axis (data coordinates increase upward, plot coordinates increase downward)
-        plot_y = plot_height - ((y_val - y_min) / (y_max - y_min)) * plot_height
-        
-        # Find non-overlapping position
-        position = find_non_overlapping_position(plot_x, plot_y, placed_rectangles)
-        
-        # If no valid position found, skip this sample
-        if position is None:
-            print(f"Skipping sample {id_val} due to overlap that couldn't be resolved")
-            samples_to_remove.append(i)
-            continue
-            
-        # Unpack the position
-        pos_x, pos_y, rect = position
-        
-        # Add to tracking for future samples
-        placed_rectangles.append(rect)
-        
-        # Use string keys for the JavaScript object
-        str_id = str(id_val)
-        orig_positions_dict[str_id] = {"x": float(pos_x), "y": float(pos_y)}
-        
-        # If position was shifted, note it
-        if pos_x != plot_x or pos_y != plot_y:
-            print(f"Sample {id_val} shifted to avoid overlap")
-    
-    # Remove samples that couldn't be placed
-    if samples_to_remove:
-        for i in sorted(samples_to_remove, reverse=True):
-            del samples_with_gifs[i]
-        print(f"Removed {len(samples_to_remove)} samples that couldn't be placed without overlap")
-    
-    # Convert to JSON string for embedding in JavaScript
-    originalPositions = json.dumps(orig_positions_dict)
-    print(f"originalPositions JSON string length: {len(originalPositions)}")
-    print(f"Sample of originalPositions: {originalPositions[:100]}...")
-    
-    # Define colors for points based on clusters or bboxes
-    point_colors = {}
-    bbox_colors = {}
-    
-    if 'cluster' in features_df.columns:
-        # Generate colors for each cluster
-        clusters = features_df['cluster'].unique()
-        import matplotlib.pyplot as plt
-        
-        # Use the new recommended approach to get colormaps
-        try:
-            cmap = plt.colormaps['tab10']
-        except AttributeError:
-            # Fallback for older matplotlib versions
-            cmap = plt.cm.get_cmap('tab10')
-        
-        for i, cluster in enumerate(clusters):
-            r, g, b, _ = cmap(i % 10)  # Use modulo to handle more than 10 clusters
-            point_colors[cluster] = f"rgb({int(r*255)}, {int(g*255)}, {int(b*255)})"
-    
-    # Generate colors for bboxes
-    if 'bbox_name' in features_df.columns:
-        bboxes = features_df['bbox_name'].unique()
-        bbox_colors_list = [
-            '#FF0000', '#00FFFF', '#FFA500', '#800080', 
-            '#008000', '#0000FF', '#FF00FF', '#FFFF00', 
-            '#808080', '#000000'
-        ]
-        
-        for i, bbox in enumerate(bboxes):
-            if i < len(bbox_colors_list):
-                bbox_colors[bbox] = bbox_colors_list[i]
-            else:
-                # Generate a random color if we run out of predefined colors
-                r = random.randint(0, 255)
-                g = random.randint(0, 255) 
-                b = random.randint(0, 255)
-                bbox_colors[bbox] = f"rgb({r}, {g}, {b})"
-    
-    # Generate HTML content for data points
-    points_content = ""
-    for idx, row in features_df.iterrows():
-        if x_col in row and y_col in row:
-            x, y = row[x_col], row[y_col]
-            
-            # Convert to native Python types
-            if hasattr(idx, 'item'):
-                idx = idx.item()
-            if hasattr(x, 'item'):
-                x = x.item()
-            if hasattr(y, 'item'):
-                y = y.item()
-            
-            # Determine color based on cluster
-            cluster_color = 'rgb(100, 100, 100)'
-            cluster = None
-            if 'cluster' in row:
-                cluster = row['cluster']
-                if hasattr(cluster, 'item'):
-                    cluster = cluster.item()
-                cluster_color = point_colors.get(cluster, 'rgb(100, 100, 100)')
-            
-            # Get bbox_name and color based on bbox
-            bbox_name = row.get('bbox_name', 'unknown')
-            if hasattr(bbox_name, 'item'):
-                bbox_name = str(bbox_name.item())
-            else:
-                bbox_name = str(bbox_name)
-            
-            bbox_color = bbox_colors.get(bbox_name, 'rgb(100, 100, 100)')
-            
-            # Get Var1 for tooltip
-            var1 = row.get('Var1', f'sample_{idx}')
-            if hasattr(var1, 'item'):
-                var1 = str(var1.item())
-            else:
-                var1 = str(var1)
-            
-            # Add this point to the samples array - make sure we have a valid number before adding
-            if not (np.isnan(x) or np.isnan(y)):
-                points_content += f"""
-                {{
-                    "id": {idx},
-                    "x": {x},
-                    "y": {y},
-                    "color": "{cluster_color}",
-                    "bbox_color": "{bbox_color}",
-                    "cluster": "{str(cluster) if cluster is not None else 'unknown'}",
-                    "hasGif": {str(idx in gif_paths).lower()},
-                    "bbox_name": "{bbox_name}",
-                    "var1": "{var1}"
-                }},"""
-    
-    # Count how many valid points we have
-    print(f"Generated points_content with {points_content.count('id:')} points")
-    print(f"Sample of points_content: {points_content[:200]}...")
-    
-    # Generate HTML content for GIFs
-    gifs_content = ""
-    for sample in samples_with_gifs:
-        # Only include frames data if we have it
-        has_frames = sample.get('frames') is not None and len(sample.get('frames', [])) > 0
-        
-        # Include max_slices data if available
-        max_slices_json = 'null'
-        if sample.get('max_slices') is not None:
-            try:
-                # Convert numpy int64 values to Python integers for JSON serialization
-                max_slices = sample.get('max_slices')
-                cleaned_max_slices = {}
-                for key, value in max_slices.items():
-                    if hasattr(value, 'item'):  # Check if it's a numpy scalar
-                        cleaned_max_slices[key] = value.item()  # Convert to Python scalar
-                    else:
-                        cleaned_max_slices[key] = value
-                
-                max_slices_json = json.dumps(cleaned_max_slices)
-                print(f"Successfully serialized max_slices for sample {sample.get('id')}: {max_slices_json}")
-            except Exception as e:
-                print(f"Error serializing max_slices for sample {sample.get('id')}: {e}")
-                max_slices_json = 'null'
-        
-        gifs_content += f"""{{
-            "id": {sample.get('id', 0)},
-            "x": {sample.get('x', 0)},
-            "y": {sample.get('y', 0)},
-            "cluster": "{sample.get('cluster', 'N/A')}",
-            "bbox": "{sample.get('bbox', 'unknown')}",
-            "central_coord_1": {sample.get('central_coord_1', 0)},
-            "central_coord_2": {sample.get('central_coord_2', 0)},
-            "central_coord_3": {sample.get('central_coord_3', 0)},
-            "gifData": "{sample['gifData']}",
-            "hasFrames": {str(has_frames).lower()},
-            "max_slices": {max_slices_json}
-        }},"""
-    
-    # Count how many valid GIFs we have
-    print(f"Generated gifs_content with {gifs_content.count('id:')} GIFs")
-    print(f"Sample of gifs_content (without actual base64 data): {gifs_content[:200]}...")
-    
-    # Create a dedicated frames content structure
-    frames_content = "{"
-    has_any_frames = False
-    
-    # Check if we have frame data
-    if frame_data:
-        for idx, frames in frame_data.items():
-            if frames:
-                has_any_frames = True
-                # Stringify the ID
-                str_id = str(idx)
-                if hasattr(idx, 'item'):
-                    str_id = str(idx.item())
-                
-                # Add frames data for this sample as JSON array
-                frames_content += f'"{str_id}": ['
-                for frame in frames:
-                    frames_content += f'"{frame}",'
-                # Remove trailing comma if there are frames
-                if frames:
-                    frames_content = frames_content[:-1]
-                frames_content += "],"
-    
-    # Remove trailing comma if any frames were added
-    if frames_content.endswith(","):
-        frames_content = frames_content[:-1]
-    
-    frames_content += "}"
-    
-    # If we have no frames, initialize a valid empty object
-    if not has_any_frames:
-        frames_content = "{}"
-        
-    print(f"Generated frames_content with data for {frame_data.keys() if frame_data else 0} GIFs")
-    print(f"Has any frames: {has_any_frames}")
-    print(f"frames_content length: {len(frames_content)}")
-    
-    # Read the HTML template
-    template_path = os.path.join(os.path.dirname(__file__), "template.html")
-    try:
-        with open(template_path, 'r', encoding='utf-8') as template_file:
-            html_content = template_file.read()
-            
-        # Replace placeholders with actual data
-        html_content = html_content.replace('{method_name}', method_name)
-        html_content = html_content.replace('{x_min}', str(x_min))
-        html_content = html_content.replace('{x_max}', str(x_max))
-        html_content = html_content.replace('{y_min}', str(y_min))
-        html_content = html_content.replace('{y_max}', str(y_max))
-        html_content = html_content.replace('{originalPositions}', originalPositions)
-        html_content = html_content.replace('{frames_content}', frames_content)
-        html_content = html_content.replace('{points_content}', points_content)
-        html_content = html_content.replace('{gifs_content}', gifs_content)
-        html_content = html_content.replace('{len(samples_with_gifs)}', str(len(samples_with_gifs)))
-        html_content = html_content.replace('{segmentation_type}', str(config.segmentation_type))
-        
-        print("Successfully loaded and processed HTML template")
-    except Exception as e:
-        print(f"Error loading or processing HTML template: {e}")
-        import traceback
-        traceback.print_exc()
-        raise
-    
-    # Save the HTML file
-    html_path = output_dir / f"animated_gifs_{dim_reduction}_visualization.html"
-    try:
-        # Add debug statements to narrow down the error
-        print("Types of data:")
-        print("- originalPositions type:", type(originalPositions))
-        print("- frames_content type:", type(frames_content))
-        print("- frames_content length:", len(frames_content))
-        print("- First item in samples_with_gifs:", samples_with_gifs[0] if samples_with_gifs else "No samples")
-        
-        # Check if the points_content and gifs_content are empty 
-        if not points_content.strip():
-            print("WARNING: points_content is empty! No background points will be shown.")
-        
-        if not gifs_content.strip():
-            print("WARNING: gifs_content is empty! No GIFs will be shown.")
-            
-        # Write the HTML file
-        with open(html_path, 'w', encoding='utf-8') as f:
-            f.write(html_content)
-        
-        print(f"Created animated GIF visualization with embedded data: {html_path}")
-        
-        # Print a sample of the HTML content to verify it has data
-        html_sample = html_content[0:1000]  # Get first 1000 chars
-        print(f"Sample of HTML content: {html_sample}")
-        
-        # Check HTML file size
-        html_size = os.path.getsize(html_path)
-        print(f"HTML file size: {html_size} bytes")
-        
-        if html_size < 10000:  # If file is too small, something might be wrong
-            print("WARNING: HTML file is very small! It might not contain all necessary data.")
-            
-    except Exception as e:
-        print(f"Error creating animated GIF visualization: {e}")
-        import traceback
-        traceback.print_exc()  # Print the full traceback for debugging
-    
-    return html_path
-
 def extract_cleft_mask_and_max_slices(dataset, idx, bbox_name, features_df=None):
     """
     Extract the cleft mask for a given sample and calculate the max slices.
@@ -1019,7 +1087,7 @@ if __name__ == "__main__":
     
     # Add argument for dimensionality reduction method
     import argparse
-    parser = argparse.ArgumentParser(description='UMAP and t-SNE Visualization with GIFs')
+    parser = argparse.ArgumentParser(description='UMAP and t-SNE Visualization with Intensity Projections')
     parser.add_argument('--dim-reduction', 
                        choices=['umap', 'tsne'], 
                        default='umap',
@@ -1027,7 +1095,7 @@ if __name__ == "__main__":
     parser.add_argument('--num-samples', 
                        type=int,
                        default=20,
-                       help='Number of random samples to show with GIFs (default: 20)')
+                       help='Number of random samples to show with projections (default: 20)')
     parser.add_argument('--custom-clusters',
                        type=str,
                        default=r"C:\Users\alim9\Documents\codes\synapse2\results\extracted\clusters\clustered_features.csv",
@@ -1230,7 +1298,7 @@ if __name__ == "__main__":
     # If we have a dataset, create the visualization
     if dataset is not None:
         # Create visualization with selected dim reduction method
-        print(f"Creating {args.dim_reduction.upper()} visualization with GIFs for {args.num_samples} random samples...")
+        print(f"Creating {args.dim_reduction.upper()} visualization with projections for {args.num_samples} random samples...")
         
         # Check dataset length to ensure we only choose valid indices
         try:
@@ -1245,7 +1313,7 @@ if __name__ == "__main__":
             valid_indices = [i for i in features_df.index if i < dataset_length]
             if len(valid_indices) == 0:
                 print("Warning: No valid indices found that exist in both the dataset and features DataFrame.")
-                print("Creating visualization without sample GIFs.")
+                print("Creating visualization without sample projections.")
                 valid_indices = []
         except Exception as e:
             print(f"Warning: Could not determine dataset length: {e}")
@@ -1297,8 +1365,8 @@ if __name__ == "__main__":
         # If there are valid indices, select samples and create GIFs
         if valid_indices:
             # Create output directories
-            gifs_dir = output_dir / "sample_gifs"
-            gifs_dir.mkdir(parents=True, exist_ok=True)
+            projections_dir = output_dir / "sample_projections"
+            projections_dir.mkdir(parents=True, exist_ok=True)
             
             # Select random samples, making sure they cover different clusters if possible
             np.random.seed(42)
@@ -1346,14 +1414,11 @@ if __name__ == "__main__":
                     additional_samples = np.random.choice(additional_indices, size=additional_count, replace=False)
                     random_samples = np.concatenate([random_samples, additional_samples])
             
-            print(f"Selected {len(random_samples)} samples for GIF creation")
+            print(f"Selected {len(random_samples)} samples for projection creation")
             
-            # Create GIFs for selected samples
-            print(f"Creating GIFs for {len(random_samples)} samples...")
-            gif_paths = {}
-            
-            # Dictionary to store max slices for each sample
-            max_slices_data = {}
+            # Create projections for selected samples
+            print(f"Creating projections for {len(random_samples)} samples...")
+            projection_paths = {}
             
             for idx in random_samples:
                 try:
@@ -1389,19 +1454,7 @@ if __name__ == "__main__":
                         print(f"Skipping sample {idx}: No valid volume data")
                         continue
                     
-                    # Calculate max slices if we have bbox_name
-                    if bbox_name:
-                        print(f"Calculating max slices for sample {idx}, bbox {bbox_name}")
-                        max_slices = extract_cleft_mask_and_max_slices(dataset, idx, bbox_name, features_df)
-                        if max_slices:
-                            max_slices_data[idx] = max_slices
-                            print(f"Calculated max slices for sample {idx}, bbox {bbox_name}: {max_slices}")
-                        else:
-                            print(f"Warning: Failed to calculate max slices for sample {idx}, bbox {bbox_name}")
-                    else:
-                        print(f"Warning: No bbox_name available for sample {idx}, cannot calculate max slices")
-                    
-                    # Create GIF
+                    # Create projection
                     sample_info = features_df.loc[idx]
                     bbox_name = sample_info.get('bbox_name', 'unknown')
                     var1 = sample_info.get('Var1', f'sample_{idx}')
@@ -1409,53 +1462,63 @@ if __name__ == "__main__":
                     # Clean any problematic characters from filename
                     clean_var1 = str(var1).replace('/', '_').replace('\\', '_').replace(':', '_').replace(' ', '_')
                     
-                    gif_filename = f"{bbox_name}_{clean_var1}_{idx}.gif"
-                    gif_path = gifs_dir / gif_filename
+                    projection_filename = f"{bbox_name}_{clean_var1}_{idx}.png"
+                    projection_path = projections_dir / projection_filename
                     
-                    # Generate GIF with reduced quality to save space
-                    gif_path, frames = create_gif_from_volume(volume, str(gif_path), fps=8, segmentation_type=config.segmentation_type)
+                    # Generate projection
+                    projection_path, projections = create_gif_from_volume(volume, str(projection_path), fps=8, segmentation_type=config.segmentation_type)
                     
-                    # Check if GIF was successfully created
-                    if os.path.exists(gif_path) and os.path.getsize(gif_path) > 0:
-                        # Store full absolute path for HTML file - this is crucial for browser to find the GIFs
-                        gif_paths[idx] = os.path.abspath(str(gif_path))
-                        # Store frame data for the global slider
-                        if 'all_frames' not in locals():
-                            all_frames = {}
-                        all_frames[idx] = frames
-                        print(f"Created GIF for sample {idx} with {len(frames)} frames")
+                    # Check if projection was successfully created
+                    if os.path.exists(projection_path) and os.path.getsize(projection_path) > 0:
+                        # Store full absolute path for HTML file - this is crucial for browser to find the projections
+                        projection_paths[idx] = os.path.abspath(str(projection_path))
+                        
+                        # Store the individual projection data for later use when creating samples_with_projections
+                        # Store in a dictionary with the sample index as the key
+                        if 'projection_data_dict' not in locals():
+                            projection_data_dict = {}
+                        
+                        # Ensure key is a string to avoid 'int' has no attribute 'items' error
+                        str_idx = str(idx)
+                        projection_data_dict[str_idx] = projections
+                        
+                        print(f"Created projection for sample {idx}")
                     else:
-                        print(f"Failed to create GIF for sample {idx} - file not created or empty")
+                        print(f"Failed to create projection for sample {idx} - file not created or empty")
                     
                 except Exception as e:
-                    print(f"Error creating GIF for sample {idx}: {str(e)}")
+                    print(f"Error creating projection for sample {idx}: {str(e)}")
             
-            # Skip the original visualization that takes longer
-            # html_path = create_umap_with_gifs(features_df, dataset, output_path, num_samples=args.num_samples, random_seed=42, dim_reduction=args.dim_reduction)
-            
-            # Now create visualizations with our simpler methods if we have GIFs
-            if gif_paths:                    
-                print("\nCreating animated GIF visualization...")
+            # Now create visualizations with our simpler methods if we have projections
+            if projection_paths:                    
+                print("\nCreating projected image visualization...")
+                
+                # Debug projection_data before passing it
+                if 'projection_data_dict' in locals():
+                    print(f"Debug: projection_data contains {len(projection_data_dict)} entries")
+                    print(f"Debug: projection_data keys are of type: {type(next(iter(projection_data_dict)))}")
+                    sample_key = next(iter(projection_data_dict))
+                    print(f"Debug: Sample projection data for key {sample_key} has keys: {list(projection_data_dict[sample_key].keys())}")
+                else:
+                    print("Debug: projection_data variable not defined")
+                
                 try:
-                    # Pass max_slices_data to the visualization function
-                    animated_path = create_animated_gif_visualization(
-                        features_df, gif_paths, output_dir, 
-                        dim_reduction=args.dim_reduction, 
-                        frame_data=all_frames,
-                        max_slices_data=max_slices_data
+                    projected_path = create_projection_visualization(
+                        features_df, projection_paths, output_dir, 
+                        dim_reduction=args.dim_reduction, projection_data=projection_data_dict, dataset=dataset
                     )
-                    print(f"Animated GIF visualization created at {animated_path}")
-                    print(f"Open this in your browser to see animated GIFs directly at their {args.dim_reduction.upper()} coordinates.")
+                    print(f"Projected image visualization created at {projected_path}")
+                    print(f"Open this in your browser to see projected images directly at their {args.dim_reduction.upper()} coordinates.")
                 except Exception as e:
-                    print(f"Error creating animated GIF visualization: {e}")
+                    print(f"Error creating projected image visualization: {e}")
                 
          
             else:
-                print("No GIFs were created successfully. Skipping additional visualizations.")
+                print("No projections were created successfully. Skipping additional visualizations.")
         else:
-            print("No valid indices found. Skipping GIF creation and visualizations.")
+            print("No valid indices found. Skipping projection creation and visualizations.")
     else:
-        print("Warning: Could not initialize dataset. Skipping visualizations with GIFs.")
+        print("Warning: Could not initialize dataset. Skipping visualizations with projections.")
         print("If you want to create the visualization, please ensure your config has valid paths for:")
         print("- raw_base_dir: The directory containing raw volumes")
         print("- seg_base_dir: The directory containing segmentation volumes")

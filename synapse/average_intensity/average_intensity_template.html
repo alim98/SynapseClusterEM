@@ -1,0 +1,853 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Intensity Projections at {method_name} Coordinates</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1800px; /* Increased from 1200px */
+            margin: 0 auto;
+            background-color: white;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            padding: 20px;
+            border-radius: 8px;
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+        }
+        .plot-container {
+            position: relative;
+            margin: 20px auto;
+            border: 1px solid #ddd;
+            background-color: #fff;
+            overflow: hidden;
+            width: 1600px; /* Increased from 1000px */
+            height: 1200px; /* Increased from 800px */
+        }
+        .point {
+            position: absolute;
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            cursor: pointer; /* Add cursor pointer for points */
+        }
+        /* Add tooltip style for points */
+        .point:hover::after {
+            content: attr(data-tooltip);
+            position: absolute;
+            top: -30px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            white-space: nowrap;
+            z-index: 100;
+            pointer-events: none;
+        }
+        .projection-container {
+            position: absolute;
+            border: 2px solid #333;
+            background-color: white;
+            border-radius: 4px;
+            overflow: hidden;
+            transform: translate(-50%, -50%);
+            z-index: 10;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            cursor: pointer; /* Show pointer cursor to indicate clickability */
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        .projection-container:hover {
+            transform: translate(-50%, -50%) scale(1.05);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            border-color: #4CAF50;
+        }
+        .projection-container::after {
+            content: "";
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background-color: rgba(0,0,0,0.7);
+            color: white;
+            font-size: 1px;
+            padding: 2px 4px;
+            text-align: center;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+        .projection-container:hover::after {
+            opacity: 0.5;
+        }
+        .projection-container img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+        .projection-controls {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            display: flex;
+            justify-content: space-around;
+            background-color: rgba(0,0,0,0.7);
+            padding: 2px 0;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+        .projection-container:hover .projection-controls {
+            opacity: 1;
+        }
+        .projection-button {
+            background-color: #333;
+            color: white;
+            border: none;
+            border-radius: 2px;
+            padding: 1px 3px;
+            font-size: 10px;
+            cursor: pointer;
+            margin: 0 1px;
+        }
+        .projection-button.active {
+            background-color: #2c3e50;
+            color: white;
+        }
+        .projection-button:hover {
+            background-color: #555;
+        }
+        .projection-button.active:hover {
+            background-color: #45a049;
+        }
+        .controls {
+            margin-top: 10px;
+            text-align: center;
+            padding: 15px;
+            background-color: #f8f8f8;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .controls button {
+            padding: 8px 15px;
+            margin: 0 5px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .controls button:hover {
+            background-color: #45a049;
+        }
+        .projection-size-slider {
+            width: 200px;
+            margin: 0 10px;
+            vertical-align: middle;
+        }
+        .control-group {
+            display: inline-block;
+            margin: 0 15px;
+            vertical-align: middle;
+        }
+        .control-label {
+            font-weight: bold;
+            margin-right: 10px;
+        }
+        .dragging {
+            opacity: 0.8;
+            z-index: 1000;
+        }
+        .cluster-filter {
+            margin-top: 10px;
+            text-align: center;
+        }
+        .cluster-checkbox {
+            margin-right: 5px;
+        }
+        .cluster-label {
+            margin-right: 15px;
+            user-select: none;
+        }
+        #debug-message {
+            padding: 10px;
+            margin: 10px 0;
+            background-color: #f0f0f0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        /* Color scheme switch button */
+        .color-scheme-toggle {
+            margin-top: 10px;
+            text-align: center;
+            padding: 8px;
+            background-color: #e8f5ff;
+            border-radius: 4px;
+            border: 1px solid #0078d7;
+        }
+        .projection-error {
+            background-color: rgba(255, 0, 0, 0.1);
+            border: 1px dashed red;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100%;
+            width: 100%;
+            font-size: 12px;
+        }
+        .crop-info {
+            text-align: center;
+            margin: 15px auto;
+            padding: 10px;
+            background-color: #f0f8ff;
+            border-radius: 5px;
+            border-left: 4px solid #4CAF50;
+            max-width: 800px;
+            font-size: 14px;
+            line-height: 1.4;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .projection-legend {
+            margin: 10px auto;
+            max-width: 800px;
+            padding: 10px;
+            font-size: 13px;
+            background-color: #f5f5f5;
+            border-radius: 5px;
+        }
+        .projection-legend ul {
+            list-style-type: none;
+            padding-left: 20px;
+        }
+        .projection-legend li {
+            margin-bottom: 5px;
+            display: flex;
+            align-items: center;
+        }
+        .projection-legend li::before {
+            content: "•";
+            color: #4CAF50;
+            font-weight: bold;
+            margin-right: 10px;
+        }
+    </style>
+    <script>
+        // Track whether projections are visible
+        let projectionsVisible = true;
+
+        // Function to generate WebKnossos URL based on central coordinates and bbox number
+        function generateWebknossosUrl(centralCoordX, centralCoordY, centralCoordZ, bboxName) {
+            // Extract bbox number from bbox name (e.g., "bbox1" -> 1)
+            const bboxNum = parseInt(bboxName.replace('bbox', ''));
+            
+            if (isNaN(bboxNum)) {
+                console.error("Invalid bbox name format:", bboxName);
+                return null;
+            }
+            
+            let x1, y1, z1;
+            
+            // Calculate bbox coordinates based on central coordinates (adapted from WebknossosUrl.py)
+            switch(bboxNum) {
+                case 1:
+                    x1 = 14219 - 100 + centralCoordX;
+                    y1 = 10792 - 100 + centralCoordY;
+                    z1 = 15134 - 100 + centralCoordZ;
+                    break;
+                case 2:
+                    x1 = 18544 + centralCoordX;
+                    y1 = 5409 + centralCoordY;
+                    z1 = 4374 + centralCoordZ;
+                    break;
+                case 3:
+                    x1 = 14783 - 100 + centralCoordX;
+                    y1 = 3707 - 100 + centralCoordY;
+                    z1 = 4316 - 100 + centralCoordZ;
+                    break;
+                case 4:
+                    x1 = 15813 - 100 + centralCoordX;
+                    y1 = 7009 - 100 + centralCoordY;
+                    z1 = 10408 - 100 + centralCoordZ;
+                    break;
+                case 5:
+                    x1 = 1782 - 100 + centralCoordX;
+                    y1 = 8962 - 100 + centralCoordY;
+                    z1 = 8309 - 100 + centralCoordZ;
+                    break;
+                case 6:
+                    x1 = 16700 - 100 + centralCoordX;
+                    y1 = 11200 - 100 + centralCoordY;
+                    z1 = 15573 - 100 + centralCoordZ;
+                    break;
+                case 7:
+                    x1 = 12340 + centralCoordX;
+                    y1 = 9416 + centralCoordY;
+                    z1 = 16439 + centralCoordZ;
+                    break;
+                default:
+                    console.error("Unknown bbox number:", bboxNum);
+                    return null;
+            }
+            
+            // Generate the final URL
+            return `https://webknossos.brain.mpg.de/annotations/67bcfa0301000006202da79c#${x1},${y1},${z1},0,0.905,1506`;
+        }
+        
+        // Track current projection view (z, y, x)
+        let currentProjectionView = 'z';
+    </script>
+</head>
+<body>
+    <div class="container">
+        <h1>{method_name} Visualization with Intensity Projections</h1>
+        
+        <div id="debug-message"></div>
+        
+        <div class="controls">
+            <div class="control-group">
+                <button id="toggle-projections">Hide Projections</button>
+            </div>
+            
+            <div class="control-group">
+                <label class="control-label">Projection Size:</label>
+                <input type="range" min="30" max="200" value="40" class="projection-size-slider" id="projection-size">
+                <span id="projection-size-value">80px</span>
+            </div>
+            
+            <div class="control-group">
+                <label class="control-label">Max Projections:</label>
+                <input type="range" min="1" max="{len(samples_with_projections)}" value="{len(samples_with_projections)}" class="projection-count-slider" id="max-projections">
+                <span id="max-projections-value">{len(samples_with_projections)}</span>
+            </div>
+            
+            <div class="control-group">
+                <button id="reset-positions">Reset Positions</button>
+            </div>
+        </div>
+        
+        <div class="color-scheme-toggle">
+            <button id="toggle-color-scheme">Toggle Color Scheme</button>
+            <span id="current-scheme">Current: Clusters</span>
+        </div>
+        
+        <p class="crop-info">All projections are created from 25×25×25 voxel samples centered on the point of interest.</p>
+        
+        <div class="projection-legend">
+            <ul>
+                <li><strong>Z projection (Top view)</strong>: Average intensity looking down from above (X-Y plane)</li>
+                <li><strong>Y projection (Side view)</strong>: Average intensity looking from the side (X-Z plane)</li>
+                <li><strong>X projection (Front view)</strong>: Average intensity looking from the front (Y-Z plane)</li>
+            </ul>
+            <p>Double-click on any projection to open that location in WebKnossos for 3D viewing.</p>
+        </div>
+        
+        <div class="cluster-filter" id="cluster-filter">
+            <!-- Cluster checkboxes will be added here dynamically -->
+        </div>
+        
+        <div class="plot-container" id="plot-container">
+            <!-- Data points and projections will be added here dynamically -->
+        </div>
+    </div>
+    
+    <script>
+        // Global variables
+        let samples = [
+            {points_content}
+        ];
+        
+        let projections = [
+            {projections_content}
+        ];
+        
+        // Original positions for reset
+        const originalPositions = {originalPositions};
+        
+        // Plot dimensions and bounds
+        const plotContainer = document.getElementById('plot-container');
+        const plotWidth = plotContainer.offsetWidth;
+        const plotHeight = plotContainer.offsetHeight;
+        const xMin = {x_min};
+        const xMax = {x_max};
+        const yMin = {y_min};
+        const yMax = {y_max};
+        
+        // Function to map data coordinates to plot coordinates
+        function mapToPlot(x, y) {
+            // Map x from data space to plot space
+            const plotX = ((x - xMin) / (xMax - xMin)) * plotWidth;
+            // Map y from data space to plot space (invert y-axis)
+            const plotY = plotHeight - ((y - yMin) / (yMax - yMin)) * plotHeight;
+            return { x: plotX, y: plotY };
+        }
+        
+        // Current display state
+        let colorByCluster = true;
+        let currentSize = 80;
+        let maxProjections = projections.length;
+        let selectedClusters = new Set();
+        let selectedBboxes = new Set();
+        
+        // Initialize the visualization
+        function initVisualization() {
+            drawPoints();
+            createProjections();
+            initClusterFilter();
+            setupEventListeners();
+            
+            document.getElementById('debug-message').textContent = 
+                `Successfully initialized visualization with ${samples.length} points and ${projections.length} projections.`;
+        }
+        
+        // Draw all data points
+        function drawPoints() {
+            const plotContainer = document.getElementById('plot-container');
+            
+            // Clear existing points
+            const existingPoints = plotContainer.querySelectorAll('.point:not(.projection-container)');
+            existingPoints.forEach(point => point.remove());
+            
+            // Add new points
+            samples.forEach(sample => {
+                const { x, y } = mapToPlot(sample.x, sample.y);
+                
+                // Create point element
+                const point = document.createElement('div');
+                point.className = 'point';
+                point.style.left = `${x}px`;
+                point.style.top = `${y}px`;
+                
+                // Set color based on current mode
+                point.style.backgroundColor = colorByCluster ? sample.color : sample.bbox_color;
+                
+                // Add tooltip
+                point.setAttribute('data-tooltip', 
+                    `ID: ${sample.id}, Cluster: ${sample.cluster}, Bbox: ${sample.bbox_name}, ${sample.var1}`);
+                
+                // Add to container
+                plotContainer.appendChild(point);
+            });
+        }
+        
+        // Create projections
+        function createProjections() {
+            const plotContainer = document.getElementById('plot-container');
+            
+            // Clear existing projections
+            const existingProjections = plotContainer.querySelectorAll('.projection-container');
+            existingProjections.forEach(proj => proj.remove());
+            
+            // Sort projections by ID to ensure consistent display
+            const sortedProjections = [...projections].sort((a, b) => a.id - b.id);
+            
+            // Display up to maxProjections
+            const projectionsToShow = sortedProjections.slice(0, maxProjections);
+            
+            // Apply cluster and bbox filtering if needed
+            const filteredProjections = projectionsToShow.filter(proj => {
+                const clusterPass = selectedClusters.size === 0 || selectedClusters.has(proj.cluster);
+                const bboxPass = selectedBboxes.size === 0 || selectedBboxes.has(proj.bbox);
+                return clusterPass && bboxPass;
+            });
+            
+            // Update the display count
+            document.getElementById('debug-message').textContent = 
+                `Showing ${filteredProjections.length} of ${projections.length} projections (max: ${maxProjections}).`;
+            
+            // Create projection elements
+            filteredProjections.forEach(proj => {
+                // Get original position if available, otherwise use data coordinates
+                let position;
+                if (originalPositions && originalPositions[proj.id]) {
+                    position = {
+                        x: originalPositions[proj.id].x,
+                        y: originalPositions[proj.id].y
+                    };
+                } else {
+                    position = mapToPlot(proj.x, proj.y);
+                }
+                
+                // Create container
+                const container = document.createElement('div');
+                container.className = 'projection-container';
+                container.id = `projection-${proj.id}`;
+                container.style.width = `${currentSize}px`;
+                container.style.height = `${currentSize}px`;
+                container.style.left = `${position.x}px`;
+                container.style.top = `${position.y}px`;
+                
+                // Add border color based on current mode
+                let color = colorByCluster 
+                    ? getComputedStyle(document.querySelector(`.point[data-tooltip*="Cluster: ${proj.cluster},"]`)).backgroundColor 
+                    : getComputedStyle(document.querySelector(`.point[data-tooltip*="Bbox: ${proj.bbox},"]`)).backgroundColor;
+                
+                if (!color || color === "rgba(0, 0, 0, 0)") {
+                    color = colorByCluster 
+                        ? `hsl(${parseInt(proj.cluster) * 30 % 360}, 70%, 50%)` 
+                        : `hsl(${proj.bbox.charCodeAt(0) * 20 % 360}, 70%, 50%)`;
+                }
+                
+                container.style.borderColor = color;
+                
+                // Create image element
+                const img = document.createElement('img');
+                // Set the source based on current view (default to z projection)
+                img.src = `data:image/png;base64,${proj[`${currentProjectionView}_proj`] || proj.projectionData}`;
+                img.alt = `Projection ${proj.id}`;
+                // Add error handling for image
+                img.onerror = function() {
+                    console.error(`Failed to load image for projection ${proj.id}, view: ${currentProjectionView}`);
+                    // Replace with error message
+                    const errorDiv = document.createElement('div');
+                    errorDiv.className = 'projection-error';
+                    errorDiv.textContent = 'Image unavailable';
+                    errorDiv.style.display = 'flex';
+                    errorDiv.style.justifyContent = 'center';
+                    errorDiv.style.alignItems = 'center';
+                    errorDiv.style.height = '100%';
+                    errorDiv.style.color = 'red';
+                    img.replaceWith(errorDiv);
+                };
+                container.appendChild(img);
+                
+                // Add projection view controls
+                const controlsDiv = document.createElement('div');
+                controlsDiv.className = 'projection-controls';
+                
+                // Z projection button (top view)
+                const zButton = document.createElement('button');
+                zButton.className = 'projection-button' + (currentProjectionView === 'z' ? ' active' : '');
+                zButton.textContent = 'Z';
+                zButton.title = 'Z projection (top view)';
+                zButton.addEventListener('click', function(e) {
+                    e.stopPropagation(); // Prevent dragging when clicking button
+                    img.src = `data:image/png;base64,${proj.z_proj || proj.projectionData}`;
+                    updateActiveButton(container, 'z');
+                });
+                controlsDiv.appendChild(zButton);
+                
+                // Y projection button (side view)
+                const yButton = document.createElement('button');
+                yButton.className = 'projection-button' + (currentProjectionView === 'y' ? ' active' : '');
+                yButton.textContent = 'Y';
+                yButton.title = 'Y projection (side view)';
+                yButton.addEventListener('click', function(e) {
+                    e.stopPropagation(); // Prevent dragging when clicking button
+                    img.src = `data:image/png;base64,${proj.y_proj || proj.projectionData}`;
+                    updateActiveButton(container, 'y');
+                });
+                controlsDiv.appendChild(yButton);
+                
+                // X projection button (front view)
+                const xButton = document.createElement('button');
+                xButton.className = 'projection-button' + (currentProjectionView === 'x' ? ' active' : '');
+                xButton.textContent = 'X';
+                xButton.title = 'X projection (front view)';
+                xButton.addEventListener('click', function(e) {
+                    e.stopPropagation(); // Prevent dragging when clicking button
+                    img.src = `data:image/png;base64,${proj.x_proj || proj.projectionData}`;
+                    updateActiveButton(container, 'x');
+                });
+                controlsDiv.appendChild(xButton);
+                
+                container.appendChild(controlsDiv);
+                
+                // Add tooltip with details
+                container.setAttribute('data-tooltip', 
+                    `ID: ${proj.id}, Cluster: ${proj.cluster}, Bbox: ${proj.bbox}`);
+                
+                // Add to container
+                plotContainer.appendChild(container);
+                
+                // Make draggable
+                makeElementDraggable(container);
+                
+                // Add double-click handler to open WebKnossos if coordinates available
+                if (proj.central_coord_1 && proj.central_coord_2 && proj.central_coord_3) {
+                    container.addEventListener('dblclick', function() {
+                        const url = generateWebknossosUrl(
+                            proj.central_coord_1, 
+                            proj.central_coord_2, 
+                            proj.central_coord_3, 
+                            proj.bbox
+                        );
+                        if (url) {
+                            window.open(url, '_blank');
+                        } else {
+                            alert('Could not generate WebKnossos URL for this sample.');
+                        }
+                    });
+                }
+            });
+        }
+        
+        // Setup cluster filter
+        function initClusterFilter() {
+            const filterContainer = document.getElementById('cluster-filter');
+            filterContainer.innerHTML = ''; // Clear existing
+            
+            // Add title
+            const title = document.createElement('div');
+            title.textContent = 'Filter by Cluster:';
+            title.style.fontWeight = 'bold';
+            title.style.marginBottom = '5px';
+            filterContainer.appendChild(title);
+            
+            // Get unique clusters and bboxes
+            const uniqueClusters = new Set(projections.map(p => p.cluster));
+            const uniqueBboxes = new Set(projections.map(p => p.bbox));
+            
+            // Create cluster checkboxes
+            uniqueClusters.forEach(cluster => {
+                const label = document.createElement('label');
+                label.className = 'cluster-label';
+                
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.className = 'cluster-checkbox';
+                checkbox.value = cluster;
+                checkbox.addEventListener('change', function() {
+                    if (this.checked) {
+                        selectedClusters.add(cluster);
+                    } else {
+                        selectedClusters.delete(cluster);
+                    }
+                    createProjections();
+                });
+                
+                label.appendChild(checkbox);
+                label.appendChild(document.createTextNode(`Cluster ${cluster}`));
+                filterContainer.appendChild(label);
+            });
+            
+            // Add separator
+            const separator = document.createElement('hr');
+            separator.style.margin = '10px 0';
+            filterContainer.appendChild(separator);
+            
+            // Add bbox title
+            const bboxTitle = document.createElement('div');
+            bboxTitle.textContent = 'Filter by Bbox:';
+            bboxTitle.style.fontWeight = 'bold';
+            bboxTitle.style.marginBottom = '5px';
+            filterContainer.appendChild(bboxTitle);
+            
+            // Create bbox checkboxes
+            uniqueBboxes.forEach(bbox => {
+                const label = document.createElement('label');
+                label.className = 'cluster-label';
+                
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.className = 'cluster-checkbox';
+                checkbox.value = bbox;
+                checkbox.addEventListener('change', function() {
+                    if (this.checked) {
+                        selectedBboxes.add(bbox);
+                    } else {
+                        selectedBboxes.delete(bbox);
+                    }
+                    createProjections();
+                });
+                
+                label.appendChild(checkbox);
+                label.appendChild(document.createTextNode(bbox));
+                filterContainer.appendChild(label);
+            });
+        }
+        
+        // Make an element draggable
+        function makeElementDraggable(element) {
+            let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
+            
+            element.onmousedown = dragMouseDown;
+            
+            function dragMouseDown(e) {
+                e = e || window.event;
+                e.preventDefault();
+                
+                // Get the mouse position at startup
+                pos3 = e.clientX;
+                pos4 = e.clientY;
+                
+                // Add dragging class
+                element.classList.add('dragging');
+                
+                // Bring to front
+                element.style.zIndex = 1000;
+                
+                // Add mouse move and up listeners
+                document.onmousemove = elementDrag;
+                document.onmouseup = closeDragElement;
+            }
+            
+            function elementDrag(e) {
+                e = e || window.event;
+                e.preventDefault();
+                
+                // Calculate the new position
+                pos1 = pos3 - e.clientX;
+                pos2 = pos4 - e.clientY;
+                pos3 = e.clientX;
+                pos4 = e.clientY;
+                
+                // Set the element's new position
+                element.style.top = (element.offsetTop - pos2) + "px";
+                element.style.left = (element.offsetLeft - pos1) + "px";
+            }
+            
+            function closeDragElement() {
+                // Remove dragging class
+                element.classList.remove('dragging');
+                
+                // Reset z-index
+                element.style.zIndex = 10;
+                
+                // Stop tracking mouse
+                document.onmouseup = null;
+                document.onmousemove = null;
+            }
+        }
+        
+        // Setup event listeners for controls
+        function setupEventListeners() {
+            // Toggle projections visibility
+            document.getElementById('toggle-projections').addEventListener('click', function() {
+                const projectionContainers = document.querySelectorAll('.projection-container');
+                
+                if (projectionsVisible) {
+                    projectionContainers.forEach(container => {
+                        container.style.display = 'none';
+                    });
+                    this.textContent = 'Show Projections';
+                } else {
+                    projectionContainers.forEach(container => {
+                        container.style.display = 'block';
+                    });
+                    this.textContent = 'Hide Projections';
+                }
+                
+                projectionsVisible = !projectionsVisible;
+            });
+            
+            // Adjust projection size
+            document.getElementById('projection-size').addEventListener('input', function() {
+                currentSize = parseInt(this.value);
+                document.getElementById('projection-size-value').textContent = `${currentSize}px`;
+                
+                // Update all projection sizes
+                document.querySelectorAll('.projection-container').forEach(container => {
+                    container.style.width = `${currentSize}px`;
+                    container.style.height = `${currentSize}px`;
+                });
+            });
+            
+            // Adjust max projections
+            document.getElementById('max-projections').addEventListener('input', function() {
+                maxProjections = parseInt(this.value);
+                document.getElementById('max-projections-value').textContent = maxProjections;
+                createProjections();
+            });
+            
+            // Reset positions
+            document.getElementById('reset-positions').addEventListener('click', function() {
+                createProjections(); // This will use original positions
+            });
+            
+            // Toggle color scheme
+            document.getElementById('toggle-color-scheme').addEventListener('click', function() {
+                colorByCluster = !colorByCluster;
+                document.getElementById('current-scheme').textContent = 
+                    `Current: ${colorByCluster ? 'Clusters' : 'Bboxes'}`;
+                
+                // Redraw everything with new colors
+                drawPoints();
+                createProjections();
+            });
+            
+            // Add global projection view buttons
+            const viewControlsDiv = document.createElement('div');
+            viewControlsDiv.className = 'control-group';
+            viewControlsDiv.innerHTML = `
+                <label class="control-label">Projection View:</label>
+                <button id="view-z" class="active">Z (Top)</button>
+                <button id="view-y">Y (Side)</button>
+                <button id="view-x">X (Front)</button>
+            `;
+            
+            // Add the view controls before the first control group
+            const controlsDiv = document.querySelector('.controls');
+            controlsDiv.insertBefore(viewControlsDiv, controlsDiv.firstChild);
+            
+            // Add event listeners for view buttons
+            document.getElementById('view-z').addEventListener('click', function() {
+                setGlobalProjectionView('z');
+                setActiveViewButton('z');
+            });
+            
+            document.getElementById('view-y').addEventListener('click', function() {
+                setGlobalProjectionView('y');
+                setActiveViewButton('y');
+            });
+            
+            document.getElementById('view-x').addEventListener('click', function() {
+                setGlobalProjectionView('x');
+                setActiveViewButton('x');
+            });
+            
+            // Function to set active view button
+            function setActiveViewButton(view) {
+                document.getElementById('view-z').classList.remove('active');
+                document.getElementById('view-y').classList.remove('active');
+                document.getElementById('view-x').classList.remove('active');
+                document.getElementById(`view-${view}`).classList.add('active');
+            }
+        }
+        
+        // Function to update active button state
+        function updateActiveButton(container, view) {
+            // Update buttons in this container
+            const buttons = container.querySelectorAll('.projection-button');
+            buttons.forEach(button => {
+                button.classList.remove('active');
+                if (button.textContent.toLowerCase() === view) {
+                    button.classList.add('active');
+                }
+            });
+        }
+        
+        // Function to set the view for all projections
+        function setGlobalProjectionView(view) {
+            currentProjectionView = view;
+            document.querySelectorAll('.projection-container').forEach(container => {
+                const img = container.querySelector('img');
+                const projId = container.id.replace('projection-', '');
+                const projection = projections.find(p => p.id == projId);
+                if (projection) {
+                    // Use the specified view if available, otherwise fall back to projectionData
+                    if (projection[`${view}_proj`]) {
+                        img.src = `data:image/png;base64,${projection[`${view}_proj`]}`;
+                    } else if (projection.projectionData) {
+                        console.log(`Projection ${projId} does not have ${view}_proj, falling back to default`);
+                        img.src = `data:image/png;base64,${projection.projectionData}`;
+                    }
+                    updateActiveButton(container, view);
+                }
+            });
+        }
+        
+        // Initialize when page loads
+        window.onload = initVisualization;
+    </script>
+</body>
+</html>

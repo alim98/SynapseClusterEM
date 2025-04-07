@@ -267,7 +267,7 @@
             
             <div class="control-group frame-control">
                 <span class="control-label">Frame Control:</span>
-                <input type="range" min="0" max="80" value="0" id="frame-slider" class="frame-slider">
+                <input type="range" min="0" max="50" value="0" id="frame-slider" class="frame-slider">
                 <span id="frame-value">0</span>
                 <button id="play-pause">Play/Pause</button>
                 <button id="show-max-cleft">Show Max Cleft Slices</button>
@@ -297,6 +297,10 @@
             debugMessage.innerHTML += message + '<br>';
             console.log(message);
         }
+        
+        // Segmentation type from configuration
+        const segmentationType = {segmentation_type};
+        console.log(`Segmentation type: ${segmentationType}`);
         
         // log("Script started");
         
@@ -458,12 +462,24 @@
             
             animationInterval = setInterval(() => {
                 // Get the max frame count among all GIFs
-                let maxFrames = 80; // Default value
-                Object.values(allFramesData).forEach(frames => {
-                    if (frames && frames.length > maxFrames) {
-                        maxFrames = frames.length;
-                    }
-                });
+                let maxFrames = 80; // Default value for most segmentation types
+                
+                // Special case: If segmentation type is 13, limit to 25 frames
+                if (segmentationType === 13) {
+                    console.log("Animation: Using 25 frames for segmentation type 13");
+                    maxFrames = 25;
+                } 
+                // For all other segmentation types, use the default 80 frames
+                // or calculate based on actual frame data if it exceeds 80
+                else {
+                    Object.values(allFramesData).forEach(frames => {
+                        if (frames && frames.length > maxFrames) {
+                            maxFrames = frames.length;
+                        }
+                    });
+                }
+                
+                console.log(`Setting max frames to: ${maxFrames}`);
                 
                 // Update frame slider max value
                 const frameSlider = document.getElementById('frame-slider');
@@ -1325,12 +1341,24 @@
             const frameValue = document.getElementById('frame-value');
             
             // Find the maximum number of frames across all GIFs
-            let maxFrames = 80; // Default value
-            Object.values(allFramesData).forEach(frames => {
-                if (frames && frames.length > maxFrames) {
-                    maxFrames = frames.length;
-                }
-            });
+            let maxFrames = 80; // Default value for most segmentation types
+            
+            // Special case: If segmentation type is 13, limit to 25 frames
+            if (segmentationType === 13) {
+                console.log("Animation: Using 25 frames for segmentation type 13");
+                maxFrames = 25;
+            } 
+            // For all other segmentation types, use the default 80 frames
+            // or calculate based on actual frame data if it exceeds 80
+            else {
+                Object.values(allFramesData).forEach(frames => {
+                    if (frames && frames.length > maxFrames) {
+                        maxFrames = frames.length;
+                    }
+                });
+            }
+            
+            console.log(`Setting max frames to: ${maxFrames}`);
             
             // Set the slider max value
             frameSlider.max = maxFrames - 1;
