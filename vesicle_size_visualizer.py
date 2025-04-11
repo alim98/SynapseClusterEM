@@ -15,7 +15,7 @@ from scipy import stats
 from scipy.stats import gaussian_kde
 from umap import UMAP
 import statsmodels.api as sm
-from skimage import measure  # Import for component analysis
+# from skimage import measure  # Import for component analysis
 
 
 def get_closest_component_mask(mask, z_start, z_end, y_start, y_end, x_start, x_end, center_coord):

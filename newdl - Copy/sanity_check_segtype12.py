@@ -6,8 +6,8 @@ from tqdm import tqdm
 
 # Import the necessary classes
 from synapse.utils.config import config
-from newdl.dataloader2 import SynapseDataLoader
-from newdl.dataset2 import SynapseDataset
+from newdl.dataloader3 import SynapseDataLoader
+from newdl.dataset3 import SynapseDataset
 
 # Set up logging
 logging.basicConfig(

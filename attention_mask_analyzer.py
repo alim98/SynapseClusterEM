@@ -18,8 +18,8 @@ import seaborn as sns
 from sklearn.metrics import roc_curve, auc
 
 # Import from newdl module instead of synapse
-from newdl.dataloader2 import SynapseDataLoader, Synapse3DProcessor
-from newdl.dataset2 import SynapseDataset
+from newdl.dataloader3 import SynapseDataLoader, Synapse3DProcessor
+from newdl.dataset3 import SynapseDataset
 from synapse import config
 from inference import VGG3D, load_and_prepare_data
 # Import classes from multi_layer_cam.py
@@ -1077,7 +1077,7 @@ def main():
     
     # Set up
     from synapse import config
-    from newdl.dataset2 import SynapseDataset
+    from newdl.dataset3 import SynapseDataset
     from inference import VGG3D, load_and_prepare_data
     
     print("Initializing model...")

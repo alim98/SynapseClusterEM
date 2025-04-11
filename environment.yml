@@ -1,0 +1,31 @@
+name: synapse2
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.9
+  - pytorch>=2.0.0
+  - torchvision
+  - cudatoolkit  
+  - numpy
+  - pandas
+  - matplotlib
+  - scikit-learn
+  - scipy
+  - tqdm
+  - pillow
+  - h5py
+  - jupyter
+  - ipykernel
+  - pip
+
+  - pip:
+    - umap-learn
+    - plotly
+    - tensorboard 
+    - seaborn 
+    - imageio
+    - statsmodels
+    - openpyxl

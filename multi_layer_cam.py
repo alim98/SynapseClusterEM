@@ -11,8 +11,8 @@ import torch.nn.functional as F
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from synapse import config
-from newdl.dataset2 import SynapseDataset
-from newdl.dataloader2 import Synapse3DProcessor, SynapseDataLoader
+from newdl.dataset3 import SynapseDataset
+from newdl.dataloader3 import Synapse3DProcessor, SynapseDataLoader
 from inference import VGG3D, load_and_prepare_data
 
 def normalize_globally(array):
@@ -134,7 +134,14 @@ def process_single_sample(model, dataset, sample_idx, device, layers, layer_name
     try:
         # Get the sample using dataset's __getitem__ which properly applies segmentation and alpha
         # This ensures we get the exact same processed image as defined in the config
-        pixel_values, syn_info, bbox_name = dataset[sample_idx]
+        sample_data = dataset[sample_idx]
+        
+        # Check if sample was discarded (returned as None)
+        if sample_data is None:
+            print(f"Sample {sample_idx} was discarded during dataset processing. Skipping.")
+            return None
+            
+        pixel_values, syn_info, bbox_name = sample_data
         print(f"Sample shape: {pixel_values.shape}, BBox: {bbox_name}")
         
         # Check if this is actually a different bounding box
@@ -210,7 +217,7 @@ def process_single_sample(model, dataset, sample_idx, device, layers, layer_name
 
 def visualize_samples_attention(model, dataset, sample_indices, output_dir, layers, layer_names, n_slices=4):
     """
-    Visualizes attention maps for a set of samples.
+    Visualizes attention maps for a set of samples as animated GIFs.
     
     Args:
         model: The PyTorch model
@@ -219,13 +226,22 @@ def visualize_samples_attention(model, dataset, sample_indices, output_dir, laye
         output_dir: Directory to save visualizations
         layers: List of layer indices to visualize
         layer_names: List of layer names corresponding to the indices
-        n_slices: Number of slices to visualize per sample
+        n_slices: Number of slices to visualize per sample (used for static images only)
         
     Returns:
         List of paths to saved visualizations
     """
     os.makedirs(output_dir, exist_ok=True)
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    
+    # Attempt to import imageio for GIF creation
+    try:
+        import imageio
+    except ImportError:
+        print("Warning: imageio not found. Installing imageio via pip...")
+        import subprocess
+        subprocess.check_call(["pip", "install", "imageio", "pillow"])
+        import imageio
     
     output_files = []
     
@@ -245,39 +261,40 @@ def visualize_samples_attention(model, dataset, sample_indices, output_dir, laye
             # Process this sample
             result = process_single_sample(model, dataset, sample_idx, device, layers, layer_names)
             
+            # Skip if sample was discarded
+            if result is None:
+                print(f"Sample {sample_idx} was discarded. Skipping visualization.")
+                continue
+            
             # Create visualization for this sample
             bbox_name = result['bbox_name']
             synapse_id = result['syn_info'].get('Var1', f'Sample_{sample_idx}')
             
-            # Choose a subset of slices to display
-            n_slices = min(n_slices, result['original_img'].shape[2])
-            slice_indices = np.linspace(0, result['original_img'].shape[2] - 1, n_slices, dtype=int)
+            # Determine the number of slices to include in the GIF
+            # Use all slices from the volume for the GIF
+            total_slices = result['original_img'].shape[2]
+            step = max(1, total_slices // 40)  # Limit to about 40 frames for smooth animation
+            slice_indices = range(0, total_slices, step)
             
-            # Create figure with one row per slice
-            n_cols = len(layers) + 1  # Original + each layer
-            
-            fig, axes = plt.subplots(n_slices, n_cols, figsize=(n_cols * 4, n_slices * 3))
-            
-            # If we only have one row, wrap in a 2D array for consistent indexing
-            if n_slices == 1:
-                axes = np.array([axes])
-            
-            # Display slices
-            for slice_idx, slice_num in enumerate(slice_indices):
-                # Display original slice in first column
-                # This is the properly processed image with segmentation and alpha from the config
-                axes[slice_idx, 0].set_title(f"Original (Slice {slice_num})", fontsize=10)
-                axes[slice_idx, 0].imshow(result['original_img'][0, 0, slice_num, :, :], cmap='gray', vmin=0, vmax=1)
-                axes[slice_idx, 0].axis('off')
+            # Create a separate GIF for each layer
+            for layer_idx, layer_name in enumerate(result['layer_results'].keys()):
+                # Get display name for this layer
+                display_name = layer_name_map.get(layer_name, layer_name)
                 
-                # Display attention maps for each layer
-                for col, layer_name in enumerate(result['layer_results'].keys(), start=1):
-                    cam = result['layer_results'][layer_name]
-                    
-                    # Get layer display name for title (only first row)
-                    if slice_idx == 0:
-                        display_name = layer_name_map.get(layer_name, layer_name)
-                        axes[slice_idx, col].set_title(display_name, fontsize=10)
+                # Get the CAM data for this layer
+                cam = result['layer_results'][layer_name]
+                
+                # Create a temporary directory for storing frames
+                import tempfile
+                temp_dir = tempfile.mkdtemp()
+                
+                # Create frames for the GIF
+                frames = []
+                
+                # For each slice
+                for frame_idx, slice_num in enumerate(slice_indices):
+                    # Create a new figure for this frame
+                    fig, ax = plt.subplots(figsize=(8, 8))
                     
                     # Get CAM for this slice
                     cam_slice = cam[slice_num]
@@ -289,38 +306,52 @@ def visualize_samples_attention(model, dataset, sample_indices, output_dir, laye
                                       result['original_img'].shape[4] / cam_slice.shape[1])
                         cam_slice = zoom(cam_slice, zoom_factors, order=1)
                     
-                    # Create overlay with consistent normalization
-                    ax = axes[slice_idx, col]
-                    
-                    # Display the original image (which already includes proper segmentation and alpha)
+                    # Display the original image
                     ax.imshow(result['original_img'][0, 0, slice_num, :, :], cmap='gray', vmin=0, vmax=1)
                     
-                    # Overlay the attention map - use slightly reduced alpha for better visualization
+                    # Overlay the attention map
                     im = ax.imshow(cam_slice, cmap='jet', alpha=0.5, vmin=0, vmax=1)
                     ax.axis('off')
                     
-                    # Add colorbar to last column of last row
-                    if col == len(result['layer_results']) and slice_idx == n_slices - 1:
-                        divider = make_axes_locatable(ax)
-                        cax = divider.append_axes("right", size="5%", pad=0.05)
-                        plt.colorbar(im, cax=cax)
-            
-            # Add title with sample information and config settings
-            alpha_value = config.alpha if hasattr(config, 'alpha') else 'unknown'
-            seg_type = config.segmentation_type if hasattr(config, 'segmentation_type') else 'unknown'
-            fig.suptitle(f"Multi-layer Attention Analysis - Sample: {synapse_id} (BBox: {bbox_name})\nSegmentation Type: {seg_type}, Alpha: {alpha_value}", fontsize=14)
-            
-            # Save figure for this sample
-            output_file = os.path.join(output_dir, f"attention_sample_{sample_idx}_bbox_{bbox_name}_alpha{alpha_value}_seg{seg_type}.png")
-            plt.tight_layout(rect=[0, 0, 1, 0.95])  # Make room for suptitle
-            plt.savefig(output_file, dpi=300, bbox_inches='tight')
-            plt.close()
-            
-            print(f"Attention map for sample {sample_idx} saved to {output_file}")
-            output_files.append(output_file)
+                    # Add colorbar
+                    divider = make_axes_locatable(ax)
+                    cax = divider.append_axes("right", size="5%", pad=0.05)
+                    plt.colorbar(im, cax=cax)
+                    
+                    # Add slice information
+                    plt.title(f"Sample {sample_idx}: {display_name} - Slice {slice_num}/{total_slices-1}", fontsize=12)
+                    
+                    # Save this frame
+                    frame_path = os.path.join(temp_dir, f"frame_{frame_idx:03d}.png")
+                    plt.tight_layout()
+                    plt.savefig(frame_path, dpi=100)
+                    plt.close()
+                    
+                    # Add to frames list
+                    frames.append(frame_path)
+                
+                # Create GIF
+                alpha_value = config.alpha if hasattr(config, 'alpha') else 'unknown'
+                seg_type = config.segmentation_type if hasattr(config, 'segmentation_type') else 'unknown'
+                gif_file = os.path.join(output_dir, f"attention_sample_{sample_idx}_bbox_{bbox_name}_{display_name}_alpha{alpha_value}_seg{seg_type}.gif")
+                
+                # Read all frames and create GIF
+                images = [imageio.imread(frame) for frame in frames]
+                
+                # Save with optimized settings - lower duration for smoother animation
+                imageio.mimsave(gif_file, images, duration=0.15, loop=0)  # loop=0 means infinite loop
+                
+                print(f"Attention GIF for sample {sample_idx}, layer {display_name} saved to {gif_file}")
+                output_files.append(gif_file)
+                
+                # Clean up temporary directory
+                import shutil
+                shutil.rmtree(temp_dir)
             
         except Exception as e:
             print(f"Error processing sample {sample_idx}: {e}")
+            import traceback
+            traceback.print_exc()
             continue
     
     return output_files
@@ -378,13 +409,13 @@ def visualize_cluster_attention(model, dataset, clusters_samples, output_dir, la
 
 def main():
     # Parse command line arguments
-    parser = argparse.ArgumentParser(description='Multi-Layer Attention Visualization for Random Samples')
-    parser.add_argument('--n_samples', type=int, default=3,
+    parser = argparse.ArgumentParser(description='Multi-Layer Attention Visualization as Animated GIFs')
+    parser.add_argument('--n_samples', type=int, default=10,
                       help='Number of random samples to process (default: 3)')
     parser.add_argument('--output_dir', type=str, default='results/random_samples_cam',
                       help='Directory to save output visualizations')
     parser.add_argument('--n_slices', type=int, default=4,
-                      help='Number of slices to visualize per sample')
+                      help='Number of slices to visualize per sample (for static images - ignored for GIFs)')
     parser.add_argument('--specific_indices', type=int, nargs='+', default=None,
                       help='Process specific sample indices instead of random ones')
     args = parser.parse_args()
@@ -416,7 +447,7 @@ def main():
     # Further ensure that the dataloader uses volume-wide normalization
     data_loader = dataset.data_loader
     if data_loader is None:
-        from newdl.dataloader2 import SynapseDataLoader
+        from newdl.dataloader3 import SynapseDataLoader
         data_loader = SynapseDataLoader("", "", "")
         dataset.data_loader = data_loader
         print("Created new dataloader for the dataset")
@@ -449,7 +480,7 @@ def main():
         n_slices=args.n_slices
     )
     
-    print(f"Processing complete. {len(output_files)} visualizations generated.")
+    print(f"Processing complete. {len(output_files)} animated GIFs generated.")
     
     return output_files
 

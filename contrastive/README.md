@@ -1,16 +1,99 @@
 # Contrastive Learning for Synapse Analysis
 
-This module implements contrastive learning for fine-tuning the VGG3D model on synapse data. The contrastive learning approach learns more robust representations by comparing different augmented views of the same synapse volume.
+This module implements contrastive learning for synapse feature extraction and representation learning. The system trains a VGG3D-based contrastive model on synapse volumes, enabling effective feature representation for downstream analysis.
 
 ## Overview
 
-The contrastive learning approach works by:
+The contrastive learning pipeline enables:
+- Training a model to learn discriminative features from synapse volumes
+- Extracting features from trained models for downstream analysis
+- Configurable training parameters for optimization
 
-1. Taking a synapse volume
-2. Creating two different augmented views of the same volume (e.g., rotations, flips, contrast changes)
-3. Passing both views through the VGG3D model and a projection head
-4. Training the model to pull representations of the same synapse closer together while pushing representations of different synapses apart
-5. Using the fine-tuned VGG3D backbone for feature extraction
+## Usage
+
+### Basic Usage
+
+Run the complete pipeline (data processing, training, and feature extraction):
+
+```bash
+python contrastive/run_contrastive_pipeline.py --warmup_epochs 5 --gradual_epochs 5 --epochs 10
+```
+
+### Feature Extraction Only
+
+Extract features using a pre-trained model:
+
+```bash
+python contrastive/run_contrastive_pipeline.py --extract_only --checkpoint ./contrastive/checkpoints/final_contrastive_model.pt
+```
+
+### Training Only
+
+Train the model without feature extraction:
+
+```bash
+python contrastive/run_contrastive_pipeline.py --train_only --warmup_epochs 5 --gradual_epochs 5 --epochs 10
+```
+
+## Components
+
+### ContrastivePipeline
+
+The main class that coordinates the entire process:
+- Data loading and preprocessing
+- 3D Volume processing
+- Model training with contrastive loss
+- Feature extraction
+
+### VGG3DContrastive
+
+A VGG-based 3D CNN model modified for contrastive learning:
+- Extracts features from 3D volumes
+- Projects features to a lower-dimensional embedding space
+- Supports contrastive learning objectives
+
+### Synapse3DProcessor
+
+Processes 3D synapse volumes:
+- Normalizes data
+- Handles different input formats
+- Prepares data for model input
+
+## Command Line Arguments
+
+| Argument | Description | Default |
+|----------|-------------|---------|
+| `--warmup_epochs` | Number of warmup training epochs | 5 |
+| `--gradual_epochs` | Number of gradual training epochs | 5 |
+| `--epochs` | Total number of training epochs | 20 |
+| `--extract_only` | Only extract features, no training | False |
+| `--train_only` | Only train the model, no feature extraction | False |
+| `--checkpoint` | Path to model checkpoint for feature extraction | None |
+| `--gradient_accumulation_steps` | Number of steps for gradient accumulation | 16 |
+
+## Training Process
+
+The training process consists of three phases:
+1. **Warmup Phase**: Initial training with base learning rate
+2. **Gradual Phase**: Training with gradually increasing batch size
+3. **Main Phase**: Full training with optimized parameters
+
+The system implements gradient accumulation to effectively train with larger batch sizes on memory-constrained hardware.
+
+## Output
+
+The pipeline produces:
+- Trained model checkpoints (saved to `./contrastive/checkpoints/`)
+- Feature vectors for each synapse (saved as CSV to `./contrastive/results/`)
+- Training logs and metrics
+
+## Feature Extraction
+
+The extracted features are high-dimensional vectors that represent the learned embeddings of the synapses. These features can be used for:
+- Clustering similar synapses
+- Classification tasks
+- Visualizations (e.g., UMAP projections)
+- Other downstream analyses
 
 ## Directory Structure
 
@@ -25,32 +108,6 @@ The contrastive learning approach works by:
     - `config.py`: Configuration for contrastive learning
   - `train_contrastive.py`: Script for training the contrastive model
   - `run_contrastive_pipeline.py`: Main script to run the entire pipeline
-
-## Usage
-
-### Running the Full Pipeline
-
-To run the entire contrastive learning pipeline (data loading, model training, feature extraction):
-
-```bash
-python -m contrastive.run_contrastive_pipeline
-```
-
-### Training Only
-
-To only train the contrastive model:
-
-```bash
-python -m contrastive.run_contrastive_pipeline --train_only
-```
-
-### Feature Extraction Only
-
-To extract features from a trained model:
-
-```bash
-python -m contrastive.run_contrastive_pipeline --extract_only --checkpoint path/to/checkpoint.pt --layer_num 20
-```
 
 ## Configuration
 

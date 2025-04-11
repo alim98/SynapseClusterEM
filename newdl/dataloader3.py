@@ -803,8 +803,8 @@ class SynapseDataLoader:
                 lower_bound = target_percentage * (1 - size_tolerance)
                 upper_bound = target_percentage * (1 + size_tolerance)
                 
-                print(f"Presynapse size: Current {current_percentage:.4f}, Target {target_percentage:.4f}, Range [{lower_bound:.4f}-{upper_bound:.4f}]")
-                print(f"Presynapse pixels: {presynapse_pixels} out of {total_pixels} total pixels")
+                # print(f"Presynapse size: Current {current_percentage:.4f}, Target {target_percentage:.4f}, Range [{lower_bound:.4f}-{upper_bound:.4f}]")
+                # print(f"Presynapse pixels: {presynapse_pixels} out of {total_pixels} total pixels")
                 
                 # Only adjust if outside the acceptable range
                 if current_percentage < lower_bound or current_percentage > upper_bound:

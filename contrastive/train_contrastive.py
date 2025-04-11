@@ -93,63 +93,41 @@ def load_data(config):
     return vol_data_dict, syn_df, processor
 
 
-def create_optimizer(model, config):
+def create_optimizer_and_scheduler(model, config):
     """
-    Create optimizer for contrastive learning.
+    Create optimizer and scheduler with different learning rates for different parts of the model.
     
     Args:
-        model: Model to optimize
-        config: Configuration object
+        model (nn.Module): The model
+        config (Config): The configuration
         
     Returns:
         tuple: (optimizer, scheduler)
     """
-    # Define parameters to optimize
-    params = model.parameters()
+    # Create parameter groups with different learning rates
+    param_groups = [
+        {
+            'params': model.projection_head.parameters(),
+            'lr': config.learning_rate
+        }
+    ]
+    
+    # Add backbone parameters with lower learning rate
+    if hasattr(model, 'backbone'):
+        param_groups.append({
+            'params': model.backbone.parameters(),
+            'lr': config.learning_rate * 0.1  # Lower learning rate for backbone
+        })
     
     # Create optimizer
-    if config.optimizer.lower() == "adam":
-        optimizer = optim.Adam(
-            params,
-            lr=config.learning_rate,
-            weight_decay=config.weight_decay
-        )
-    elif config.optimizer.lower() == "sgd":
-        optimizer = optim.SGD(
-            params,
-            lr=config.learning_rate,
-            momentum=config.momentum,
-            weight_decay=config.weight_decay
-        )
-    else:
-        raise ValueError(f"Unsupported optimizer: {config.optimizer}")
+    optimizer = optim.Adam(param_groups, weight_decay=config.weight_decay)
     
-    # Create learning rate scheduler
-    if config.use_scheduler:
-        if config.scheduler_type.lower() == "cosine":
-            scheduler = optim.lr_scheduler.CosineAnnealingLR(
-                optimizer,
-                T_max=config.num_epochs,
-                eta_min=1e-6
-            )
-        elif config.scheduler_type.lower() == "step":
-            scheduler = optim.lr_scheduler.StepLR(
-                optimizer,
-                step_size=30,
-                gamma=0.1
-            )
-        elif config.scheduler_type.lower() == "plateau":
-            scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-                optimizer,
-                mode="min",
-                factor=0.5,
-                patience=10,
-                verbose=True
-            )
-        else:
-            raise ValueError(f"Unsupported scheduler: {config.scheduler_type}")
-    else:
-        scheduler = None
+    # Create scheduler
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(
+        optimizer,
+        T_max=config.epochs,
+        eta_min=config.learning_rate * 0.01
+    )
     
     return optimizer, scheduler
 
@@ -227,72 +205,108 @@ def load_checkpoint(model, optimizer, config, filename):
     return model, optimizer, epoch, loss
 
 
-def train_contrastive(model, dataloader, optimizer, scheduler, criterion, device, config, logger):
-    """
-    Train the contrastive model for one epoch.
+def train_contrastive(model, train_loader, criterion, optimizer, config, logger):
+    """Train the model using contrastive learning with gradient accumulation.
     
     Args:
-        model: Model to train
-        dataloader: DataLoader with contrastive data
-        optimizer: Optimizer
-        scheduler: Learning rate scheduler
-        criterion: Loss function
-        device: Device to train on
-        config: Configuration object
+        model: The VGG3D model with projection head
+        train_loader: DataLoader for training data
+        criterion: NT-Xent loss function
+        optimizer: Optimizer for model parameters
+        config: Training configuration
         logger: Logger instance
-        
+    
     Returns:
         float: Average loss for the epoch
     """
     model.train()
+    total_loss = 0
+    num_batches = len(train_loader)
+    optimizer.zero_grad()  # Zero gradients at start
     
-    # Initialize metrics
-    running_loss = 0.0
-    n_batches = 0
+    # Initialize mixed precision training
+    scaler = torch.cuda.amp.GradScaler() if config.use_mixed_precision else None
     
-    # Training loop
-    for batch_idx, batch in enumerate(tqdm(dataloader, desc="Training")):
-        if batch is None:
-            continue  # Skip empty batches
-        
-        # Unpack batch
-        (view1, view2), syn_infos, bbox_names = batch
-        
-        # Move data to device
-        view1 = view1.to(device)
-        view2 = view2.to(device)
-        
-        # Zero the gradients
-        optimizer.zero_grad()
-        
-        # Forward pass
-        z1 = model(view1)
-        z2 = model(view2)
-        
-        # Calculate loss
-        loss = criterion(z1, z2)
-        
-        # Backward pass and optimization
-        loss.backward()
-        optimizer.step()
-        
-        # Update metrics
-        running_loss += loss.item()
-        n_batches += 1
-        
-        # Log batch info
-        if batch_idx % 10 == 0:
-            logger.info(f"Batch {batch_idx}/{len(dataloader)}, Loss: {loss.item():.6f}")
+    # Track accumulated gradients
+    accumulated_batches = 0
     
-    # Update scheduler if using
-    if scheduler is not None:
-        if isinstance(scheduler, optim.lr_scheduler.ReduceLROnPlateau):
-            scheduler.step(running_loss / n_batches)
-        else:
-            scheduler.step()
+    for batch_idx, (views, _, _) in enumerate(train_loader):
+        try:
+            # Unpack views
+            view1s, view2s = views
+            
+            # Move data to device
+            view1s = view1s.to(next(model.parameters()).device)
+            view2s = view2s.to(next(model.parameters()).device)
+            
+            # Forward pass with mixed precision
+            if config.use_mixed_precision:
+                with torch.cuda.amp.autocast():
+                    # Get projections for both views
+                    z_i = model(view1s)
+                    z_j = model(view2s)
+                    loss = criterion(z_i, z_j) / config.gradient_accumulation_steps
+            else:
+                # Get projections for both views
+                z_i = model(view1s)
+                z_j = model(view2s)
+                loss = criterion(z_i, z_j) / config.gradient_accumulation_steps
+            
+            # Backward pass with mixed precision
+            if config.use_mixed_precision:
+                scaler.scale(loss).backward()
+            else:
+                loss.backward()
+            
+            # Track loss (multiply back by accumulation steps for logging)
+            total_loss += loss.item() * config.gradient_accumulation_steps
+            accumulated_batches += 1
+            
+            # Log batch progress
+            if batch_idx % 10 == 0:
+                logger.info(f'Batch [{batch_idx}/{num_batches}], Current Loss: {loss.item() * config.gradient_accumulation_steps:.4f}')
+            
+            # Update weights if we've accumulated enough gradients
+            if accumulated_batches == config.gradient_accumulation_steps or batch_idx == num_batches - 1:
+                # Clip gradients
+                if config.use_mixed_precision:
+                    scaler.unscale_(optimizer)
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                    scaler.step(optimizer)
+                    scaler.update()
+                else:
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                    optimizer.step()
+                
+                optimizer.zero_grad()
+                
+                # Reset accumulation counter
+                accumulated_batches = 0
+                
+                # Log accumulated step
+                logger.info(f'Performed optimization step after {batch_idx + 1} batches')
+                
+                # Clear cache periodically
+                if batch_idx % 50 == 0 and torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            
+            # Clear unnecessary tensors
+            del view1s, view2s, z_i, z_j, loss
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                
+        except RuntimeError as e:
+            if "out of memory" in str(e):
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                logger.error(f"WARNING: out of memory at batch {batch_idx}. Skipping batch.")
+                continue
+            else:
+                raise e
     
-    # Calculate average loss
-    avg_loss = running_loss / n_batches if n_batches > 0 else float('inf')
+    # Calculate average loss for the epoch
+    avg_loss = total_loss / num_batches
+    logger.info(f'Average Loss: {avg_loss:.4f}')
     
     return avg_loss
 
@@ -347,6 +361,81 @@ def validate_contrastive(model, dataloader, criterion, device, logger):
     return avg_loss
 
 
+def train_model(model, train_loader, val_loader, config, logger):
+    """
+    Train the model with gradual unfreezing.
+    
+    Args:
+        model (nn.Module): The model to train
+        train_loader (DataLoader): The training dataloader
+        val_loader (DataLoader): The validation dataloader
+        config (Config): The configuration
+        logger (Logger): The logger
+    """
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = model.to(device)
+    
+    # Create criterion
+    criterion = NTXentLoss(
+        temperature=config.temperature,
+        batch_size=config.batch_size
+    ).to(device)
+    
+    # Training phases
+    phases = [
+        ('warmup', config.warmup_epochs),
+        ('gradual', config.gradual_epochs),
+        ('full', config.epochs - config.warmup_epochs - config.gradual_epochs)
+    ]
+    
+    for phase, num_epochs in phases:
+        logger.info(f"Starting {phase} training phase for {num_epochs} epochs")
+        
+        # Set training phase
+        model.set_training_phase(phase)
+        
+        # Create optimizer and scheduler for this phase
+        optimizer, scheduler = create_optimizer_and_scheduler(model, config)
+        
+        # Training loop
+        for epoch in range(num_epochs):
+            # Train
+            train_loss = train_contrastive(
+                model, train_loader, criterion, optimizer, config, logger
+            )
+            
+            # Validate
+            val_loss = validate_contrastive(
+                model, val_loader, criterion, device, logger
+            )
+            
+            # Log epoch results
+            logger.info(f"Epoch {epoch}: Train Loss: {train_loss:.6f}, "
+                       f"Val Loss: {val_loss:.6f}")
+            
+            # Save checkpoint
+            if (epoch + 1) % config.save_interval == 0:
+                checkpoint_path = os.path.join(
+                    config.checkpoint_dir,
+                    f"contrastive_model_{phase}_epoch_{epoch+1}.pt"
+                )
+                torch.save({
+                    'epoch': epoch,
+                    'model_state_dict': model.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                    'scheduler_state_dict': scheduler.state_dict(),
+                    'train_loss': train_loss,
+                    'val_loss': val_loss,
+                    'phase': phase
+                }, checkpoint_path)
+                logger.info(f"Saved checkpoint to {checkpoint_path}")
+    
+    # Save final model
+    final_path = os.path.join(config.checkpoint_dir, "final_contrastive_model.pt")
+    torch.save(model.state_dict(), final_path)
+    logger.info(f"Saved final model to {final_path}")
+
+
 def main():
     """Main function for contrastive learning training."""
     # Get configuration
@@ -374,44 +463,8 @@ def main():
     model = initialize_contrastive_model(config)
     model = model.to(device)
     
-    # Initialize optimizer and scheduler
-    optimizer, scheduler = create_optimizer(model, config)
-    
-    # Initialize loss function
-    criterion = NTXentLoss(temperature=config.temperature, device=device)
-    
-    # Resume from checkpoint if specified
-    start_epoch = 0
-    best_loss = float('inf')
-    if hasattr(config, 'resume_from') and config.resume_from:
-        logger.info(f"Resuming from checkpoint: {config.resume_from}")
-        model, optimizer, start_epoch, best_loss = load_checkpoint(model, optimizer, config, config.resume_from)
-        start_epoch += 1  # Start from the next epoch
-    
-    # Training loop
-    logger.info(f"Starting training from epoch {start_epoch} to {config.num_epochs}")
-    for epoch in range(start_epoch, config.num_epochs):
-        logger.info(f"Epoch {epoch}/{config.num_epochs}")
-        
-        # Train for one epoch
-        train_loss = train_contrastive(model, dataloader, optimizer, scheduler, criterion, device, config, logger)
-        
-        # Log epoch results
-        logger.info(f"Epoch {epoch}: Train Loss = {train_loss:.6f}")
-        
-        # Save checkpoint if improved
-        if train_loss < best_loss:
-            best_loss = train_loss
-            logger.info(f"New best loss: {best_loss:.6f}")
-            save_checkpoint(model, optimizer, epoch, train_loss, config, "best_contrastive_model.pt")
-        
-        # Save regular checkpoint
-        if epoch % config.save_every == 0 or epoch == config.num_epochs - 1:
-            save_checkpoint(model, optimizer, epoch, train_loss, config)
-    
-    # Save final model
-    logger.info("Training complete. Saving final model.")
-    save_checkpoint(model, optimizer, config.num_epochs - 1, train_loss, config, "final_contrastive_model.pt")
+    # Train model
+    train_model(model, dataloader, dataloader, config, logger)
     
     logger.info("Contrastive training finished successfully.")
 

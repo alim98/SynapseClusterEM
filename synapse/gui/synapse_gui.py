@@ -1066,8 +1066,8 @@ class SynapseGUI:
         """Create a visualization for the selected sample"""
         
         # Import from newdl module instead of synapse
-        from newdl.dataloader2 import SynapseDataLoader, Synapse3DProcessor
-        from newdl.dataset2 import SynapseDataset
+        from newdl.dataloader3 import SynapseDataLoader, Synapse3DProcessor
+        from newdl.dataset3 import SynapseDataset
         from synapse import  config
         import numpy as np
         from PIL import Image, ImageTk

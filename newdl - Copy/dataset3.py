@@ -83,7 +83,7 @@ class SynapseDataset(Dataset):
         
         return inputs["pixel_values"].squeeze(0).float(), syn_info, bbox_name
 
-class SynapseDataset2(Dataset):
+class Synapsedataset2(Dataset):
     def __init__(self, vol_data_dict: dict, synapse_df: pd.DataFrame, processor,
                  segmentation_type: int, subvol_size: int = 80, num_frames: int = 16,
                  alpha: float = 0.3, fixed_samples=None, normalize_across_volume: bool = True,

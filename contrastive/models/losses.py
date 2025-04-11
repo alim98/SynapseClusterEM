@@ -35,57 +35,55 @@ class NTXentLoss(nn.Module):
         Returns:
             torch.Tensor: Scalar NT-Xent loss
         """
-        # Get batch size
         batch_size = z_i.shape[0]
         
-        # Cosine similarity between all possible pairs
-        representations = torch.cat([z_i, z_j], dim=0)  # [2*batch_size, projection_dim]
+        # Debug prints for input
+        print(f"Input shapes - z_i: {z_i.shape}, z_j: {z_j.shape}")
+        print(f"Input ranges - z_i: [{z_i.min():.3f}, {z_i.max():.3f}], z_j: [{z_j.min():.3f}, {z_j.max():.3f}]")
         
-        # Normalize the representations: important for cosine similarity
-        representations = F.normalize(representations, p=2, dim=1)
+        # Normalize the projections
+        z_i = F.normalize(z_i, dim=1)
+        z_j = F.normalize(z_j, dim=1)
         
-        # Calculate similarity matrix
-        similarity_matrix = torch.matmul(representations, representations.T)  # [2*batch_size, 2*batch_size]
+        # Debug prints after normalization
+        print(f"After normalization - z_i: [{z_i.min():.3f}, {z_i.max():.3f}], z_j: [{z_j.min():.3f}, {z_j.max():.3f}]")
         
-        # The diagonal elements are self-similarities, which we don't use
-        # We set the diagonal to a very low value to ignore them in the softmax
-        mask = torch.eye(2 * batch_size, dtype=torch.bool, device=self.device)
-        similarity_matrix.masked_fill_(mask, -float('inf'))
+        # Compute similarity matrix
+        representations = torch.cat([z_i, z_j], dim=0)
+        similarity_matrix = F.cosine_similarity(representations.unsqueeze(1), representations.unsqueeze(0), dim=2)
         
-        # The positives are the cross-similarity between z_i and z_j (and vice versa)
-        # For example, if batch_size=4, the positives are at indices: (0,4), (1,5), (2,6), (3,7), (4,0), (5,1), (6,2), (7,3)
-        positives = torch.cat([
-            similarity_matrix[range(batch_size), range(batch_size, 2 * batch_size)],
-            similarity_matrix[range(batch_size, 2 * batch_size), range(batch_size)]
-        ])
+        # Debug prints for similarity matrix
+        print(f"Similarity matrix shape: {similarity_matrix.shape}")
+        print(f"Similarity matrix range: [{similarity_matrix.min():.3f}, {similarity_matrix.max():.3f}]")
         
-        # All other similarity scores are negatives
-        # We create a mask to exclude the positives and the diagonal
-        # The mask has 1s for all negatives and 0s for positives and diagonal
-        negative_mask = torch.ones((2 * batch_size, 2 * batch_size), dtype=torch.bool, device=self.device)
+        # Create mask for positive pairs
+        mask = torch.zeros((2 * batch_size, 2 * batch_size), dtype=bool, device=self.device)
+        mask[torch.arange(2 * batch_size, device=self.device), torch.arange(2 * batch_size, device=self.device)] = True
+        mask = mask.float()
         
-        # Set diagonal to false (exclude self-similarity)
-        negative_mask.fill_diagonal_(False)
+        # Debug prints for mask
+        print(f"Mask shape: {mask.shape}")
+        print(f"Number of positive pairs: {mask.sum().item()}")
         
-        # Set positives to false (exclude positives)
-        for i in range(batch_size):
-            negative_mask[i, i + batch_size] = False
-            negative_mask[i + batch_size, i] = False
+        # Compute loss
+        positives = similarity_matrix[mask.bool()].view(2 * batch_size, 1)
+        negatives = similarity_matrix[~mask.bool()].view(2 * batch_size, -1)
         
-        # Get all negative similarities
-        negatives = similarity_matrix[negative_mask].view(2 * batch_size, -1)  # [2*batch_size, 2*batch_size-2]
+        # Debug prints for positives and negatives
+        print(f"Positives shape: {positives.shape}, range: [{positives.min():.3f}, {positives.max():.3f}]")
+        print(f"Negatives shape: {negatives.shape}, range: [{negatives.min():.3f}, {negatives.max():.3f}]")
         
-        # Concatenate positive similarities with all negative similarities
-        logits = torch.cat([positives.view(-1, 1), negatives], dim=1)  # [2*batch_size, 2*batch_size-1]
+        logits = torch.cat([positives, negatives], dim=1)
+        labels = torch.zeros(2 * batch_size, device=self.device).long()
         
-        # Scale by temperature
-        logits /= self.temperature
+        # Debug prints for logits and labels
+        print(f"Logits shape: {logits.shape}, range: [{logits.min():.3f}, {logits.max():.3f}]")
+        print(f"Labels shape: {labels.shape}, unique values: {torch.unique(labels).tolist()}")
         
-        # The labels are zeros (indicating that the positive pair is at index 0)
-        labels = torch.zeros(2 * batch_size, dtype=torch.long, device=self.device)
+        loss = self.criterion(logits / self.temperature, labels)
         
-        # Calculate the cross-entropy loss
-        loss = self.criterion(logits, labels)
+        # Debug print for final loss
+        print(f"Final loss: {loss.item():.6f}")
         
         return loss
 

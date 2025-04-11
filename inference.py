@@ -22,7 +22,6 @@ import plotly.graph_objects as go
 import plotly.express as px
 import plotly.io as pio
 from plotly.subplots import make_subplots
-import kaleido
 from pathlib import Path
 import argparse
 from sklearn.cluster import KMeans
@@ -45,16 +44,11 @@ from vgg3d_stage_extractor import VGG3DStageExtractor
 from synapse.clustering import (
     load_and_cluster_features,
     find_random_samples_in_clusters,
-    find_closest_samples_in_clusters,
     apply_tsne,
     save_tsne_plots,
     save_cluster_samples,
-    get_center_slice,
-    visualize_slice,
-    plot_synapse_samples
 )
 
-from presynapse_analysis import run_presynapse_analysis
 
 fixed_samples = [
     {"id": 1, "bbox_name": "bbox1", "Var1": "non_spine_synapse_004", "slice_number": 25},
@@ -543,7 +537,6 @@ def run_full_analysis(config, vol_data_dict, syn_df, processor, model):
         print("\n\n" + "="*80)
         print("Starting presynapse analysis to identify synapses with the same presynapse ID")
         print("="*80)
-        run_presynapse_analysis(config)
     
     print("All analyses complete!")
 

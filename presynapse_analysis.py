@@ -17,8 +17,8 @@ from sklearn.preprocessing import StandardScaler
 from presynapse_distance_analysis import compare_intra_inter_presynapse_distances, add_distance_comparison_to_report
 
 # Import from newdl module instead of synapse
-from newdl.dataloader2 import SynapseDataLoader, Synapse3DProcessor
-from newdl.dataset2 import SynapseDataset
+from newdl.dataloader3 import SynapseDataLoader, Synapse3DProcessor
+from newdl.dataset3 import SynapseDataset
 from synapse import config
 
 

@@ -840,8 +840,8 @@ class SynapseDataLoader:
                     print("Error: No presynapse coordinates found despite mask having True values")
                 
                 # Recalculate the percentage after adjustment
-                new_percentage = np.sum(sub_presynapse_mask) / total_pixels
-                print(f"Adjusted presynapse size: {new_percentage:.4f} (target was {target_percentage:.4f})")
+                # new_percentage = np.sum(sub_presynapse_mask) / total_pixels
+                # print(f"Adjusted presynapse size: {new_percentage:.4f} (target was {target_percentage:.4f})")
                 
                 # Update the combined mask with the normalized presynapse
                 if segmentation_type == 1:  # Segmentation type that only uses presynapse

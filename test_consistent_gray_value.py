@@ -19,8 +19,8 @@ sys.path.append(parent_dir)
 try:
     from synapse.utils.config import config
     from synapse.gif_umap.GifUmap import create_gif_from_volume
-    from newdl.dataset2 import SynapseDataset
-    from newdl.dataloader2 import SynapseDataLoader, Synapse3DProcessor
+    from newdl.dataset3 import SynapseDataset
+    from newdl.dataloader3 import SynapseDataLoader, Synapse3DProcessor
 except ImportError as e:
     print(f"Error importing modules: {e}")
     sys.exit(1)
@@ -133,10 +133,10 @@ def create_modified_gif_from_volume(volume, output_path, fps=10, apply_normaliza
             for i in range(volume.shape[0]):
                 frames.append(np.zeros_like(volume[i], dtype=np.uint8))
     else:
-        # Use absolute fixed scaling to match dataloader2.py behavior
+        # Use absolute fixed scaling to match dataloader3.py behavior
         # This ensures completely consistent gray values across all samples
         
-        # Define same fixed values as in dataloader2.py
+        # Define same fixed values as in dataloader3.py
         fixed_min = 0.0
         fixed_max = 255.0
         

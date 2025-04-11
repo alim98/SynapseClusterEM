@@ -249,10 +249,10 @@ def create_gif_from_volume(volume, output_path, fps=10, segmentation_type=None):
     # Prepare frames for GIF
     frames = []
     
-    # Use absolute fixed scaling to match dataloader2.py behavior
+    # Use absolute fixed scaling to match dataloader3.py behavior
     # This ensures completely consistent gray values across all samples
     
-    # Define same fixed values as in dataloader2.py
+    # Define same fixed values as in dataloader3.py
     fixed_min = 0.0
     fixed_max = 255.0
     

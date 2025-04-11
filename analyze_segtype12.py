@@ -10,8 +10,8 @@ import logging
 from tqdm import tqdm
 
 # Add the necessary imports from the project
-from newdl.dataloader2 import SynapseDataLoader, Synapse3DProcessor
-from newdl.dataset2 import SynapseDataset
+from newdl.dataloader3 import SynapseDataLoader, Synapse3DProcessor
+from newdl.dataset3 import SynapseDataset
 from synapse.utils.config import config
 
 # Configure logging

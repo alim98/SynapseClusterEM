@@ -7,8 +7,8 @@ from torch.utils.data import Dataset, DataLoader
 import logging
 from pathlib import Path
 
-from newdl.dataset2 import SynapseDataset
-from newdl.dataloader2 import SynapseDataLoader, Synapse3DProcessor
+from newdl.dataset3 import SynapseDataset
+from newdl.dataloader3 import SynapseDataLoader, Synapse3DProcessor
 from synapse.utils.config import config
 
 # Configure logging

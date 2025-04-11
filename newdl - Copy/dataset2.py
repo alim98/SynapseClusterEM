@@ -3,7 +3,7 @@ import torch
 import pandas as pd
 from torch.utils.data import Dataset
 
-from newdl.dataloader2 import SynapseDataLoader
+from newdl.dataloader3 import SynapseDataLoader
 
 class SynapseDataset(Dataset):
     def __init__(self, vol_data_dict: dict, synapse_df: pd.DataFrame, processor,
@@ -96,7 +96,7 @@ class SynapseDataset(Dataset):
             traceback.print_exc()
             return torch.zeros((self.num_frames, 1, self.subvol_size, self.subvol_size), dtype=torch.float32), syn_info, bbox_name
 
-class SynapseDataset2(Dataset):
+class Synapsedataset2(Dataset):
     def __init__(self, vol_data_dict: dict, synapse_df: pd.DataFrame, processor,
                  segmentation_type: int, subvol_size: int = 80, num_frames: int = 16,
                  alpha: float = 0.3, fixed_samples=None, normalize_across_volume: bool = True,

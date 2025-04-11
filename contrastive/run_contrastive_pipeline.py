@@ -23,6 +23,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Import from original synapse pipeline
 from synapse import config as synapse_config
+from synapse.utils import SynapseConfig
 from synapse_pipeline import SynapsePipeline
 from synapse.models import Vgg3D, load_model_from_checkpoint
 from newdl.dataloader3 import SynapseDataLoader, Synapse3DProcessor
@@ -30,7 +31,7 @@ from newdl.dataset3 import SynapseDataset
 from vgg3d_stage_extractor import VGG3DStageExtractor
 
 # Import contrastive modules
-from contrastive.utils.config import config as contrastive_config
+from contrastive.utils.config import ContrastiveConfig
 from contrastive.models.contrastive_model import VGG3DContrastive, initialize_contrastive_model
 from contrastive.models.losses import NTXentLoss, SimplifiedNTXentLoss
 from contrastive.data.dataset import ContrastiveDataset, create_contrastive_dataloader
@@ -38,14 +39,53 @@ from contrastive.data.augmentations import ContrastiveAugmenter, ToTensor3D
 from contrastive.train_contrastive import train_contrastive, save_checkpoint, load_checkpoint
 
 
-def setup_logging():
+def create_optimizer_and_scheduler(model, config):
+    """
+    Create optimizer and scheduler for the model.
+    
+    Args:
+        model (nn.Module): The model
+        config (Config): The configuration
+        
+    Returns:
+        tuple: (optimizer, scheduler)
+    """
+    # Create parameter groups with different learning rates
+    param_groups = [
+        {
+            'params': model.projection.parameters(),
+            'lr': config.learning_rate
+        }
+    ]
+    
+    # Add backbone parameters with lower learning rate
+    if hasattr(model, 'backbone'):
+        param_groups.append({
+            'params': model.backbone.parameters(),
+            'lr': config.learning_rate * 0.1  # Lower learning rate for backbone
+        })
+    
+    # Create optimizer
+    optimizer = torch.optim.Adam(param_groups, weight_decay=config.weight_decay)
+    
+    # Create scheduler
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer,
+        T_max=config.epochs,
+        eta_min=config.learning_rate * 0.01
+    )
+    
+    return optimizer, scheduler
+
+
+def setup_logging(config):
     """Set up logging for the contrastive pipeline."""
     # Create log directory if it doesn't exist
-    os.makedirs(contrastive_config.log_dir, exist_ok=True)
+    os.makedirs(config.log_dir, exist_ok=True)
     
     # Set up logging to file and console
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_file = os.path.join(contrastive_config.log_dir, f"contrastive_pipeline_{timestamp}.log")
+    log_file = os.path.join(config.log_dir, f"contrastive_pipeline_{timestamp}.log")
     
     # Configure logging
     logging.basicConfig(
@@ -71,424 +111,451 @@ def log_print(logger, *args, **kwargs):
 
 
 class ContrastivePipeline:
-    """
-    Pipeline for contrastive learning and feature extraction on synapse data.
-    """
+    """Pipeline for contrastive learning on synapse data."""
+    
     def __init__(self, config=None, synapse_config=None):
-        """
-        Initialize the contrastive pipeline.
+        """Initialize the contrastive learning pipeline."""
+        # Set up configurations
+        self.config = config or ContrastiveConfig(
+            batch_size=2,  # Reduced batch size from 4 to 2
+            gradient_accumulation_steps=16,  # Increased from 8 to 16 to compensate
+            learning_rate=1e-4,
+            weight_decay=1e-6,
+            temperature=0.07,
+            num_epochs=50,
+            warmup_epochs=5,
+            gradual_epochs=5,
+            results_dir='contrastive/results',
+            checkpoint_dir='contrastive/checkpoints',
+            log_dir='contrastive/logs',
+            visualization_dir='contrastive/visualization'
+        )
         
-        Args:
-            config: Contrastive learning configuration
-            synapse_config: Synapse pipeline configuration
-        """
-        self.config = config or contrastive_config
-        self.synapse_config = synapse_config or synapse_config
+        self.synapse_config = synapse_config or SynapseConfig()
+        
+        # Create necessary directories
+        os.makedirs(self.config.results_dir, exist_ok=True)
+        os.makedirs(self.config.checkpoint_dir, exist_ok=True)
+        os.makedirs(self.config.log_dir, exist_ok=True)
+        os.makedirs(self.config.visualization_dir, exist_ok=True)
         
         # Initialize logger
-        self.logger = setup_logging()
+        logging.basicConfig(
+            format='%(asctime)s - %(levelname)s - %(message)s',
+            level=logging.INFO,
+            handlers=[
+                logging.FileHandler(os.path.join(self.config.log_dir, 'contrastive.log')),
+                logging.StreamHandler()
+            ]
+        )
+        self.logger = logging.getLogger(__name__)
         
-        # Initialize state
-        self.vol_data_dict = None
-        self.syn_df = None
+        # Initialize other components as None
         self.model = None
-        self.contrastive_model = None
-        self.dataloader = None
         self.processor = None
+        self.train_loader = None
+        self.val_loader = None
+        self.visualizer = None
+        self.base_model = None
         
-        # Create output directories
-        os.makedirs(self.config.checkpoint_dir, exist_ok=True)
-        os.makedirs(self.config.results_dir, exist_ok=True)
-        
-        log_print(self.logger, "ContrastivePipeline initialized")
+        # Set memory optimization settings
+        if torch.cuda.is_available():
+            # Enable memory efficient attention if available
+            if hasattr(torch.nn.functional, 'scaled_dot_product_attention'):
+                torch.backends.cuda.enable_mem_efficient_sdp(True)
+            
+            # Set memory allocation settings
+            os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'max_split_size_mb:512,expandable_segments:True'
+            
+            # Clear CUDA cache
+            torch.cuda.empty_cache()
+            
+            self.logger.info("Memory optimization settings applied")
     
     def load_and_prepare_data(self):
-        """
-        Load and prepare data for contrastive learning.
-        
-        Returns:
-            tuple: (vol_data_dict, syn_df)
-        """
-        log_print(self.logger, "Loading and preparing data...")
+        """Load and prepare data for contrastive learning."""
+        self.logger.info("Loading and preparing data...")
         
         # Create a synapse pipeline to load data
         pipeline = SynapsePipeline(self.synapse_config)
         
-        # Load data using the synapse pipeline - this returns (dataset, dataloader)
+        # Load and prepare data
         pipeline.load_data()
         
-        # Now access the vol_data_dict and syn_df directly from the pipeline
+        # Access the vol_data_dict and syn_df directly from the pipeline
         self.vol_data_dict = pipeline.vol_data_dict
         self.syn_df = pipeline.syn_df
         
-        log_print(self.logger, f"Loaded {len(self.syn_df)} synapse samples across {len(self.vol_data_dict)} volumes")
-        
-        return self.vol_data_dict, self.syn_df
-    
-    def setup_model(self):
-        """
-        Set up the contrastive learning model.
-        
-        Returns:
-            VGG3DContrastive: The contrastive model
-        """
-        log_print(self.logger, "Setting up contrastive model...")
-        
-        # Initialize the contrastive model
-        self.contrastive_model = initialize_contrastive_model(self.config)
-        
-        # Move to device
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.contrastive_model = self.contrastive_model.to(device)
-        
-        log_print(self.logger, f"Model set up on {device}")
-        
-        return self.contrastive_model
-    
-    def setup_dataloader(self):
-        """
-        Set up the data loader for contrastive learning.
-        
-        Returns:
-            DataLoader: The contrastive data loader
-        """
-        log_print(self.logger, "Setting up data loader...")
-        
-        # Load data if not already loaded
-        if self.vol_data_dict is None or self.syn_df is None:
-            self.load_and_prepare_data()
-        
         # Initialize processor
-        self.processor = Synapse3DProcessor(size=self.config.size)
+        self.processor = Synapse3DProcessor(size=self.synapse_config.size)
         self.processor.normalize_volume = True
         
-        # Create contrastive data loader
-        self.dataloader = create_contrastive_dataloader(
-            self.vol_data_dict,
-            self.syn_df,
-            self.processor,
-            self.config,
-            batch_size=self.config.batch_size
+        # Create data loaders
+        self.train_loader = create_contrastive_dataloader(
+            self.vol_data_dict, self.syn_df, self.processor, 
+            self.config, batch_size=self.config.batch_size
         )
         
-        log_print(self.logger, f"Data loader created with batch size {self.config.batch_size}")
+        # Use the same loader for validation for now
+        self.val_loader = self.train_loader
         
-        return self.dataloader
+        self.logger.info(f"Loaded {len(self.syn_df)} synapse samples across {len(self.vol_data_dict)} volumes")
     
-    def train_model(self):
-        """
-        Train the contrastive model.
+    def setup_model(self):
+        """Set up the contrastive model."""
+        self.logger.info("Setting up contrastive model...")
         
-        Returns:
-            str: Path to the trained model checkpoint
-        """
-        log_print(self.logger, "Starting contrastive model training...")
+        # Initialize contrastive model directly
+        self.model = initialize_contrastive_model(self.config)
         
-        # Set up model if not already set up
-        if self.contrastive_model is None:
-            self.setup_model()
-        
-        # Set up data loader if not already set up
-        if self.dataloader is None:
-            self.setup_dataloader()
-        
-        # Set device
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        
-        # Initialize optimizer
-        from torch.optim import Adam, SGD
-        if self.config.optimizer.lower() == "adam":
-            optimizer = Adam(
-                self.contrastive_model.parameters(),
-                lr=self.config.learning_rate,
-                weight_decay=self.config.weight_decay
-            )
-        else:
-            optimizer = SGD(
-                self.contrastive_model.parameters(),
-                lr=self.config.learning_rate,
-                momentum=self.config.momentum,
-                weight_decay=self.config.weight_decay
-            )
-        
-        # Initialize scheduler
-        if self.config.use_scheduler:
-            if self.config.scheduler_type.lower() == "cosine":
-                scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-                    optimizer,
-                    T_max=self.config.num_epochs,
-                    eta_min=1e-6
-                )
-            elif self.config.scheduler_type.lower() == "step":
-                scheduler = torch.optim.lr_scheduler.StepLR(
-                    optimizer,
-                    step_size=30,
-                    gamma=0.1
-                )
-            else:
-                scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-                    optimizer,
-                    mode="min",
-                    factor=0.5,
-                    patience=10,
-                    verbose=True
-                )
-        else:
-            scheduler = None
-        
-        # Initialize loss function
-        criterion = NTXentLoss(temperature=self.config.temperature, device=device)
-        
-        # Resume from checkpoint if specified
-        start_epoch = 0
-        best_loss = float('inf')
-        if hasattr(self.config, 'resume_from') and self.config.resume_from:
-            log_print(self.logger, f"Resuming from checkpoint: {self.config.resume_from}")
-            self.contrastive_model, optimizer, start_epoch, best_loss = load_checkpoint(
-                self.contrastive_model, optimizer, self.config, self.config.resume_from
-            )
-            start_epoch += 1  # Start from the next epoch
-        
-        # Training loop
-        log_print(self.logger, f"Starting training from epoch {start_epoch} to {self.config.num_epochs}")
-        
-        for epoch in range(start_epoch, self.config.num_epochs):
-            log_print(self.logger, f"Epoch {epoch}/{self.config.num_epochs}")
+        # Enable gradient checkpointing to save memory
+        if hasattr(self.model, 'backbone'):
+            # Enable gradient checkpointing for the backbone
+            if hasattr(self.model.backbone, 'features'):
+                # Apply gradient checkpointing to each sequential module in features
+                for i, module in enumerate(self.model.backbone.features):
+                    if hasattr(module, 'use_checkpointing'):
+                        module.use_checkpointing = True
+                        self.logger.info(f"Enabled gradient checkpointing in backbone features module {i}")
             
-            # Train for one epoch
-            train_loss = train_contrastive(
-                self.contrastive_model,
-                self.dataloader,
-                optimizer,
-                scheduler,
-                criterion,
-                device,
-                self.config,
-                self.logger
-            )
-            
-            # Log epoch results
-            log_print(self.logger, f"Epoch {epoch}: Train Loss = {train_loss:.6f}")
-            
-            # Save checkpoint if improved
-            if train_loss < best_loss:
-                best_loss = train_loss
-                log_print(self.logger, f"New best loss: {best_loss:.6f}")
-                checkpoint_path = save_checkpoint(
-                    self.contrastive_model,
-                    optimizer,
-                    epoch,
-                    train_loss,
-                    self.config,
-                    "best_contrastive_model.pt"
-                )
-            
-            # Save regular checkpoint
-            if epoch % self.config.save_every == 0 or epoch == self.config.num_epochs - 1:
-                checkpoint_path = save_checkpoint(
-                    self.contrastive_model,
-                    optimizer,
-                    epoch,
-                    train_loss,
-                    self.config
-                )
+            # Enable gradient checkpointing for the projection head if it exists
+            if hasattr(self.model, 'projection'):
+                if hasattr(self.model.projection, 'use_checkpointing'):
+                    self.model.projection.use_checkpointing = True
+                    self.logger.info("Enabled gradient checkpointing in projection head")
         
-        # Save final model
-        log_print(self.logger, "Training complete. Saving final model.")
-        final_checkpoint_path = save_checkpoint(
-            self.contrastive_model,
-            optimizer,
-            self.config.num_epochs - 1,
-            train_loss,
-            self.config,
-            "final_contrastive_model.pt"
-        )
+        # Move model to device
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.model = self.model.to(self.device)
+        self.logger.info(f"Model moved to {self.device}")
         
-        log_print(self.logger, f"Final model saved to {final_checkpoint_path}")
-        
-        return final_checkpoint_path
+        return self.model
     
-    def extract_features(self, checkpoint_path=None, layer_num=None):
-        """
-        Extract features from the trained contrastive model.
+    def setup_base_model(self):
+        """Set up the base VGG3D model for comparison."""
+        self.logger.info("Setting up base VGG3D model...")
+        self.base_model = Vgg3D()
+        self.base_model = self.base_model.to(self.device)
+        self.base_model.eval()
+        return self.base_model
+    
+    def extract_base_features(self, checkpoint_path=None):
+        """Extract features using the base VGG3D model."""
+        self.logger.info("Extracting features from base model...")
         
-        Args:
-            checkpoint_path (str, optional): Path to the model checkpoint
-            layer_num (int, optional): Layer number to extract features from
+        if self.base_model is None:
+            self.setup_base_model()
             
-        Returns:
-            pd.DataFrame: DataFrame with extracted features
-        """
-        log_print(self.logger, "Extracting features from contrastive model...")
+        if checkpoint_path:
+            self.logger.info(f"Loading base model checkpoint: {checkpoint_path}")
+            self.base_model.load_state_dict(torch.load(checkpoint_path))
         
-        # Load model if not already loaded
-        if self.contrastive_model is None:
-            self.setup_model()
-        
-        # Load checkpoint if specified
-        if checkpoint_path is not None:
-            log_print(self.logger, f"Loading checkpoint from {checkpoint_path}")
-            # Just load the model weights, not optimizer
-            checkpoint = torch.load(checkpoint_path)
-            if 'model_state_dict' in checkpoint:
-                self.contrastive_model.load_state_dict(checkpoint['model_state_dict'])
-            else:
-                self.contrastive_model.load_state_dict(checkpoint)
-        
-        # Load data if not already loaded
-        if self.vol_data_dict is None or self.syn_df is None:
-            self.load_and_prepare_data()
-        
-        # Initialize processor if not already initialized
-        if self.processor is None:
-            self.processor = Synapse3DProcessor(size=self.config.size)
-            self.processor.normalize_volume = True
-        
-        # Set device
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.contrastive_model = self.contrastive_model.to(device)
-        self.contrastive_model.eval()
-        
-        # Initialize dataset for feature extraction (using standard SynapseDataset, not ContrastiveDataset)
-        dataset = SynapseDataset(
-            vol_data_dict=self.vol_data_dict,
-            synapse_df=self.syn_df,
-            processor=self.processor,
-            segmentation_type=self.config.segmentation_type,
-            subvol_size=self.config.subvol_size,
-            num_frames=self.config.num_frames,
-            alpha=self.config.alpha,
-            normalize_across_volume=True,
-        )
-        
-        # Extract features for each sample
         features_list = []
-        synapse_ids = []
-        bbox_names = []
         
         with torch.no_grad():
-            for idx in tqdm(range(len(dataset)), desc="Extracting features"):
-                sample = dataset[idx]
-                if sample is None:
-                    continue
+            for batch_idx, (views, synapse_info, bbox_names) in enumerate(self.train_loader):
+                view1s, _ = views
+                view1s = view1s.to(self.device)
                 
-                pixel_values, syn_info, bbox_name = sample
+                # Get features from base model
+                features = self.base_model(view1s)
                 
-                # Skip invalid samples
-                if pixel_values is None:
-                    continue
+                # Convert to numpy
+                features_np = features.cpu().numpy()
                 
-                # Move to device
-                pixel_values = pixel_values.unsqueeze(0).to(device)  # Add batch dimension
+                # Create DataFrame for this batch
+                for i, (syn_info, bbox_name) in enumerate(zip(synapse_info, bbox_names)):
+                    feature_dict = {
+                        'bbox_name': bbox_name,
+                        **syn_info
+                    }
+                    
+                    # Add features
+                    for j in range(features_np[i].shape[0]):
+                        feature_dict[f'feature_{j}'] = features_np[i][j]
+                    
+                    features_list.append(feature_dict)
                 
-                # Extract features
-                if layer_num is not None:
-                    # Extract from specific layer
-                    features = self.contrastive_model.extract_features(pixel_values, layer_num=layer_num)
-                else:
-                    # Extract from backbone before projection head
-                    features, _ = self.contrastive_model(pixel_values, return_features=True)
-                
-                # Convert to numpy and flatten
-                features_np = features.cpu().numpy().flatten()
-                
-                # Add to lists
-                features_list.append(features_np)
-                synapse_ids.append(syn_info['Var1'])
-                bbox_names.append(bbox_name)
+                if batch_idx % 10 == 0:
+                    self.logger.info(f"Processed batch {batch_idx}/{len(self.train_loader)}")
         
-        # Create DataFrame with features
+        # Create DataFrame
         features_df = pd.DataFrame(features_list)
         
-        # Add metadata
-        features_df['Var1'] = synapse_ids
-        features_df['bbox_name'] = bbox_names
-        
-        # Save features to CSV
-        output_filename = f"contrastive_features_layer{layer_num if layer_num is not None else 'backbone'}.csv"
-        output_path = os.path.join(self.config.results_dir, output_filename)
-        features_df.to_csv(output_path, index=False)
-        
-        log_print(self.logger, f"Extracted features for {len(features_df)} samples, saved to {output_path}")
+        # Save features
+        features_path = os.path.join(self.config.results_dir, "base_features.csv")
+        features_df.to_csv(features_path, index=False)
+        self.logger.info(f"Saved base features to {features_path}")
         
         return features_df
     
-    def run_pipeline(self):
-        """
-        Run the entire contrastive learning pipeline.
-        """
-        log_print(self.logger, "Starting contrastive learning pipeline...")
+    def train_model(self):
+        """Train the contrastive model."""
+        self.logger.info("Training contrastive model...")
         
-        # Step 1: Load and prepare data
+        # Load data if not already loaded
+        if self.train_loader is None:
+            self.load_and_prepare_data()
+        
+        # Set up model if not already set up
+        if self.model is None:
+            self.setup_model()
+        
+        # Create criterion
+        criterion = NTXentLoss(
+            temperature=self.config.temperature,
+            device=self.device
+        ).to(self.device)
+        
+        # Training phases
+        phases = [
+            ('warmup', self.config.warmup_epochs),
+            ('gradual', self.config.gradual_epochs),
+            ('full', self.config.epochs - self.config.warmup_epochs - self.config.gradual_epochs)
+        ]
+        
+        # Training loop
+        for phase, num_epochs in phases:
+            self.logger.info(f"Starting {phase} training phase for {num_epochs} epochs")
+            
+            # Create optimizer and scheduler for this phase
+            optimizer, scheduler = create_optimizer_and_scheduler(self.model, self.config)
+            
+            # Training loop
+            for epoch in range(num_epochs):
+                # Train
+                train_loss = train_contrastive(
+                    model=self.model,
+                    train_loader=self.train_loader,
+                    criterion=criterion,
+                    optimizer=optimizer,
+                    config=self.config,
+                    logger=self.logger
+                )
+                
+                # Log epoch results
+                self.logger.info(f"Epoch {epoch}: Train Loss: {train_loss:.6f}")
+                
+                # Save checkpoint
+                if (epoch + 1) % self.config.save_interval == 0:
+                    checkpoint_path = os.path.join(
+                        self.config.checkpoint_dir,
+                        f"contrastive_model_{phase}_epoch_{epoch+1}.pt"
+                    )
+                    torch.save({
+                        'epoch': epoch,
+                        'model_state_dict': self.model.state_dict(),
+                        'optimizer_state_dict': optimizer.state_dict(),
+                        'scheduler_state_dict': scheduler.state_dict() if scheduler else None,
+                        'train_loss': train_loss,
+                        'phase': phase
+                    }, checkpoint_path)
+                    self.logger.info(f"Saved checkpoint to {checkpoint_path}")
+        
+        # Save final model
+        final_path = os.path.join(self.config.checkpoint_dir, "final_contrastive_model.pt")
+        torch.save(self.model.state_dict(), final_path)
+        self.logger.info(f"Saved final model to {final_path}")
+    
+    def extract_features(self, checkpoint_path=None):
+        """
+        Extract features from the model.
+        
+        Args:
+            checkpoint_path: Path to checkpoint to load
+            
+        Returns:
+            DataFrame with extracted features
+        """
+        self.logger.info("Extracting features...")
+        
+        # Load data if not already loaded
+        if self.train_loader is None:
+            self.load_and_prepare_data()
+        
+        # Set up model if not already set up
+        if self.model is None:
+            self.setup_model()
+        
+        # Load checkpoint if specified
+        if checkpoint_path:
+            self.logger.info(f"Loading checkpoint: {checkpoint_path}")
+            self.model.load_state_dict(torch.load(checkpoint_path))
+        
+        # Extract features
+        self.model.eval()
+        features_list = []
+        
+        with torch.no_grad():
+            for batch_idx, (views, synapse_info, bbox_names) in enumerate(self.train_loader):
+                # Move views to device
+                view1s, view2s = views
+                view1s = view1s.to(self.device)
+                
+                # Get features
+                # Check if the model returns features when return_features=True
+                if hasattr(self.model, 'forward') and 'return_features' in self.model.forward.__code__.co_varnames:
+                    _, features = self.model(view1s, return_features=True)
+                else:
+                    # If the model doesn't support return_features, use the first view's projections as features
+                    features = self.model(view1s)
+                
+                # Convert to numpy
+                features_np = features.cpu().numpy()
+                
+                # Create DataFrame for this batch
+                for i, (syn_info, bbox_name) in enumerate(zip(synapse_info, bbox_names)):
+                    feature_dict = {
+                        'bbox_name': bbox_name,
+                        **syn_info
+                    }
+                    
+                    # Add features
+                    for j in range(features_np[i].shape[0]):
+                        feature_dict[f'feature_{j}'] = features_np[i][j]
+                    
+                    features_list.append(feature_dict)
+                
+                # Log progress
+                if batch_idx % 10 == 0:
+                    self.logger.info(f"Processed batch {batch_idx}/{len(self.train_loader)}")
+        
+        # Create DataFrame
+        features_df = pd.DataFrame(features_list)
+        
+        # Save features to CSV
+        features_path = os.path.join(self.config.results_dir, "contrastive_features.csv")
+        features_df.to_csv(features_path, index=False)
+        self.logger.info(f"Saved features to {features_path}")
+        
+        return features_df
+    
+    def visualize_features(self, features_df, base_features_df=None):
+        """Visualize features using UMAP and clustering."""
+        self.logger.info("Visualizing features...")
+        
+        # Create visualization directory
+        vis_dir = os.path.join(self.config.visualization_dir, "gif_umap")
+        os.makedirs(vis_dir, exist_ok=True)
+        
+        # Create GIF UMAP visualization
+        from contrastive.visualization.gif_umap.GifUmapContrastive import GifUmapContrastive
+        gif_umap = GifUmapContrastive(
+            features_df=features_df,
+            output_dir=vis_dir,
+            method_name="Contrastive Learning"
+        )
+        gif_umap.create_visualization()
+        
+        # Create standard UMAP visualization
+        if self.visualizer is None:
+            from contrastive.visualization.visualize import FeatureVisualizer
+            self.visualizer = FeatureVisualizer(
+                self.config.visualization_dir,
+                self.logger
+            )
+        
+        # Analyze contrastive features
+        contrastive_results = self.visualizer.analyze_features(
+            features_df,
+            save_dir=os.path.join(self.config.visualization_dir, "contrastive")
+        )
+        
+        # Compare with base model if available
+        if base_features_df is not None:
+            self.logger.info("Comparing with base model features...")
+            contrastive_features, _ = self.visualizer.extract_feature_columns(features_df)
+            base_features, _ = self.visualizer.extract_feature_columns(base_features_df)
+            
+            self.visualizer.compare_models(
+                base_features,
+                contrastive_features,
+                labels=contrastive_results['labels'],
+                save_dir=os.path.join(self.config.visualization_dir, "comparison")
+            )
+        
+        return contrastive_results
+    
+    def run_pipeline(self):
+        """Run the full contrastive learning pipeline."""
+        self.logger.info("Running full contrastive learning pipeline...")
+        
+        # Load data
         self.load_and_prepare_data()
         
-        # Step 2: Set up model
+        # Set up models
         self.setup_model()
+        self.setup_base_model()
         
-        # Step 3: Set up data loader
-        self.setup_dataloader()
+        # Extract base features
+        base_features_df = self.extract_base_features()
         
-        # Step 4: Train model
-        checkpoint_path = self.train_model()
+        # Train model if no checkpoint exists
+        checkpoint_path = os.path.join(self.config.checkpoint_dir, "final_contrastive_model.pt")
+        if not os.path.exists(checkpoint_path):
+            self.logger.info("No checkpoint found. Starting training...")
+            self.train_model()
+        else:
+            self.logger.info(f"Found checkpoint at {checkpoint_path}")
         
-        # Step 5: Extract features
+        # Extract features
         features_df = self.extract_features(checkpoint_path)
         
-        # Step 6: Extract features from specific layer (layer 20 is typically used)
-        layer20_features_df = self.extract_features(checkpoint_path, layer_num=20)
+        # Visualize features
+        self.visualize_features(features_df, base_features_df)
         
-        log_print(self.logger, "Contrastive learning pipeline completed successfully!")
-        
-        return {
-            'checkpoint_path': checkpoint_path,
-            'features_df': features_df,
-            'layer20_features_df': layer20_features_df
-        }
+        self.logger.info("Pipeline completed successfully")
+        return features_df
 
 
 def main():
-    """Main function for running the contrastive learning pipeline."""
+    """Main function to run the contrastive learning pipeline."""
     # Parse command line arguments
-    parser = argparse.ArgumentParser(description="Contrastive Learning Pipeline")
-    parser.add_argument("--train_only", action="store_true", help="Only train the contrastive model")
-    parser.add_argument("--extract_only", action="store_true", help="Only extract features from a trained model")
-    parser.add_argument("--checkpoint", type=str, help="Path to model checkpoint for feature extraction")
-    parser.add_argument("--layer_num", type=int, default=20, help="Layer number to extract features from")
+    parser = argparse.ArgumentParser(description="Run contrastive learning pipeline")
+    parser.add_argument("--train_only", action="store_true", help="Only run training phase")
+    parser.add_argument("--extract_only", action="store_true", help="Only run feature extraction")
+    parser.add_argument("--checkpoint", type=str, help="Path to checkpoint for feature extraction")
+    parser.add_argument("--warmup_epochs", type=int, default=5, help="Number of warmup epochs")
+    parser.add_argument("--gradual_epochs", type=int, default=5, help="Number of gradual unfreezing epochs")
+    parser.add_argument("--epochs", type=int, default=100, help="Total number of epochs")
+    args = parser.parse_args()
     
-    args, _ = parser.parse_known_args()
+    # Create configurations
+    contrastive_config = ContrastiveConfig()
+    synapse_config = SynapseConfig()
     
-    # Parse config arguments
-    contrastive_config.parse_args()
-    synapse_config.parse_args()
+    # Update config with command line arguments
+    contrastive_config.warmup_epochs = args.warmup_epochs
+    contrastive_config.gradual_epochs = args.gradual_epochs
+    contrastive_config.epochs = args.epochs
     
-    # Create pipeline
+    # Initialize pipeline
     pipeline = ContrastivePipeline(contrastive_config, synapse_config)
     
-    if args.train_only:
-        # Train the model
-        pipeline.load_and_prepare_data()
-        pipeline.setup_model()
-        pipeline.setup_dataloader()
-        checkpoint_path = pipeline.train_model()
-        print(f"Training completed, model saved to {checkpoint_path}")
-    
-    elif args.extract_only:
-        # Extract features from a trained model
-        if args.checkpoint is None:
-            print("Error: Must specify --checkpoint when using --extract_only")
+    try:
+        if args.extract_only:
+            if not args.checkpoint:
+                raise ValueError("--checkpoint must be specified when using --extract_only")
+            pipeline.logger.info("Running feature extraction only...")
+            features_df = pipeline.extract_features(args.checkpoint)
+            pipeline.logger.info("Feature extraction completed successfully")
+            return features_df
+        
+        if args.train_only:
+            pipeline.logger.info("Running training phase only...")
+            pipeline.train_model()
+            pipeline.logger.info("Training completed successfully")
             return
         
-        pipeline.load_and_prepare_data()
-        pipeline.setup_model()
-        features_df = pipeline.extract_features(args.checkpoint, args.layer_num)
-        print(f"Feature extraction completed for {len(features_df)} samples")
+        # Run full pipeline
+        pipeline.logger.info("Running full pipeline...")
+        features_df = pipeline.run_pipeline()
+        pipeline.logger.info("Pipeline completed successfully")
+        return features_df
     
-    else:
-        # Run the entire pipeline
-        results = pipeline.run_pipeline()
-        print(f"Pipeline completed successfully!")
-        print(f"Trained model saved to {results['checkpoint_path']}")
-        print(f"Extracted features for {len(results['features_df'])} samples")
+    except Exception as e:
+        pipeline.logger.error(f"Error in pipeline: {str(e)}")
+        raise
 
 
 if __name__ == "__main__":

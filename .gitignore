@@ -69,3 +69,10 @@ comparison_results3/
 synapse/gif_umap - Copy/
 test_output/*
 test_output_real/*
+contrastive/checkpoints/*
+contrastive/results/*
+contrastive/logs/*
+contrastive/data/*
+contrastive/models/*
+contrastive/utils/*
+contrastive/gif_umap/*

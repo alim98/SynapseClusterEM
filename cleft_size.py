@@ -15,7 +15,7 @@ from scipy import stats
 from scipy.stats import gaussian_kde
 from umap import UMAP
 import statsmodels.api as sm
-from skimage import measure  # Import for component analysis
+# from skimage import measure  # Import for component analysis
 import argparse
 import torch
 import tifffile
@@ -23,8 +23,8 @@ from typing import Tuple, Dict, List
 from synapse import config
 
 # Import from existing modules
-from newdl.dataloader2 import SynapseDataLoader
-from newdl.dataset2 import SynapseDataset
+from newdl.dataloader3 import SynapseDataLoader
+from newdl.dataset3 import SynapseDataset
 
 def get_cleft_label(bbox_name):
     """

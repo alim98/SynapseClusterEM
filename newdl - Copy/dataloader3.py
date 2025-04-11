@@ -472,8 +472,8 @@ class SynapseDataLoader:
             lower_bound = target_percentage * (1 - size_tolerance)
             upper_bound = target_percentage * (1 + size_tolerance)
             
-            print(f"Presynapse size: Current {current_percentage:.4f}, Target {target_percentage:.4f}, Range [{lower_bound:.4f}-{upper_bound:.4f}]")
-            print(f"Presynapse pixels: {presynapse_pixels} out of {total_pixels} total pixels")
+            # print(f"Presynapse size: Current {current_percentage:.4f}, Target {target_percentage:.4f}, Range [{lower_bound:.4f}-{upper_bound:.4f}]")
+            # print(f"Presynapse pixels: {presynapse_pixels} out of {total_pixels} total pixels")
             
             # Only adjust if outside the acceptable range
             if current_percentage < lower_bound or current_percentage > upper_bound:
@@ -586,7 +586,7 @@ class SynapseDataLoader:
                 
                 # Recalculate the percentage after adjustment
                 new_percentage = np.sum(sub_presynapse_mask) / total_pixels
-                print(f"Adjusted presynapse size: {new_percentage:.4f} (target was {target_percentage:.4f})")
+                # print(f"Adjusted presynapse size: {new_percentage:.4f} (target was {target_percentage:.4f})")
                 
                 # Update the combined mask with the normalized presynapse
                 if segmentation_type == 1:  # Segmentation type that only uses presynapse

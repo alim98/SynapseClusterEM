@@ -11,8 +11,8 @@ from matplotlib.gridspec import GridSpec
 # Add the parent directory to the Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from newdl.dataset2 import SynapseDataset
-from newdl.dataloader2 import SynapseDataLoader, Synapse3DProcessor
+from newdl.dataset3 import SynapseDataset
+from newdl.dataloader3 import SynapseDataLoader, Synapse3DProcessor
 from synapse.utils.config import config
 
 # Configure logging

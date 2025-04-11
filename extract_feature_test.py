@@ -176,18 +176,18 @@ def extract_features_with_config(
     Returns:
         DataFrame with extracted features
     """
-    print(f"Extracting features with configuration:")
-    print(f"  Segmentation Type: {seg_type}")
-    print(f"  Alpha: {alpha}")
-    print(f"  Extraction Method: {extraction_method}")
-    print(f"  Layer Number: {layer_num}")
-    print(f"  Normalize Volume: {normalize_volume}")
-    print(f"  Normalize Across Volume: {normalize_across_volume}")
-    print(f"  Smart Crop: {smart_crop}")
-    print(f"  Presynapse Weight: {presynapse_weight}")
-    print(f"  Normalize Presynapse Size: {normalize_presynapse_size}")
-    print(f"  Target Percentage: {target_percentage}")
-    print(f"  Size Tolerance: {size_tolerance}")
+    # print(f"Extracting features with configuration:")
+    # print(f"  Segmentation Type: {seg_type}")
+    # print(f"  Alpha: {alpha}")
+    # print(f"  Extraction Method: {extraction_method}")
+    # print(f"  Layer Number: {layer_num}")
+    # print(f"  Normalize Volume: {normalize_volume}")
+    # print(f"  Normalize Across Volume: {normalize_across_volume}")
+    # print(f"  Smart Crop: {smart_crop}")
+    # print(f"  Presynapse Weight: {presynapse_weight}")
+    # print(f"  Normalize Presynapse Size: {normalize_presynapse_size}")
+    # print(f"  Target Percentage: {target_percentage}")
+    # print(f"  Size Tolerance: {size_tolerance}")
     
     # Initialize processor with specified normalization
     processor = Synapse3DProcessor(size=config.size)
