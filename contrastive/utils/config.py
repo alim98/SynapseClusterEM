@@ -20,7 +20,7 @@ class ContrastiveConfig(SynapseConfig):
         self.epochs = 100
         self.warmup_epochs = 10  # Number of epochs for warmup phase
         self.gradual_epochs = 20  # Number of epochs for gradual unfreezing
-        self.batch_size = 32
+        self.batch_size = 4
         self.gradient_accumulation_steps = 16  # Added gradient accumulation
         self.learning_rate = 1e-4
         self.weight_decay = 1e-4

@@ -72,7 +72,4 @@ test_output_real/*
 contrastive/checkpoints/*
 contrastive/results/*
 contrastive/logs/*
-contrastive/data/*
-contrastive/models/*
-contrastive/utils/*
 contrastive/gif_umap/*

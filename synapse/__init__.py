@@ -6,8 +6,8 @@ __version__ = '0.1.0'
 
 # Import commonly used components
 from synapse.models import Vgg3D, load_model_from_checkpoint
-from synapse.data.dataset import SynapseDataset
-from synapse.data.dataloader import Synapse3DProcessor, SynapseDataLoader
+from newdl.dataset3 import SynapseDataset
+from newdl.dataloader3 import Synapse3DProcessor, SynapseDataLoader
 from synapse.utils import config
 from synapse.visualization import create_gif_from_volume, visualize_specific_sample, visualize_all_samples_from_bboxes
 from synapse.clustering import (

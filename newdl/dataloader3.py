@@ -349,8 +349,8 @@ class SynapseDataLoader:
                 cz, cy, cx = adjusted_center.astype(int)
                 
                 # Print for debugging
-                print(f"Smart cropping: Original center: ({central_coord}), Adjusted center: ({cx, cy, cz})")
-                print(f"Shifted by: {np.array([cx, cy, cz]) - np.array([central_coord[0], central_coord[1], central_coord[2]])}")
+                # print(f"Smart cropping: Original center: ({central_coord}), Adjusted center: ({cx, cy, cz})")
+                # print(f"Shifted by: {np.array([cx, cy, cz]) - np.array([central_coord[0], central_coord[1], central_coord[2]])}")
         
         # Calculate the final bounding box with possibly adjusted center
         half_size = subvolume_size // 2
@@ -498,7 +498,7 @@ class SynapseDataLoader:
             y_size = y_max - y_min + 1
             x_size = x_max - x_min + 1
             
-            print(f"Vesicle cloud dimensions: {z_size}×{y_size}×{x_size}")
+            # print(f"Vesicle cloud dimensions: {z_size}×{y_size}×{x_size}")
             
             if z_size < box_size or y_size < box_size or x_size < box_size:
                 print(f"Discarding sample: Vesicle cloud dimensions too small to fit {box_size}×{box_size}×{box_size} box")
@@ -786,7 +786,7 @@ class SynapseDataLoader:
             
             # Apply presynapse size normalization if enabled
             if normalize_presynapse_size and np.any(sub_presynapse_mask):
-                print(f"Applying presynapse size normalization for {bbox_name}")
+                # print(f"Applying presynapse size normalization for {bbox_name}")
                 # Calculate the current percentage of presynapse pixels in the cube
                 total_pixels = sub_presynapse_mask.size
                 presynapse_pixels = np.sum(sub_presynapse_mask)
@@ -795,9 +795,9 @@ class SynapseDataLoader:
                 # Use the provided target percentage or set to current (no change)
                 if target_percentage is None:
                     target_percentage = current_percentage
-                    print(f"Using current percentage as target: {target_percentage:.4f}")
-                else:
-                    print(f"Using provided target percentage: {target_percentage:.4f}")
+                    # print(f"Using current percentage as target: {target_percentage:.4f}")
+                # else:
+                #     print(f"Using provided target percentage: {target_percentage:.4f}")
                 
                 # Calculate the lower and upper bounds of the acceptable range
                 lower_bound = target_percentage * (1 - size_tolerance)

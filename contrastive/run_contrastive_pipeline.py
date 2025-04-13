@@ -488,7 +488,7 @@ class ContrastivePipeline:
         self.setup_base_model()
         
         # Extract base features
-        base_features_df = self.extract_base_features()
+        # base_features_df = self.extract_base_features()
         
         # Train model if no checkpoint exists
         checkpoint_path = os.path.join(self.config.checkpoint_dir, "final_contrastive_model.pt")
@@ -502,7 +502,7 @@ class ContrastivePipeline:
         features_df = self.extract_features(checkpoint_path)
         
         # Visualize features
-        self.visualize_features(features_df, base_features_df)
+        # self.visualize_features(features_df, base_features_df)
         
         self.logger.info("Pipeline completed successfully")
         return features_df

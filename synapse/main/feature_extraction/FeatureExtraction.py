@@ -22,8 +22,8 @@ sys.path.append(project_root)
 from newdl.dataloader3 import SynapseDataLoader, Synapse3DProcessor
 from newdl.dataset3 import SynapseDataset
 from synapse import config
-from synapse.data.dataloader import SynapseDataLoader
-from synapse.data.sample_fig import visualize_specific_sample
+from newdl.dataset3 import SynapseDataset
+from newdl.dataloader3 import Synapse3DProcessor, SynapseDataLoader
 from inference import (
     extract_and_save_features,
     load_and_prepare_data,
