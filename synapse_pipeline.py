@@ -137,7 +137,7 @@ class SynapsePipeline:
         self.model = VGG3D()
         return self.model
     
-    def extract_features(self, seg_type=None, alpha=None, extraction_method=None, layer_num=None):
+    def extract_features(self, seg_type=None, alpha=None, extraction_method=None, layer_num=None, pooling_method=None):
         """
         Extract features using inference.py
         
@@ -146,6 +146,7 @@ class SynapsePipeline:
             alpha: Alpha value for feature extraction
             extraction_method: Method to extract features ('standard' or 'stage_specific')
             layer_num: Layer number to extract features from if using stage_specific method
+            pooling_method: Method to use for pooling ('avg', 'max', 'concat_avg_max', 'spp')
         """
         print("Extracting features...")
         
@@ -156,15 +157,18 @@ class SynapsePipeline:
         if layer_num is None and extraction_method == 'stage_specific':
             layer_num = getattr(self.config, 'layer_num', 20)
         
+        if pooling_method is None:
+            pooling_method = getattr(self.config, 'pooling_method', 'avg')
+            
         # Create appropriate output directory name based on extraction method
         if extraction_method == 'stage_specific':
-            output_dir = os.path.join(self.results_parent_dir, f"features_layer{layer_num}_seg{seg_type}_alpha{alpha}")
+            output_dir = os.path.join(self.results_parent_dir, f"features_layer{layer_num}_{pooling_method}_seg{seg_type}_alpha{alpha}")
         else:
-            output_dir = os.path.join(self.results_parent_dir, f"features_seg{seg_type}_alpha{alpha}")
+            output_dir = os.path.join(self.results_parent_dir, f"features_{pooling_method}_seg{seg_type}_alpha{alpha}")
         
         os.makedirs(output_dir, exist_ok=True)
         
-        print(f"Using {extraction_method} feature extraction method")
+        print(f"Using {extraction_method} feature extraction method with {pooling_method} pooling")
         if extraction_method == 'stage_specific':
             print(f"Extracting features from layer {layer_num}")
         
@@ -177,7 +181,8 @@ class SynapsePipeline:
             alpha, 
             output_dir,
             extraction_method=extraction_method,
-            layer_num=layer_num
+            layer_num=layer_num,
+            pooling_method=pooling_method
         )
         
         # Make sure we have a DataFrame, not just a path
@@ -360,7 +365,7 @@ class SynapsePipeline:
         
         return output_dir
     
-    def run_full_pipeline(self, seg_type=1, alpha=1, num_samples=4, attention_layer=20, extraction_method=None, layer_num=None):
+    def run_full_pipeline(self, seg_type=1, alpha=1, num_samples=4, attention_layer=20, extraction_method=None, layer_num=None, pooling_method=None):
         """
         Run the full analysis pipeline from data loading to visualization
         
@@ -371,6 +376,7 @@ class SynapsePipeline:
             attention_layer: Layer to use for attention map visualization
             extraction_method: Method to extract features ('standard' or 'stage_specific')
             layer_num: Layer number to extract features from if using stage_specific method
+            pooling_method: Method to use for pooling ('avg', 'max', 'concat_avg_max', 'spp')
         """
         print(f"Running full pipeline with seg_type={seg_type}, alpha={alpha}")
         
@@ -381,10 +387,15 @@ class SynapsePipeline:
         if layer_num is None and extraction_method == 'stage_specific':
             layer_num = getattr(self.config, 'layer_num', 20)
             
+        if pooling_method is None:
+            pooling_method = getattr(self.config, 'pooling_method', 'avg')
+            
         if extraction_method == 'stage_specific':
             print(f"Using stage-specific feature extraction from layer {layer_num}")
         else:
             print("Using standard feature extraction")
+            
+        print(f"Using {pooling_method} pooling method")
         
         # Create the base output directory if it doesn't exist
         os.makedirs(self.config.csv_output_dir, exist_ok=True)
@@ -428,7 +439,7 @@ class SynapsePipeline:
             # Run each stage of the pipeline
             self.load_data()
             self.load_model()
-            self.extract_features(seg_type, alpha, extraction_method, layer_num)
+            self.extract_features(seg_type, alpha, extraction_method, layer_num, pooling_method)
             self.cluster_features()
             self.create_dimension_reduction_visualizations()
             # self.create_cluster_sample_visualizations(num_samples, attention_layer)

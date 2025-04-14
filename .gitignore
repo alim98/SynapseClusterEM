@@ -73,3 +73,4 @@ contrastive/checkpoints/*
 contrastive/results/*
 contrastive/logs/*
 contrastive/gif_umap/*
+*.rar

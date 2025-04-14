@@ -51,6 +51,10 @@ def configure_pipeline_args():
     parser.add_argument("--layer_num", type=int,
                        help="Layer number to extract features from when using stage_specific method")
     
+    # Add pooling method argument
+    parser.add_argument("--pooling_method", type=str, choices=['avg', 'max', 'concat_avg_max', 'spp'],
+                       help="Method to use for pooling ('avg', 'max', 'concat_avg_max', 'spp')")
+    
     # Let config parse its arguments first
     config.parse_args()
     
@@ -69,6 +73,10 @@ def configure_pipeline_args():
     
     if args.layer_num:
         config.layer_num = args.layer_num
+    
+    # Add pooling method if provided
+    if args.pooling_method:
+        config.pooling_method = args.pooling_method
     
     return config
 
@@ -111,10 +119,12 @@ def main():
     log_print(f"  Feature Extraction Method: {getattr(config, 'extraction_method', 'standard')}")
     if getattr(config, 'extraction_method', 'standard') == 'stage_specific':
         log_print(f"  Layer Number: {getattr(config, 'layer_num', 20)}")
+    log_print(f"  Pooling Method: {getattr(config, 'pooling_method', 'avg')}")
     
     # Get feature extraction parameters
     extraction_method = getattr(config, 'extraction_method', 'standard')
     layer_num = getattr(config, 'layer_num', 20)
+    pooling_method = getattr(config, 'pooling_method', 'avg')
     
     # Create timestamp for this run
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -162,7 +172,8 @@ def main():
                 seg_type=config.segmentation_type,
                 alpha=config.alpha,
                 extraction_method=extraction_method,
-                layer_num=layer_num
+                layer_num=layer_num,
+                pooling_method=pooling_method
             )
             log_print("Pipeline.run_full_pipeline completed")
             

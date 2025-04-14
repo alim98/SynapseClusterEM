@@ -65,7 +65,19 @@ fixed_samples = [
     {"id": 12, "bbox_name": "bbox7", "Var1": "non_spine_synapse_013", "slice_number": 25},
 ]
 
-def extract_features(model, dataset, config):
+def extract_features(model, dataset, config, pooling_method='avg'):
+    """
+    Extract features from the model.
+    
+    Args:
+        model: The VGG3D model
+        dataset: The dataset to extract features from
+        config: Configuration object
+        pooling_method: Method to use for pooling ('avg', 'max', 'concat_avg_max', 'spp')
+        
+    Returns:
+        DataFrame with extracted features and metadata
+    """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = model.to(device).eval()
 
@@ -92,12 +104,65 @@ def extract_features(model, dataset, config):
             inputs = pixels.permute(0, 2, 1, 3, 4).to(device)
 
             batch_features = model.features(inputs)
-            pooled_features = nn.AdaptiveAvgPool3d((1, 1, 1))(batch_features)
-
-            batch_features_np = pooled_features.cpu().numpy()
-            batch_size = batch_features_np.shape[0]
-            num_features = np.prod(batch_features_np.shape[1:])
-            batch_features_np = batch_features_np.reshape(batch_size, num_features)
+            
+            # Different pooling strategies
+            if pooling_method == 'avg':
+                # Original average pooling
+                pooled_features = nn.AdaptiveAvgPool3d((1, 1, 1))(batch_features)
+                batch_features_np = pooled_features.cpu().numpy()
+                batch_size = batch_features_np.shape[0]
+                num_features = np.prod(batch_features_np.shape[1:])
+                batch_features_np = batch_features_np.reshape(batch_size, num_features)
+                
+            elif pooling_method == 'max':
+                # Max pooling
+                pooled_features = nn.AdaptiveMaxPool3d((1, 1, 1))(batch_features)
+                batch_features_np = pooled_features.cpu().numpy()
+                batch_size = batch_features_np.shape[0]
+                num_features = np.prod(batch_features_np.shape[1:])
+                batch_features_np = batch_features_np.reshape(batch_size, num_features)
+                
+            elif pooling_method == 'concat_avg_max':
+                # Concatenate average and max pooling
+                avg_pooled = nn.AdaptiveAvgPool3d((1, 1, 1))(batch_features)
+                max_pooled = nn.AdaptiveMaxPool3d((1, 1, 1))(batch_features)
+                
+                # Reshape both to 2D tensors and concatenate along feature dimension
+                batch_size = avg_pooled.size(0)
+                avg_features = avg_pooled.reshape(batch_size, -1)
+                max_features = max_pooled.reshape(batch_size, -1)
+                concat_features = torch.cat([avg_features, max_features], dim=1)
+                
+                batch_features_np = concat_features.cpu().numpy()
+                
+            elif pooling_method == 'spp':
+                # Spatial Pyramid Pooling
+                # Pool at multiple resolutions (1x1x1, 2x2x2, 4x4x4) and concatenate
+                batch_size = batch_features.size(0)
+                
+                # 1x1x1 pooling
+                pool_1x1x1 = nn.AdaptiveAvgPool3d((1, 1, 1))(batch_features)
+                feat_1x1x1 = pool_1x1x1.reshape(batch_size, -1)
+                
+                # 2x2x2 pooling
+                pool_2x2x2 = nn.AdaptiveAvgPool3d((2, 2, 2))(batch_features)
+                feat_2x2x2 = pool_2x2x2.reshape(batch_size, -1)
+                
+                # 4x4x4 pooling (only if input size is large enough)
+                input_size = min(batch_features.size(2), batch_features.size(3), batch_features.size(4))
+                if input_size >= 4:
+                    pool_4x4x4 = nn.AdaptiveAvgPool3d((4, 4, 4))(batch_features)
+                    feat_4x4x4 = pool_4x4x4.reshape(batch_size, -1)
+                    # Concatenate all pooling results
+                    concat_features = torch.cat([feat_1x1x1, feat_2x2x2, feat_4x4x4], dim=1)
+                else:
+                    # Only use 1x1x1 and 2x2x2 if input is too small
+                    concat_features = torch.cat([feat_1x1x1, feat_2x2x2], dim=1)
+                
+                batch_features_np = concat_features.cpu().numpy()
+            
+            else:
+                raise ValueError(f"Unknown pooling method: {pooling_method}")
             
             features.append(batch_features_np)
             metadata.extend(zip(names, info))
@@ -111,12 +176,15 @@ def extract_features(model, dataset, config):
 
     feature_columns = [f'feat_{i+1}' for i in range(features.shape[1])]
     features_df = pd.DataFrame(features, columns=feature_columns)
+    
+    # Add pooling method information to the dataframe
+    features_df['pooling_method'] = pooling_method
 
     combined_df = pd.concat([metadata_df, features_df], axis=1)
 
     return combined_df
 
-def extract_stage_specific_features(model, dataset, config, layer_num=20):
+def extract_stage_specific_features(model, dataset, config, layer_num=20, pooling_method='avg'):
     """
     Extract features from a specific layer or stage of the VGG3D model.
     
@@ -125,6 +193,7 @@ def extract_stage_specific_features(model, dataset, config, layer_num=20):
         dataset: The dataset to extract features from
         config: Configuration object
         layer_num: Layer number to extract features from (default: 20 for best attention)
+        pooling_method: Method to use for pooling ('avg', 'max', 'concat_avg_max', 'spp')
         
     Returns:
         DataFrame with extracted features and metadata
@@ -173,18 +242,88 @@ def extract_stage_specific_features(model, dataset, config, layer_num=20):
             # Extract features from specified layer
             batch_features = extractor.extract_layer(layer_num, inputs)
             
-            # Global average pooling to get a feature vector
+            # Apply different pooling strategies
             batch_size = batch_features.shape[0]
-            num_channels = batch_features.shape[1]
             
-            # Reshape to (batch_size, channels, -1) for easier processing
-            batch_features_reshaped = batch_features.reshape(batch_size, num_channels, -1)
-            
-            # Global average pooling across spatial dimensions
-            pooled_features = torch.mean(batch_features_reshaped, dim=2)
-            
-            # Convert to numpy
-            features_np = pooled_features.cpu().numpy()
+            if pooling_method == 'avg':
+                # Original average pooling approach
+                # Reshape to (batch_size, channels, -1) for easier processing
+                batch_features_reshaped = batch_features.reshape(batch_size, batch_features.shape[1], -1)
+                # Global average pooling across spatial dimensions
+                pooled_features = torch.mean(batch_features_reshaped, dim=2)
+                features_np = pooled_features.cpu().numpy()
+                
+            elif pooling_method == 'max':
+                # Global max pooling
+                batch_features_reshaped = batch_features.reshape(batch_size, batch_features.shape[1], -1)
+                pooled_features = torch.max(batch_features_reshaped, dim=2)[0]  # [0] to get values, not indices
+                features_np = pooled_features.cpu().numpy()
+                
+            elif pooling_method == 'concat_avg_max':
+                # Concatenate average and max pooling
+                batch_features_reshaped = batch_features.reshape(batch_size, batch_features.shape[1], -1)
+                
+                # Average pooling
+                avg_pooled = torch.mean(batch_features_reshaped, dim=2)
+                
+                # Max pooling
+                max_pooled = torch.max(batch_features_reshaped, dim=2)[0]  # [0] to get values, not indices
+                
+                # Concatenate along feature dimension
+                concat_features = torch.cat([avg_pooled, max_pooled], dim=1)
+                features_np = concat_features.cpu().numpy()
+                
+            elif pooling_method == 'spp':
+                # Spatial Pyramid Pooling
+                # Get spatial dimensions
+                spatial_dims = batch_features.shape[2:]  # (depth, height, width)
+                num_channels = batch_features.shape[1]
+                
+                all_pooled_features = []
+                
+                # 1x1x1 pooling (global average pool)
+                batch_features_reshaped = batch_features.reshape(batch_size, num_channels, -1)
+                pool_1x1x1 = torch.mean(batch_features_reshaped, dim=2)
+                all_pooled_features.append(pool_1x1x1)
+                
+                # Try to do 2x2x2 pooling if spatial dimensions are large enough
+                min_spatial_dim = min(spatial_dims)
+                
+                if min_spatial_dim >= 2:
+                    # 2x2x2 pooling
+                    pool_2x2x2_features = []
+                    for d in range(2):
+                        for h in range(2):
+                            for w in range(2):
+                                # Calculate region boundaries
+                                d_start, d_end = d * spatial_dims[0] // 2, (d + 1) * spatial_dims[0] // 2
+                                h_start, h_end = h * spatial_dims[1] // 2, (h + 1) * spatial_dims[1] // 2
+                                w_start, w_end = w * spatial_dims[2] // 2, (w + 1) * spatial_dims[2] // 2
+                                
+                                # Extract and pool the region
+                                region = batch_features[:, :, d_start:d_end, h_start:h_end, w_start:w_end]
+                                region_reshaped = region.reshape(batch_size, num_channels, -1)
+                                region_pooled = torch.mean(region_reshaped, dim=2)
+                                pool_2x2x2_features.append(region_pooled)
+                    
+                    # Concatenate all 2x2x2 pooled features
+                    pool_2x2x2 = torch.cat(pool_2x2x2_features, dim=1)
+                    all_pooled_features.append(pool_2x2x2)
+                
+                # Try to do 4x4x4 pooling if spatial dimensions are large enough
+                if min_spatial_dim >= 4:
+                    # 4x4x4 pooling (simplified - we'll just pool 4x4x4 regions without implementing the full logic)
+                    # This is a simplified approach - in a real implementation, you'd handle the regions more carefully
+                    pool_4x4x4 = nn.AdaptiveAvgPool3d((4, 4, 4))(batch_features)
+                    pool_4x4x4_reshaped = pool_4x4x4.reshape(batch_size, num_channels * 64)  # 4*4*4 = 64 regions
+                    all_pooled_features.append(pool_4x4x4_reshaped)
+                
+                # Concatenate all pooled features
+                concat_features = torch.cat(all_pooled_features, dim=1)
+                features_np = concat_features.cpu().numpy()
+                
+            else:
+                raise ValueError(f"Unknown pooling method: {pooling_method}")
             
             features.append(features_np)
             metadata.extend(zip(names, info))
@@ -201,6 +340,10 @@ def extract_stage_specific_features(model, dataset, config, layer_num=20):
     # Create feature DataFrame
     feature_columns = [f'layer{layer_num}_feat_{i+1}' for i in range(features.shape[1])]
     features_df = pd.DataFrame(features, columns=feature_columns)
+    
+    # Add pooling method information
+    features_df['pooling_method'] = pooling_method
+    features_df['layer_num'] = layer_num
     
     # Combine metadata and features
     combined_df = pd.concat([metadata_df, features_df], axis=1)
@@ -315,7 +458,7 @@ def create_plots(features_df, seg_type, alpha, fixed_samples):
     print("Returning figure from create_plots")
     return fig
 
-def extract_and_save_features(model, dataset, config, seg_type, alpha, output_dir, extraction_method='standard', layer_num=20, perform_clustering=False):
+def extract_and_save_features(model, dataset, config, seg_type, alpha, output_dir, extraction_method='standard', layer_num=20, pooling_method='avg', perform_clustering=False):
     """
     Extract and save features using the specified extraction method.
     
@@ -328,20 +471,21 @@ def extract_and_save_features(model, dataset, config, seg_type, alpha, output_di
         output_dir: Directory to save features
         extraction_method: Feature extraction method ('standard' or 'stage_specific')
         layer_num: Layer number to extract features from if using stage_specific method
+        pooling_method: Method to use for pooling ('avg', 'max', 'concat_avg_max', 'spp')
         perform_clustering: Whether to perform clustering analysis (default: False)
         
     Returns:
         Path to the saved features CSV file
     """
-    print(f"Extracting features for SegType {seg_type} and Alpha {alpha} using {extraction_method} method")
+    print(f"Extracting features for SegType {seg_type} and Alpha {alpha} using {extraction_method} method with {pooling_method} pooling")
     
     # Extract features based on the chosen method
     if extraction_method == 'stage_specific':
-        features_df = extract_stage_specific_features(model, dataset, config, layer_num)
+        features_df = extract_stage_specific_features(model, dataset, config, layer_num, pooling_method)
         method_suffix = f"_layer{layer_num}"
         feat_prefix = f"layer{layer_num}_feat_"
     else:  # standard method
-        features_df = extract_features(model, dataset, config)
+        features_df = extract_features(model, dataset, config, pooling_method)
         method_suffix = ""
         feat_prefix = "feat_"
     
@@ -350,8 +494,8 @@ def extract_and_save_features(model, dataset, config, seg_type, alpha, output_di
     # Format alpha value for filename
     alpha_str = str(alpha).replace('.', '_')
     
-    # Create filename with method information
-    csv_filename = f"features{method_suffix}_seg{seg_type}_alpha{alpha_str}.csv"
+    # Create filename with method and pooling information
+    csv_filename = f"features{method_suffix}_{pooling_method}_seg{seg_type}_alpha{alpha_str}.csv"
     csv_filepath = os.path.join(output_dir, csv_filename)
     
     # Create output directory if it doesn't exist
@@ -382,6 +526,7 @@ def extract_and_save_features(model, dataset, config, seg_type, alpha, output_di
     features_df['extraction_method'] = extraction_method
     if extraction_method == 'stage_specific':
         features_df['layer_num'] = layer_num
+    features_df['pooling_method'] = pooling_method
     
     # Save the updated features DataFrame with UMAP coordinates and metadata
     features_df.to_csv(csv_filepath, index=False)
@@ -390,7 +535,7 @@ def extract_and_save_features(model, dataset, config, seg_type, alpha, output_di
     # Only perform clustering if explicitly requested
     if perform_clustering:
         try:
-            seg_output_dir = os.path.join(output_dir, f"seg{seg_type}_alpha{alpha_str}")
+            seg_output_dir = os.path.join(output_dir, f"seg{seg_type}_alpha{alpha_str}_{pooling_method}")
             os.makedirs(seg_output_dir, exist_ok=True)
             
             clustered_df, kmeans, feature_cols = load_and_cluster_features(csv_filepath, n_clusters=10)
@@ -430,11 +575,15 @@ def run_full_analysis(config, vol_data_dict, syn_df, processor, model):
     # Layer number for stage-specific extraction (only used if extraction_method is 'stage_specific')
     layer_num = getattr(config, 'layer_num', 20)
     
+    # Pooling method - default to average pooling if not specified
+    pooling_method = getattr(config, 'pooling_method', 'avg')
+    
     combined_features = []
     
     print(f"Using feature extraction method: {extraction_method}")
     if extraction_method == 'stage_specific':
         print(f"Extracting features from layer {layer_num}")
+    print(f"Using pooling method: {pooling_method}")
     
     for seg_type in segmentation_types:
         for alpha in alpha_values:
@@ -459,17 +608,18 @@ def run_full_analysis(config, vol_data_dict, syn_df, processor, model):
                     output_dir,
                     extraction_method=extraction_method,
                     layer_num=layer_num,
+                    pooling_method=pooling_method,
                     perform_clustering=(not hasattr(config, 'skip_clustering') or not config.skip_clustering)
                 )
             else:
                 # Load existing features
                 alpha_str = str(alpha).replace('.', '_')
                 
-                # Create appropriate filename based on extraction method
+                # Create appropriate filename based on extraction method and pooling method
                 if extraction_method == 'stage_specific':
-                    features_path = os.path.join(output_dir, f"features_layer{layer_num}_seg{seg_type}_alpha{alpha_str}.csv")
+                    features_path = os.path.join(output_dir, f"features_layer{layer_num}_{pooling_method}_seg{seg_type}_alpha{alpha_str}.csv")
                 else:
-                    features_path = os.path.join(output_dir, f"features_seg{seg_type}_alpha{alpha_str}.csv")
+                    features_path = os.path.join(output_dir, f"features_{pooling_method}_seg{seg_type}_alpha{alpha_str}.csv")
                 
                 if not os.path.exists(features_path):
                     print(f"Error: Feature file not found at {features_path}")
@@ -495,7 +645,7 @@ def run_full_analysis(config, vol_data_dict, syn_df, processor, model):
                     create_sample_visualizations(current_dataset, features_df, seg_type, alpha, output_dir)
                     
                     # Clustering analysis for this segmentation type and alpha
-                    seg_output_dir = os.path.join(output_dir, f"seg{seg_type}_alpha{alpha_str}")
+                    seg_output_dir = os.path.join(output_dir, f"seg{seg_type}_alpha{alpha_str}_{pooling_method}")
                     os.makedirs(seg_output_dir, exist_ok=True)
                     
                     # Perform UMAP and clustering
@@ -513,7 +663,7 @@ def run_full_analysis(config, vol_data_dict, syn_df, processor, model):
             combined_df = pd.concat(combined_features, ignore_index=True)
             
             # Save combined features
-            combined_dir = os.path.join(output_dir, "combined_analysis")
+            combined_dir = os.path.join(output_dir, f"combined_analysis_{pooling_method}")
             os.makedirs(combined_dir, exist_ok=True)
             combined_df.to_csv(os.path.join(combined_dir, "combined_features.csv"), index=False)
             

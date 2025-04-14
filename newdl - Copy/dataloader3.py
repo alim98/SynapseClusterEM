@@ -641,7 +641,7 @@ class SynapseDataLoader:
             normalized = (sub_raw - min_val) / range_val
             
             # Print for debugging
-            print(f"Global normalization: min={min_val:.4f}, max={max_val:.4f}, range={range_val:.4f}")
+            # print(f"Global normalization: min={min_val:.4f}, max={max_val:.4f}, range={range_val:.4f}")
         else:
             # Original per-slice normalization
             mins = np.min(sub_raw, axis=(1, 2), keepdims=True)
@@ -650,7 +650,7 @@ class SynapseDataLoader:
             normalized = (sub_raw - mins) / ranges
             
             # Print for debugging
-            print(f"Per-slice normalization: shape of mins={mins.shape}, maxs={maxs.shape}")
+            # print(f"Per-slice normalization: shape of mins={mins.shape}, maxs={maxs.shape}")
 
         # Convert to RGB here ONLY for visualization purposes
         # The data processing pipeline uses grayscale (1-channel) format

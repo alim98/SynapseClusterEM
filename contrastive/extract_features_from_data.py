@@ -909,22 +909,21 @@ def extract_features_from_checkpoint(checkpoint_path, output_path, device="cuda"
                         if abs(all_features[i, j]) > 1e-10:  # Make sure we're not writing zeros
                             feature_df.loc[idx, f'feature_{j}'] = all_features[i, j]
                     mapped_count += 1
+                # Last resort: try to find a matching synapse_id or bbox_name if available
+                elif 'synapse_id' in result_df.columns and str(idx) in result_df['synapse_id'].values:
+                    matching_idx = result_df.index[result_df['synapse_id'] == str(idx)].tolist()[0]
+                    for j in range(all_features.shape[1]):
+                        if abs(all_features[i, j]) > 1e-10:  # Make sure we're not writing zeros
+                            feature_df.loc[matching_idx, f'feature_{j}'] = all_features[i, j]
+                    mapped_count += 1
+                elif 'bbox_name' in result_df.columns and str(idx) in result_df['bbox_name'].values:
+                    matching_idx = result_df.index[result_df['bbox_name'] == str(idx)].tolist()[0]
+                    for j in range(all_features.shape[1]):
+                        if abs(all_features[i, j]) > 1e-10:  # Make sure we're not writing zeros
+                            feature_df.loc[matching_idx, f'feature_{j}'] = all_features[i, j]
+                    mapped_count += 1
                 else:
-                    # Last resort: try to find a matching synapse_id or bbox_name if available
-                    if 'synapse_id' in result_df.columns and str(idx) in result_df['synapse_id'].values:
-                        matching_idx = result_df.index[result_df['synapse_id'] == str(idx)].tolist()[0]
-                        for j in range(all_features.shape[1]):
-                            if abs(all_features[i, j]) > 1e-10:  # Make sure we're not writing zeros
-                                feature_df.loc[matching_idx, f'feature_{j}'] = all_features[i, j]
-                        mapped_count += 1
-                    elif 'bbox_name' in result_df.columns and str(idx) in result_df['bbox_name'].values:
-                        matching_idx = result_df.index[result_df['bbox_name'] == str(idx)].tolist()[0]
-                        for j in range(all_features.shape[1]):
-                            if abs(all_features[i, j]) > 1e-10:  # Make sure we're not writing zeros
-                                feature_df.loc[matching_idx, f'feature_{j}'] = all_features[i, j]
-                        mapped_count += 1
-                    else:
-                        logger.warning(f"Index {idx} (type {type(idx)}) not found in DataFrame")
+                    logger.warning(f"Index {idx} (type {type(idx)}) not found in DataFrame")
             except Exception as e:
                 logger.warning(f"Error mapping feature at index {idx}: {e}")
         

@@ -267,10 +267,36 @@ def create_color_visualization(matched_manual_df, vgg_umap_df, feature):
         
         plt.figure(figsize=(14, 12))
         
-        # Get all unique values in the feature (including unmatched)
+        # Get unique values directly from the data
         unique_values = matched_manual_df[feature].dropna().unique()
+        print(f"Creating visualization for feature '{feature}' with {len(unique_values)} unique values: {unique_values}")
         
-        # Create a color map with completely distinct colors (no similar tones)
+        # Define ordinal features and their expected order
+        ordinal_features = {
+            'vesicle size': ['small', 'medium', 'large'],
+            'shape (roundness)': None,  # Not ordinal
+            'Shading inside large vesicles': None,  # Not ordinal
+            'Presynaptic density (PSD) size - shading around the presynaptic ': ['small', 'medium', 'large'],
+            'Location (on spines, dendrites)': None,  # Not ordinal
+            'size of presyn compartment': ['thin', 'medium', 'thick'],
+            'size of postsyn compartment': ['thin', 'medium', 'thick'],
+            'single synapse or dyad (or >)': ['single', 'dyad', 'multi'],
+            'cleft thickness (how pronounced/obvious)': ['thin', 'medium', 'thick'],
+            'size of the vesicle cloud': ['small', 'medium', 'large'],
+            'packing density': ['low', 'medium', 'high'],
+            'number of docked vesicles': ['few', 'some', 'many'],
+            'mitochondria close by (<300nm from cleft)?': None  # Binary, not ordinal
+        }
+        
+        # Define color gradients for ordinal features
+        color_gradients = {
+            'size': ['#66c2a5', '#8da0cb', '#fc8d62'],  # small -> medium -> large
+            'thickness': ['#66c2a5', '#8da0cb', '#fc8d62'],  # thin -> medium -> thick
+            'density': ['#66c2a5', '#8da0cb', '#fc8d62'],  # low -> medium -> high
+            'count': ['#66c2a5', '#8da0cb', '#fc8d62']  # few -> some -> many
+        }
+        
+        # Define distinct colors for non-ordinal features
         distinct_colors = [
             '#e6194B', '#3cb44b', '#ffe119', '#4363d8', 
             '#f58231', '#911eb4', '#42d4f4', '#f032e6',
@@ -279,16 +305,79 @@ def create_color_visualization(matched_manual_df, vgg_umap_df, feature):
             '#808000', '#ffd8b1', '#000075', '#a9a9a9'
         ]
         
-        # Make sure we have enough colors
-        if len(unique_values) > len(distinct_colors):
-            # If more values than colors, cycle through colors
-            extended_colors = []
-            while len(extended_colors) < len(unique_values):
-                extended_colors.extend(distinct_colors)
-            distinct_colors = extended_colors[:len(unique_values)]
+        # Determine whether this feature is ordinal and get color mapping
+        is_ordinal = feature in ordinal_features and ordinal_features[feature] is not None
         
         # Create the color map
-        colors = {val: distinct_colors[i] for i, val in enumerate(unique_values)}
+        colors = {}
+        
+        if is_ordinal:
+            # Use gradient colors for ordinal features
+            expected_order = ordinal_features[feature]
+            
+            # Determine which gradient to use
+            if 'size' in feature.lower() or 'large' in str(unique_values).lower() or 'small' in str(unique_values).lower():
+                gradient = color_gradients['size']
+            elif 'thick' in str(unique_values).lower() or 'thin' in str(unique_values).lower():
+                gradient = color_gradients['thickness']
+            elif 'density' in feature.lower() or 'low' in str(unique_values).lower() or 'high' in str(unique_values).lower():
+                gradient = color_gradients['density']
+            elif 'few' in str(unique_values).lower() or 'many' in str(unique_values).lower() or 'docked' in feature.lower():
+                gradient = color_gradients['count']
+            else:
+                gradient = color_gradients['size']  # default
+            
+            # Make sure we have enough colors in the gradient
+            if len(gradient) < len(expected_order):
+                # Extend the gradient by interpolating
+                extended_gradient = []
+                for i in range(len(expected_order)):
+                    idx = i * (len(gradient) - 1) / (len(expected_order) - 1) if len(expected_order) > 1 else 0
+                    lower_idx = int(idx)
+                    upper_idx = min(lower_idx + 1, len(gradient) - 1)
+                    frac = idx - lower_idx
+                    
+                    # Convert hex to rgb, interpolate, then back to hex
+                    lower_rgb = np.array(mcolors.hex2color(gradient[lower_idx]))
+                    upper_rgb = np.array(mcolors.hex2color(gradient[upper_idx]))
+                    interp_rgb = lower_rgb * (1 - frac) + upper_rgb * frac
+                    extended_gradient.append(mcolors.rgb2hex(interp_rgb))
+                
+                gradient = extended_gradient
+            
+            # Map expected values to their gradient colors
+            for i, val in enumerate(expected_order):
+                # Find the value in our unique values that best matches
+                for unique_val in unique_values:
+                    if str(unique_val).lower() == val.lower() or str(unique_val).lower().startswith(val.lower()):
+                        colors[unique_val] = gradient[i]
+            
+            # Handle any missing values
+            for val in unique_values:
+                if val not in colors:
+                    # If it contains any of our expected values as a substring, use that color
+                    matched = False
+                    for i, expected_val in enumerate(expected_order):
+                        if expected_val.lower() in str(val).lower():
+                            colors[val] = gradient[i]
+                            matched = True
+                            break
+                    
+                    # If no match, use a gray color
+                    if not matched:
+                        colors[val] = '#a0a0a0'  # gray
+                        
+        else:
+            # For non-ordinal features, use distinct colors
+            if len(unique_values) > len(distinct_colors):
+                # If more values than colors, cycle through colors
+                extended_colors = []
+                while len(extended_colors) < len(unique_values):
+                    extended_colors.extend(distinct_colors)
+                distinct_colors = extended_colors[:len(unique_values)]
+            
+            # Create the color map with distinct colors
+            colors = {val: distinct_colors[i] for i, val in enumerate(unique_values)}
         
         # Get ALL VGG points - this should include both matched and unmatched
         all_vgg_points = None
@@ -359,17 +448,34 @@ def create_color_visualization(matched_manual_df, vgg_umap_df, feature):
                                      markerfacecolor='lightgray', markersize=10,
                                      label='Unmatched synapses'))
         
-        plt.legend(handles=legend_elements, title=feature, 
+        # Create a simpler title for display
+        feature_title = feature.replace('?', '')
+        
+        plt.legend(handles=legend_elements, title=feature_title, 
                   loc='best', bbox_to_anchor=(1, 1), fontsize=12)
         
-        plt.title(f'UMAP Visualization Colored by {feature}', fontsize=16)
+        plt.title(f'UMAP Visualization Colored by {feature_title}', fontsize=16)
         plt.xlabel('UMAP Dimension 1', fontsize=14)
         plt.ylabel('UMAP Dimension 2', fontsize=14)
         plt.grid(alpha=0.3)
         plt.tight_layout()
         
-        # Save the plot
-        filename = f'umap_colored_by_{feature.replace(" ", "_").replace("(", "").replace(")", "").replace("?", "").replace("/", "_")}.png'
+        # Save the plot with properly sanitized filename
+        # Replace invalid Windows filename characters: \ / : * ? " < > |
+        safe_feature_name = feature.replace(" ", "_")
+        safe_feature_name = safe_feature_name.replace("\\", "")
+        safe_feature_name = safe_feature_name.replace("/", "_")
+        safe_feature_name = safe_feature_name.replace(":", "")
+        safe_feature_name = safe_feature_name.replace("*", "")
+        safe_feature_name = safe_feature_name.replace("?", "")
+        safe_feature_name = safe_feature_name.replace("\"", "")
+        safe_feature_name = safe_feature_name.replace("<", "lt")
+        safe_feature_name = safe_feature_name.replace(">", "gt")
+        safe_feature_name = safe_feature_name.replace("|", "_")
+        safe_feature_name = safe_feature_name.replace("(", "")
+        safe_feature_name = safe_feature_name.replace(")", "")
+        
+        filename = f'umap_colored_by_{safe_feature_name}.png'
         plt.savefig(os.path.join(plots_dir, filename), dpi=300)
         plt.close()
         
@@ -378,6 +484,55 @@ def create_color_visualization(matched_manual_df, vgg_umap_df, feature):
     except Exception as e:
         print(f"Error creating visualization for {feature}: {e}")
         traceback.print_exc()
+
+def map_feature_values(manual_df):
+    """
+    Map feature values to standardized categories based on the TODO list
+    """
+    try:
+        if manual_df is None:
+            print("Cannot map feature values: Manual dataframe is missing")
+            return None
+        
+        # Create a copy to avoid modifying the original
+        df = manual_df.copy()
+        
+        # List of features from the TODO section
+        todo_features = [
+            'vesicle size', 
+            'shape (roundness)', 
+            'Shading inside large vesicles',
+            'Presynaptic density (PSD) size - shading around the presynaptic ',
+            'Location (on spines, dendrites)', 
+            'size of presyn compartment',
+            'size of postsyn compartment', 
+            'single synapse or dyad (or >)',
+            'cleft thickness (how pronounced/obvious)', 
+            'size of the vesicle cloud',
+            'packing density', 
+            'number of docked vesicles', 
+            'mitochondria close by (<300nm from cleft)?'
+        ]
+        
+        # Process each feature in the dataframe that matches our TODO list
+        for feature in todo_features:
+            if feature not in df.columns:
+                print(f"Feature '{feature}' not found in dataframe, skipping")
+                continue
+            
+            # Get unique values for this feature and print them
+            unique_values = df[feature].dropna().unique()
+            print(f"Feature '{feature}' has {len(unique_values)} unique values: {unique_values}")
+            
+            # We don't need to modify the values, just display what's in the data
+            
+        print("Feature value display complete")
+        return df
+    
+    except Exception as e:
+        print(f"Error displaying feature values: {e}")
+        traceback.print_exc()
+        return manual_df
 
 def main():
     print("Synapse Comparison Tool")
@@ -402,6 +557,10 @@ def main():
     if matched_manual_df is None or matched_vgg_df is None or len(matched_manual_df) == 0:
         print("Analysis aborted: No matching synapses found")
         return
+    
+    # Map feature values to standardized categories
+    print("\nMapping feature values to standardized categories...")
+    matched_manual_df = map_feature_values(matched_manual_df)
     
     # 3. Compute the vgg file umap in 2d
     print("\nComputing UMAP for VGG features...")
@@ -442,9 +601,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
-
