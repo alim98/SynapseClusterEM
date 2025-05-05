@@ -1030,7 +1030,8 @@ if __name__ == "__main__":
                        help='Number of random samples to show with GIFs (default: 20)')
     parser.add_argument('--custom-clusters',
                        type=str,
-                       default=r"C:\Users\alim9\Documents\codes\synapse2\results\extracted\clusters\clustered_features.csv",
+                        #default=r"C:\Users\alim9\Documents\codes\synapse2\results\extracted\clusters\clustered_features.csv",
+                       default="",
                        help='Path to custom cluster assignments CSV file')
     args, unknown = parser.parse_known_args()
     
@@ -1047,8 +1048,8 @@ if __name__ == "__main__":
     output_path = r"C:\Users\alim9\Documents\codes\synapse2\results\extracted\stable\13"
 
     # Define paths 11 concat average max 
-    csv_path=r"C:\Users\alim9\Documents\codes\synapse2\results\extracted\stable\11_concat_avg_max\features_layer20_concat_avg_max_seg11_alpha1.0\features_layer20_concat_avg_max_seg11_alpha1_0.csv"
-    output_path=r"C:\Users\alim9\Documents\codes\synapse2\results\extracted\stable\11_concat_avg_max"
+    csv_path=r"C:\Users\alim9\Documents\codes\synapse2\results\medicalnet_clustering\medicalnet3_features.csv"
+    output_path=r"C:\Users\alim9\Documents\codes\synapse2\results\medicalnet_clustering3"
     output_dir = Path(output_path)
     output_dir.mkdir(parents=True, exist_ok=True)
     

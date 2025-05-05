@@ -95,92 +95,119 @@ def extract_features(model, dataset, config, pooling_method='avg'):
     features = []
     metadata = []
 
-    with torch.no_grad():
-        for batch in tqdm(dataloader, desc="Extracting features", unit="batch"):
-            if len(batch[0]) == 0:
-                continue
-                
-            pixels, info, names = batch
-            inputs = pixels.permute(0, 2, 1, 3, 4).to(device)
+    # Default implementation ('avg' pooling)
+    if pooling_method == 'avg' or not pooling_method:
+        with torch.no_grad():
+            for batch in tqdm(dataloader, desc="Extracting features", unit="batch"):
+                if len(batch[0]) == 0:
+                    continue
+                    
+                pixels, info, names = batch
+                inputs = pixels.permute(0, 2, 1, 3, 4).to(device)
 
-            batch_features = model.features(inputs)
-            
-            # Different pooling strategies
-            if pooling_method == 'avg':
-                # Original average pooling
+                batch_features = model.features(inputs)
                 pooled_features = nn.AdaptiveAvgPool3d((1, 1, 1))(batch_features)
+
                 batch_features_np = pooled_features.cpu().numpy()
                 batch_size = batch_features_np.shape[0]
                 num_features = np.prod(batch_features_np.shape[1:])
                 batch_features_np = batch_features_np.reshape(batch_size, num_features)
                 
-            elif pooling_method == 'max':
-                # Max pooling
-                pooled_features = nn.AdaptiveMaxPool3d((1, 1, 1))(batch_features)
-                batch_features_np = pooled_features.cpu().numpy()
-                batch_size = batch_features_np.shape[0]
-                num_features = np.prod(batch_features_np.shape[1:])
-                batch_features_np = batch_features_np.reshape(batch_size, num_features)
-                
-            elif pooling_method == 'concat_avg_max':
-                # Concatenate average and max pooling
-                avg_pooled = nn.AdaptiveAvgPool3d((1, 1, 1))(batch_features)
-                max_pooled = nn.AdaptiveMaxPool3d((1, 1, 1))(batch_features)
-                
-                # Reshape both to 2D tensors and concatenate along feature dimension
-                batch_size = avg_pooled.size(0)
-                avg_features = avg_pooled.reshape(batch_size, -1)
-                max_features = max_pooled.reshape(batch_size, -1)
-                concat_features = torch.cat([avg_features, max_features], dim=1)
-                
-                batch_features_np = concat_features.cpu().numpy()
-                
-            elif pooling_method == 'spp':
-                # Spatial Pyramid Pooling
-                # Pool at multiple resolutions (1x1x1, 2x2x2, 4x4x4) and concatenate
-                batch_size = batch_features.size(0)
-                
-                # 1x1x1 pooling
-                pool_1x1x1 = nn.AdaptiveAvgPool3d((1, 1, 1))(batch_features)
-                feat_1x1x1 = pool_1x1x1.reshape(batch_size, -1)
-                
-                # 2x2x2 pooling
-                pool_2x2x2 = nn.AdaptiveAvgPool3d((2, 2, 2))(batch_features)
-                feat_2x2x2 = pool_2x2x2.reshape(batch_size, -1)
-                
-                # 4x4x4 pooling (only if input size is large enough)
-                input_size = min(batch_features.size(2), batch_features.size(3), batch_features.size(4))
-                if input_size >= 4:
-                    pool_4x4x4 = nn.AdaptiveAvgPool3d((4, 4, 4))(batch_features)
-                    feat_4x4x4 = pool_4x4x4.reshape(batch_size, -1)
-                    # Concatenate all pooling results
-                    concat_features = torch.cat([feat_1x1x1, feat_2x2x2, feat_4x4x4], dim=1)
-                else:
-                    # Only use 1x1x1 and 2x2x2 if input is too small
-                    concat_features = torch.cat([feat_1x1x1, feat_2x2x2], dim=1)
-                
-                batch_features_np = concat_features.cpu().numpy()
-            
-            else:
-                raise ValueError(f"Unknown pooling method: {pooling_method}")
-            
-            features.append(batch_features_np)
-            metadata.extend(zip(names, info))
+                features.append(batch_features_np)
+                metadata.extend(zip(names, info))
 
-    features = np.concatenate(features, axis=0)
+        features = np.concatenate(features, axis=0)
 
-    metadata_df = pd.DataFrame([
-        {"bbox": name, **info.to_dict()}
-        for name, info in metadata
-    ])
+        metadata_df = pd.DataFrame([
+            {"bbox": name, **info.to_dict()}
+            for name, info in metadata
+        ])
 
-    feature_columns = [f'feat_{i+1}' for i in range(features.shape[1])]
-    features_df = pd.DataFrame(features, columns=feature_columns)
+        feature_columns = [f'feat_{i+1}' for i in range(features.shape[1])]
+        features_df = pd.DataFrame(features, columns=feature_columns)
+
+        combined_df = pd.concat([metadata_df, features_df], axis=1)
     
-    # Add pooling method information to the dataframe
-    features_df['pooling_method'] = pooling_method
+    # Alternative pooling methods
+    else:
+        with torch.no_grad():
+            for batch in tqdm(dataloader, desc="Extracting features", unit="batch"):
+                if len(batch[0]) == 0:
+                    continue
+                    
+                pixels, info, names = batch
+                inputs = pixels.permute(0, 2, 1, 3, 4).to(device)
 
-    combined_df = pd.concat([metadata_df, features_df], axis=1)
+                batch_features = model.features(inputs)
+                
+                # Different pooling strategies
+                if pooling_method == 'max':
+                    # Max pooling
+                    pooled_features = nn.AdaptiveMaxPool3d((1, 1, 1))(batch_features)
+                    batch_features_np = pooled_features.cpu().numpy()
+                    batch_size = batch_features_np.shape[0]
+                    num_features = np.prod(batch_features_np.shape[1:])
+                    batch_features_np = batch_features_np.reshape(batch_size, num_features)
+                    
+                elif pooling_method == 'concat_avg_max':
+                    # Concatenate average and max pooling
+                    avg_pooled = nn.AdaptiveAvgPool3d((1, 1, 1))(batch_features)
+                    max_pooled = nn.AdaptiveMaxPool3d((1, 1, 1))(batch_features)
+                    
+                    # Reshape both to 2D tensors and concatenate along feature dimension
+                    batch_size = avg_pooled.size(0)
+                    avg_features = avg_pooled.reshape(batch_size, -1)
+                    max_features = max_pooled.reshape(batch_size, -1)
+                    concat_features = torch.cat([avg_features, max_features], dim=1)
+                    
+                    batch_features_np = concat_features.cpu().numpy()
+                    
+                elif pooling_method == 'spp':
+                    # Spatial Pyramid Pooling
+                    # Pool at multiple resolutions (1x1x1, 2x2x2, 4x4x4) and concatenate
+                    batch_size = batch_features.size(0)
+                    
+                    # 1x1x1 pooling
+                    pool_1x1x1 = nn.AdaptiveAvgPool3d((1, 1, 1))(batch_features)
+                    feat_1x1x1 = pool_1x1x1.reshape(batch_size, -1)
+                    
+                    # 2x2x2 pooling
+                    pool_2x2x2 = nn.AdaptiveAvgPool3d((2, 2, 2))(batch_features)
+                    feat_2x2x2 = pool_2x2x2.reshape(batch_size, -1)
+                    
+                    # 4x4x4 pooling (only if input size is large enough)
+                    input_size = min(batch_features.size(2), batch_features.size(3), batch_features.size(4))
+                    if input_size >= 4:
+                        pool_4x4x4 = nn.AdaptiveAvgPool3d((4, 4, 4))(batch_features)
+                        feat_4x4x4 = pool_4x4x4.reshape(batch_size, -1)
+                        # Concatenate all pooling results
+                        concat_features = torch.cat([feat_1x1x1, feat_2x2x2, feat_4x4x4], dim=1)
+                    else:
+                        # Only use 1x1x1 and 2x2x2 if input is too small
+                        concat_features = torch.cat([feat_1x1x1, feat_2x2x2], dim=1)
+                    
+                    batch_features_np = concat_features.cpu().numpy()
+                
+                else:
+                    raise ValueError(f"Unknown pooling method: {pooling_method}")
+                
+                features.append(batch_features_np)
+                metadata.extend(zip(names, info))
+
+        features = np.concatenate(features, axis=0)
+
+        metadata_df = pd.DataFrame([
+            {"bbox": name, **info.to_dict()}
+            for name, info in metadata
+        ])
+
+        feature_columns = [f'feat_{i+1}' for i in range(features.shape[1])]
+        features_df = pd.DataFrame(features, columns=feature_columns)
+        
+        # Add pooling method information to the dataframe
+        features_df['pooling_method'] = pooling_method
+
+        combined_df = pd.concat([metadata_df, features_df], axis=1)
 
     return combined_df
 
@@ -231,122 +258,132 @@ def extract_stage_specific_features(model, dataset, config, layer_num=20, poolin
     features = []
     metadata = []
     
-    with torch.no_grad():
-        for batch in tqdm(dataloader, desc=f"Extracting layer {layer_num} features", unit="batch"):
-            if len(batch[0]) == 0:
-                continue
+    # Default implementation (avg pooling)
+    if pooling_method == 'avg' or not pooling_method:
+        with torch.no_grad():
+            for batch in tqdm(dataloader, desc=f"Extracting layer {layer_num} features", unit="batch"):
+                if len(batch[0]) == 0:
+                    continue
+                    
+                pixels, info, names = batch
+                inputs = pixels.permute(0, 2, 1, 3, 4).to(device)
                 
-            pixels, info, names = batch
-            inputs = pixels.permute(0, 2, 1, 3, 4).to(device)
-            
-            # Extract features from specified layer
-            batch_features = extractor.extract_layer(layer_num, inputs)
-            
-            # Apply different pooling strategies
-            batch_size = batch_features.shape[0]
-            
-            if pooling_method == 'avg':
-                # Original average pooling approach
-                # Reshape to (batch_size, channels, -1) for easier processing
-                batch_features_reshaped = batch_features.reshape(batch_size, batch_features.shape[1], -1)
-                # Global average pooling across spatial dimensions
-                pooled_features = torch.mean(batch_features_reshaped, dim=2)
-                features_np = pooled_features.cpu().numpy()
+                # Extract features from specified layer
+                batch_features = extractor.extract_layer(layer_num, inputs)
                 
-            elif pooling_method == 'max':
-                # Global max pooling
-                batch_features_reshaped = batch_features.reshape(batch_size, batch_features.shape[1], -1)
-                pooled_features = torch.max(batch_features_reshaped, dim=2)[0]  # [0] to get values, not indices
-                features_np = pooled_features.cpu().numpy()
-                
-            elif pooling_method == 'concat_avg_max':
-                # Concatenate average and max pooling
-                batch_features_reshaped = batch_features.reshape(batch_size, batch_features.shape[1], -1)
-                
-                # Average pooling
-                avg_pooled = torch.mean(batch_features_reshaped, dim=2)
-                
-                # Max pooling
-                max_pooled = torch.max(batch_features_reshaped, dim=2)[0]  # [0] to get values, not indices
-                
-                # Concatenate along feature dimension
-                concat_features = torch.cat([avg_pooled, max_pooled], dim=1)
-                features_np = concat_features.cpu().numpy()
-                
-            elif pooling_method == 'spp':
-                # Spatial Pyramid Pooling
-                # Get spatial dimensions
-                spatial_dims = batch_features.shape[2:]  # (depth, height, width)
+                # Global average pooling to get a feature vector
+                batch_size = batch_features.shape[0]
                 num_channels = batch_features.shape[1]
                 
-                all_pooled_features = []
-                
-                # 1x1x1 pooling (global average pool)
+                # Reshape to (batch_size, channels, -1) for easier processing
                 batch_features_reshaped = batch_features.reshape(batch_size, num_channels, -1)
-                pool_1x1x1 = torch.mean(batch_features_reshaped, dim=2)
-                all_pooled_features.append(pool_1x1x1)
                 
-                # Try to do 2x2x2 pooling if spatial dimensions are large enough
-                min_spatial_dim = min(spatial_dims)
+                # Global average pooling across spatial dimensions
+                pooled_features = torch.mean(batch_features_reshaped, dim=2)
                 
-                if min_spatial_dim >= 2:
-                    # 2x2x2 pooling
-                    pool_2x2x2_features = []
-                    for d in range(2):
-                        for h in range(2):
-                            for w in range(2):
-                                # Calculate region boundaries
-                                d_start, d_end = d * spatial_dims[0] // 2, (d + 1) * spatial_dims[0] // 2
-                                h_start, h_end = h * spatial_dims[1] // 2, (h + 1) * spatial_dims[1] // 2
-                                w_start, w_end = w * spatial_dims[2] // 2, (w + 1) * spatial_dims[2] // 2
-                                
-                                # Extract and pool the region
-                                region = batch_features[:, :, d_start:d_end, h_start:h_end, w_start:w_end]
-                                region_reshaped = region.reshape(batch_size, num_channels, -1)
-                                region_pooled = torch.mean(region_reshaped, dim=2)
-                                pool_2x2x2_features.append(region_pooled)
+                # Convert to numpy
+                features_np = pooled_features.cpu().numpy()
+                
+                features.append(features_np)
+                metadata.extend(zip(names, info))
+        
+        # Concatenate all features
+        features = np.concatenate(features, axis=0)
+        
+        # Create metadata DataFrame
+        metadata_df = pd.DataFrame([
+            {"bbox": name, **info.to_dict()}
+            for name, info in metadata
+        ])
+        
+        # Create feature DataFrame
+        feature_columns = [f'layer{layer_num}_feat_{i+1}' for i in range(features.shape[1])]
+        features_df = pd.DataFrame(features, columns=feature_columns)
+        
+        # Combine metadata and features
+        combined_df = pd.concat([metadata_df, features_df], axis=1)
+    
+    # Alternative pooling methods
+    else:
+        with torch.no_grad():
+            for batch in tqdm(dataloader, desc=f"Extracting layer {layer_num} features", unit="batch"):
+                if len(batch[0]) == 0:
+                    continue
                     
-                    # Concatenate all 2x2x2 pooled features
-                    pool_2x2x2 = torch.cat(pool_2x2x2_features, dim=1)
-                    all_pooled_features.append(pool_2x2x2)
+                pixels, info, names = batch
+                inputs = pixels.permute(0, 2, 1, 3, 4).to(device)
                 
-                # Try to do 4x4x4 pooling if spatial dimensions are large enough
-                if min_spatial_dim >= 4:
-                    # 4x4x4 pooling (simplified - we'll just pool 4x4x4 regions without implementing the full logic)
-                    # This is a simplified approach - in a real implementation, you'd handle the regions more carefully
-                    pool_4x4x4 = nn.AdaptiveAvgPool3d((4, 4, 4))(batch_features)
-                    pool_4x4x4_reshaped = pool_4x4x4.reshape(batch_size, num_channels * 64)  # 4*4*4 = 64 regions
-                    all_pooled_features.append(pool_4x4x4_reshaped)
+                # Extract features from specified layer
+                batch_features = extractor.extract_layer(layer_num, inputs)
                 
-                # Concatenate all pooled features
-                concat_features = torch.cat(all_pooled_features, dim=1)
-                features_np = concat_features.cpu().numpy()
+                # Apply different pooling strategies
+                batch_size = batch_features.shape[0]
                 
-            else:
-                raise ValueError(f"Unknown pooling method: {pooling_method}")
-            
-            features.append(features_np)
-            metadata.extend(zip(names, info))
-    
-    # Concatenate all features
-    features = np.concatenate(features, axis=0)
-    
-    # Create metadata DataFrame
-    metadata_df = pd.DataFrame([
-        {"bbox": name, **info.to_dict()}
-        for name, info in metadata
-    ])
-    
-    # Create feature DataFrame
-    feature_columns = [f'layer{layer_num}_feat_{i+1}' for i in range(features.shape[1])]
-    features_df = pd.DataFrame(features, columns=feature_columns)
-    
-    # Add pooling method information
-    features_df['pooling_method'] = pooling_method
-    features_df['layer_num'] = layer_num
-    
-    # Combine metadata and features
-    combined_df = pd.concat([metadata_df, features_df], axis=1)
+                if pooling_method == 'max':
+                    # Global max pooling
+                    batch_features_reshaped = batch_features.reshape(batch_size, batch_features.shape[1], -1)
+                    pooled_features = torch.max(batch_features_reshaped, dim=2)[0]  # [0] to get values, not indices
+                    features_np = pooled_features.cpu().numpy()
+                    
+                elif pooling_method == 'concat_avg_max':
+                    # Concatenate average and max pooling
+                    batch_features_reshaped = batch_features.reshape(batch_size, batch_features.shape[1], -1)
+                    avg_features = torch.mean(batch_features_reshaped, dim=2)
+                    max_features = torch.max(batch_features_reshaped, dim=2)[0]
+                    concat_features = torch.cat([avg_features, max_features], dim=1)
+                    features_np = concat_features.cpu().numpy()
+                    
+                elif pooling_method == 'spp':
+                    # Spatial Pyramid Pooling with different levels
+                    # Get the current spatial dimensions
+                    spatial_dims = batch_features.shape[2:]
+                    min_dim = min(spatial_dims)
+                    
+                    # Initialize the list to store different pooling levels
+                    pooled_features_list = []
+                    
+                    # 1x1x1 pooling (global average pooling)
+                    pool_1x1x1 = nn.AdaptiveAvgPool3d((1, 1, 1))(batch_features)
+                    pooled_features_list.append(pool_1x1x1.view(batch_size, -1))
+                    
+                    # 2x2x2 pooling (if dimension allows)
+                    if min_dim >= 2:
+                        pool_2x2x2 = nn.AdaptiveAvgPool3d((2, 2, 2))(batch_features)
+                        pooled_features_list.append(pool_2x2x2.view(batch_size, -1))
+                    
+                    # 4x4x4 pooling (if dimension allows)
+                    if min_dim >= 4:
+                        pool_4x4x4 = nn.AdaptiveAvgPool3d((4, 4, 4))(batch_features)
+                        pooled_features_list.append(pool_4x4x4.view(batch_size, -1))
+                    
+                    # Concatenate all pooled features
+                    concat_features = torch.cat(pooled_features_list, dim=1)
+                    features_np = concat_features.cpu().numpy()
+                
+                else:
+                    raise ValueError(f"Unknown pooling method: {pooling_method}")
+                
+                features.append(features_np)
+                metadata.extend(zip(names, info))
+
+        # Concatenate all features
+        features = np.concatenate(features, axis=0)
+        
+        # Create metadata DataFrame
+        metadata_df = pd.DataFrame([
+            {"bbox": name, **info.to_dict()}
+            for name, info in metadata
+        ])
+        
+        # Create feature DataFrame
+        feature_columns = [f'layer{layer_num}_feat_{i+1}' for i in range(features.shape[1])]
+        features_df = pd.DataFrame(features, columns=feature_columns)
+        
+        # Add pooling method information
+        features_df['pooling_method'] = pooling_method
+        
+        # Combine metadata and features
+        combined_df = pd.concat([metadata_df, features_df], axis=1)
     
     return combined_df
 

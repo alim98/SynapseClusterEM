@@ -74,3 +74,8 @@ contrastive/results/*
 contrastive/logs/*
 contrastive/gif_umap/*
 *.rar
+*.ps1
+resnet/*
+synapse/test/*
+MedicalNet/*
+MedicalNet

@@ -113,21 +113,75 @@ data/
 
 ## Usage
 
-### Graphical User Interface (GUI)
+### Enhanced Pipeline (v4)
 
-The easiest way to use SynapseClusterEM is through its graphical interface:
+For advanced analysis with improved automation and organization, use the latest pipeline version:
 
 ```bash
-python synapse_gui.py
+python run_synapse_pipeline4.py
 ```
 
-The GUI provides:
-- Configuration of all analysis parameters
-- Selection of segmentation types (0-10) and alpha values
-- Running the full pipeline or individual components
-- Viewing and managing generated reports
-- Saving and loading configurations
-- About section with information about the Max Planck Institute for Brain Research
+The enhanced pipeline v4 offers these improvements:
+- **Timestamp-based Results**: All outputs are organized in a timestamped directory structure
+- **Comprehensive Logging**: Detailed logs capturing all pipeline stages and results
+- **Feature Extraction Options**: 
+  - Choose between standard or stage-specific feature extraction methods
+  - Select specific network layers for feature extraction
+  - Configure pooling methods (avg, max, concat_avg_max, spp)
+- **Vesicle Analysis Integration**: Automated analysis of vesicle cloud sizes and their relationship to clusters
+
+#### Pipeline Options
+
+```bash
+# Run pipeline with stage-specific feature extraction from layer 20
+python run_synapse_pipeline4.py --extraction_method stage_specific --layer_num 20
+
+# Run pipeline with specific pooling method
+python run_synapse_pipeline4.py --pooling_method concat_avg_max
+
+# Run only vesicle analysis on existing results
+python run_synapse_pipeline4.py --only_vesicle_analysis
+```
+
+#### Data and Model Configuration
+
+The pipeline uses specific directories for data and model checkpoints. You can customize these paths using the following arguments:
+
+```bash
+# Specify individual data directories
+python run_synapse_pipeline4.py --raw_base_dir data/7_bboxes_plus_seg/raw --seg_base_dir data/7_bboxes_plus_seg/seg --add_mask_base_dir data/vesicle_cloud__syn_interface__mitochondria_annotation --excel_file data/7_bboxes_plus_seg
+
+# Specify custom model checkpoint
+python run_synapse_pipeline4.py --checkpoint_path /path/to/model.checkpoint
+```
+
+Default data directory structure:
+```
+data/
+├── 7_bboxes_plus_seg/raw/      # Raw EM volumes
+├── 7_bboxes_plus_seg/seg/      # Segmentation volumes
+├── 7_bboxes_plus_seg/          # Contains Excel files with synapse information
+└── vesicle_cloud__syn_interface__mitochondria_annotation/  # Additional mask data
+```
+
+Default model checkpoint:
+```
+hemibrain_production.checkpoint  # Pre-trained model weights file in project root
+```
+
+#### Output Structure
+
+The pipeline automatically creates timestamped output directories:
+
+```
+results/
+├── run_YYYYMMDD_HHMMSS/    # Timestamped parent directory for this run
+│   ├── pipeline_log.txt    # Complete log of the pipeline execution
+│   ├── csv_outputs/        # CSV files with extracted features and analysis results
+│   ├── clustering_results/ # Clustering results and metrics
+│   ├── gifs/               # 3D visualization GIFs
+│   └── reports/            # Generated HTML reports
+```
 
 ### Command Line Usage
 
@@ -246,6 +300,23 @@ The analysis produces various visualization outputs:
   - Single-layer attention maps showing what features the model focuses on
   - Multi-layer comparative visualizations showing how attention evolves through the network
   - Top attended regions across multiple samples to identify common patterns
+
+
+### Graphical User Interface (GUI)
+
+The easiest way to use SynapseClusterEM is through its graphical interface:
+
+```bash
+python run_gui.py
+```
+
+The GUI provides:
+- Configuration of all analysis parameters
+- Selection of segmentation types (0-10) and alpha values
+- Running the full pipeline or individual components
+- Viewing and managing generated reports
+- Saving and loading configurations
+- About section with information about the Max Planck Institute for Brain Research
 
 ## Reports
 

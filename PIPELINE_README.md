@@ -28,18 +28,24 @@ To run the full pipeline with your existing configuration:
 python run_synapse_pipeline.py
 ```
 
+For the enhanced pipeline with improved logging and organization (recommended):
+
+```bash
+python run_synapse_pipeline4.py
+```
+
 ### Configuration
 
 The pipeline uses your existing configuration system from `synapse/config.py` and extends it with additional parameters for vesicle analysis. You can set standard parameters as you normally would:
 
 ```bash
-python run_synapse_pipeline.py --segmentation_type 1 --alpha 1.0 
+python run_synapse_pipeline4.py --segmentation_type 1 --alpha 1.0 
 ```
 
 Additionally, you can use pipeline-specific flags:
 
 ```bash
-python run_synapse_pipeline.py --only_vesicle_analysis
+python run_synapse_pipeline4.py --only_vesicle_analysis
 ```
 
 ### Pipeline Options
@@ -51,6 +57,12 @@ The pipeline adds the following options to your existing configuration:
 | `--only_vesicle_analysis` | flag | Only run vesicle size analysis on existing results |
 | `--extraction_method` | string | Feature extraction method ('standard' or 'stage_specific') |
 | `--layer_num` | integer | Layer number to extract features from when using stage_specific method |
+| `--pooling_method` | string | Method to use for pooling ('avg', 'max', 'concat_avg_max', 'spp') |
+| `--raw_base_dir` | string | Directory containing raw EM volumes (default: 'data/7_bboxes_plus_seg/raw') |
+| `--seg_base_dir` | string | Directory containing segmentation volumes (default: 'data/7_bboxes_plus_seg/seg') |
+| `--add_mask_base_dir` | string | Directory containing additional mask data (default: 'data/vesicle_cloud__syn_interface__mitochondria_annotation') |
+| `--excel_file` | string | Directory containing Excel files with synapse information (default: 'data/7_bboxes_plus_seg') |
+| `--checkpoint_path` | string | Path to model checkpoint (default: 'hemibrain_production.checkpoint') |
 
 The pipeline also integrates with your existing flags:
 
@@ -71,7 +83,7 @@ The pipeline supports two different methods for feature extraction:
 To use stage-specific feature extraction:
 
 ```bash
-python run_synapse_pipeline.py --extraction_method stage_specific --layer_num 20
+python run_synapse_pipeline4.py --extraction_method stage_specific --layer_num 20
 ```
 
 Layer 20 is recommended as it has been found to provide the most attention on important structures in many cases.
@@ -80,22 +92,44 @@ Layer 20 is recommended as it has been found to provide the most attention on im
 
 Run only feature extraction and clustering:
 ```bash
-python run_synapse_pipeline.py --skip_visualization --skip_presynapse_analysis
+python run_synapse_pipeline4.py --skip_visualization --skip_presynapse_analysis
 ```
 
 Run only vesicle analysis on existing results:
 ```bash
-python run_synapse_pipeline.py --only_vesicle_analysis
+python run_synapse_pipeline4.py --only_vesicle_analysis
 ```
 
 Run the pipeline with a specific segmentation type and alpha value:
 ```bash
-python run_synapse_pipeline.py --segmentation_type 10 --alpha 0.5
+python run_synapse_pipeline4.py --segmentation_type 10 --alpha 0.5
+```
+
+Use stage-specific feature extraction with max pooling:
+```bash
+python run_synapse_pipeline4.py --extraction_method stage_specific --layer_num 20 --pooling_method max
+```
+
+Use custom data directories and model checkpoint:
+```bash
+python run_synapse_pipeline4.py --raw_base_dir /path/to/raw --seg_base_dir /path/to/seg --add_mask_base_dir /path/to/masks --excel_file /path/to/excel --checkpoint_path /path/to/model.checkpoint
 ```
 
 ## Output Structure
 
-The pipeline creates the following directory structure for outputs:
+The enhanced pipeline creates a timestamped directory structure for outputs:
+
+```
+results/
+├── run_YYYYMMDD_HHMMSS/    # Timestamped parent directory for this run
+│   ├── pipeline_log.txt    # Complete log of the pipeline execution
+│   ├── csv_outputs/        # CSV files with extracted features and analysis results
+│   ├── clustering_results/ # Clustering results and metrics
+│   ├── gifs/               # 3D visualization GIFs
+│   └── reports/            # Generated HTML reports
+```
+
+The standard pipeline creates the following directory structure for outputs:
 
 ```
 results/
