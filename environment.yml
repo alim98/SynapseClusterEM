@@ -13,12 +13,14 @@ dependencies:
   - pandas
   - matplotlib
   - scikit-learn
+  - scikit-image
   - scipy
   - tqdm
   - pillow
   - h5py
   - jupyter
   - ipykernel
+  - boltons
   - pip
 
   - pip:
@@ -29,3 +31,4 @@ dependencies:
     - imageio
     - statsmodels
     - openpyxl
+    - webknossos

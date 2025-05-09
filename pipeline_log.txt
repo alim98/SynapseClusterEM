@@ -270,3 +270,111 @@ Running with configuration:
   Feature Extraction Method: stage_specific
   Layer Number: 20
   Pooling Method: avg
+
+--- Starting pipeline run at 2025-05-07 21:22:46 ---
+Running with configuration:
+  Segmentation Type: 11
+  Alpha: 1.0
+  Feature Extraction Method: stage_specific
+  Layer Number: 20
+  Pooling Method: avg
+
+--- Starting pipeline run at 2025-05-07 21:45:45 ---
+Running with configuration:
+  Segmentation Type: 11
+  Alpha: 1.0
+  Feature Extraction Method: stage_specific
+  Layer Number: 20
+  Pooling Method: avg
+Running pipeline with connectome data sampling...
+  Batch size: 2
+  Policy: dummy
+  Verbose: True
+Creating ConnectomeDataset with policy: dummy
+Extracting features...
+Using patched standard feature extraction
+Error during pipeline execution: Given groups=1, weight of size [24, 1, 3, 3, 3], expected input[2, 80, 1, 80, 80] to have 1 channels, but got 80 channels instead
+Traceback (most recent call last):
+  File "C:\Users\alim9\Documents\codes\synapse2\run_synapse_pipeline_with_sampling.py", line 190, in run_pipeline_with_connectome
+    pipeline.features_df = patch_extract_features(
+  File "C:\Users\alim9\Documents\codes\synapse2\inference_patch.py", line 202, in patch_extract_features
+    batch_features = model.features(inputs)
+  File "C:\Users\alim9\.conda\envs\synapse2\lib\site-packages\torch\nn\modules\module.py", line 1736, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "C:\Users\alim9\.conda\envs\synapse2\lib\site-packages\torch\nn\modules\module.py", line 1747, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "C:\Users\alim9\.conda\envs\synapse2\lib\site-packages\torch\nn\modules\container.py", line 250, in forward
+    input = module(input)
+  File "C:\Users\alim9\.conda\envs\synapse2\lib\site-packages\torch\nn\modules\module.py", line 1736, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "C:\Users\alim9\.conda\envs\synapse2\lib\site-packages\torch\nn\modules\module.py", line 1747, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "C:\Users\alim9\.conda\envs\synapse2\lib\site-packages\torch\nn\modules\conv.py", line 725, in forward
+    return self._conv_forward(input, self.weight, self.bias)
+  File "C:\Users\alim9\.conda\envs\synapse2\lib\site-packages\torch\nn\modules\conv.py", line 720, in _conv_forward
+    return F.conv3d(
+RuntimeError: Given groups=1, weight of size [24, 1, 3, 3, 3], expected input[2, 80, 1, 80, 80] to have 1 channels, but got 80 channels instead
+
+Running pipeline with connectome data sampling...
+  Batch size: 2
+  Policy: dummy
+  Verbose: True
+Creating ConnectomeDataset with policy: dummy
+Extracting features...
+Using patched standard feature extraction
+Features saved to results\run_2025-05-07_22-45-00\features\features_2025-05-07_22-45-00.csv
+Clustering features...
+Error during pipeline execution: zero-size array to reduction operation maximum which has no identity
+Traceback (most recent call last):
+  File "C:\Users\alim9\Documents\codes\synapse2\run_synapse_pipeline_with_sampling.py", line 204, in run_pipeline_with_connectome
+    pipeline.cluster_features()
+  File "C:\Users\alim9\Documents\codes\synapse2\synapse_pipeline.py", line 214, in cluster_features
+    result = run_clustering_analysis(self.features_df, output_dir)
+  File "C:\Users\alim9\Documents\codes\synapse2\inference.py", line 810, in run_clustering_analysis
+    umap_results = apply_umap(features_df[feature_cols])
+  File "C:\Users\alim9\Documents\codes\synapse2\inference.py", line 956, in apply_umap
+    embedding = reducer.fit_transform(features)
+  File "C:\Users\alim9\.conda\envs\synapse2\lib\site-packages\umap\umap_.py", line 2928, in fit_transform
+    self.fit(X, y, force_all_finite, **kwargs)
+  File "C:\Users\alim9\.conda\envs\synapse2\lib\site-packages\umap\umap_.py", line 2817, in fit
+    self.embedding_, aux_data = self._fit_embed_data(
+  File "C:\Users\alim9\.conda\envs\synapse2\lib\site-packages\umap\umap_.py", line 2865, in _fit_embed_data
+    return simplicial_set_embedding(
+  File "C:\Users\alim9\.conda\envs\synapse2\lib\site-packages\umap\umap_.py", line 1089, in simplicial_set_embedding
+    graph.data[graph.data < (graph.data.max() / float(n_epochs_max))] = 0.0
+  File "C:\Users\alim9\.conda\envs\synapse2\lib\site-packages\numpy\_core\_methods.py", line 44, in _amax
+    return umr_maximum(a, axis, None, out, keepdims, initial, where)
+ValueError: zero-size array to reduction operation maximum which has no identity
+
+
+--- Starting pipeline run at 2025-05-08 11:21:23 ---
+Running with configuration:
+  Segmentation Type: 11
+  Alpha: 1.0
+  Feature Extraction Method: stage_specific
+  Layer Number: 20
+  Pooling Method: avg
+
+--- Starting pipeline run at 2025-05-08 11:25:50 ---
+Running with configuration:
+  Segmentation Type: 11
+  Alpha: 1.0
+  Feature Extraction Method: stage_specific
+  Layer Number: 20
+  Pooling Method: avg
+
+--- Starting pipeline run at 2025-05-08 13:31:28 ---
+Running with configuration:
+  Segmentation Type: 11
+  Alpha: 1.0
+  Feature Extraction Method: stage_specific
+  Layer Number: 20
+  Pooling Method: avg
+
+--- Starting pipeline run at 2025-05-08 13:33:47 ---
+Running with configuration:
+  Segmentation Type: 11
+  Alpha: 1.0
+  Feature Extraction Method: stage_specific
+  Layer Number: 20
+  Pooling Method: avg

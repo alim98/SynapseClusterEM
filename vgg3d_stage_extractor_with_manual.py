@@ -25,11 +25,11 @@ class VGG3DStageExtractor:
             model: A VGG3D model instance
         """
         self.model = model
-        self.model.eval()  # Set model to evaluation mode
+        self.model.eval()  
         
-        # Define stage boundaries - indices in the features Sequential module
-        # Each stage ends with a MaxPool3D operation
-        # This is based on the typical VGG architecture with 4 stages
+        
+        
+        
         self.stage_boundaries = self._identify_stage_boundaries()
         
     def _identify_stage_boundaries(self):
@@ -44,14 +44,14 @@ class VGG3DStageExtractor:
         stage_num = 1
         start_idx = 0
         
-        # Look for MaxPool3D operations to identify stage boundaries
+        
         for i, layer in enumerate(self.model.features):
             if isinstance(layer, nn.MaxPool3d):
                 boundaries[stage_num] = (start_idx, i)
                 stage_num += 1
                 start_idx = i + 1
         
-        # Handle the case where the last stage doesn't end with MaxPool3D
+        
         if start_idx < len(self.model.features):
             boundaries[stage_num] = (start_idx, len(self.model.features) - 1)
         
@@ -76,7 +76,7 @@ class VGG3DStageExtractor:
         with torch.no_grad():
             x = inputs
             
-            # Process all layers up to the end of the requested stage
+            
             for i in range(end_idx + 1):
                 x = self.model.features[i](x)
                 
@@ -99,7 +99,7 @@ class VGG3DStageExtractor:
         with torch.no_grad():
             x = inputs
             
-            # Process all layers up to the requested layer
+            
             for i in range(layer_number + 1):
                 x = self.model.features[i](x)
                 
@@ -134,22 +134,22 @@ class VGG3DStageExtractor:
             x = inputs
             
             for stage_num, (start_idx, end_idx) in self.stage_boundaries.items():
-                # Process this stage
+                
                 stage_input = x.clone() if stage_num > 1 else x
                 
-                # If not the first stage, we need to process all previous layers
+                
                 if stage_num > 1:
                     prev_end = self.stage_boundaries[stage_num - 1][1]
                     for i in range(prev_end + 1, start_idx):
                         stage_input = self.model.features[i](stage_input)
                 
-                # Process the current stage
+                
                 for i in range(start_idx, end_idx + 1):
                     stage_input = self.model.features[i](stage_input)
                 
                 results[stage_num] = stage_input
                 
-                # Continue processing for the next stage
+                
                 if stage_num == 1:
                     for i in range(start_idx, end_idx + 1):
                         x = self.model.features[i](x)
