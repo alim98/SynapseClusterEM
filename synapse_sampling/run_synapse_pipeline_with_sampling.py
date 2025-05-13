@@ -59,7 +59,7 @@ def configure_pipeline_args():
     
     
     parser.add_argument("--use_connectome", action="store_true",
-                        help="Use connectome data instead of local files")
+                        help="Use connectome data instead of local files", default=True)
     parser.add_argument("--batch_size", type=int, default=10,
                         help="Number of samples to load from connectome")
     parser.add_argument("--policy", type=str, choices=['random', 'dummy'], default='dummy',
