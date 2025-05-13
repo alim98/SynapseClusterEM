@@ -48,13 +48,13 @@ def configure_pipeline_args():
                         help="Only run vesicle size analysis on existing results")
     
     
-    parser.add_argument("--extraction_method", type=str, choices=['standard', 'stage_specific'],
+    parser.add_argument("--extraction_method", type=str, choices=['standard', 'stage_specific'],default='standard',
                        help="Method to extract features ('standard' or 'stage_specific')")
-    parser.add_argument("--layer_num", type=int,
+    parser.add_argument("--layer_num", type=int,default=20, 
                        help="Layer number to extract features from when using stage_specific method")
     
     
-    parser.add_argument("--pooling_method", type=str, choices=['avg', 'max', 'concat_avg_max', 'spp'],
+    parser.add_argument("--pooling_method", type=str, choices=['avg', 'max', 'concat_avg_max', 'spp'],default='avg',
                        help="Method to use for pooling ('avg', 'max', 'concat_avg_max', 'spp')")
     
     
@@ -62,7 +62,7 @@ def configure_pipeline_args():
                         help="Use connectome data instead of local files")
     parser.add_argument("--batch_size", type=int, default=10,
                         help="Number of samples to load from connectome")
-    parser.add_argument("--policy", type=str, choices=['random', 'dummy'], default='random',
+    parser.add_argument("--policy", type=str, choices=['random', 'dummy'], default='dummy',
                         help="Sampling policy for connectome data")
     parser.add_argument("--verbose", action="store_true",
                         help="Print verbose information during sampling")
